@@ -1,0 +1,4 @@
+src/config.h
+.pio
+SL/backup
+SL/autosave

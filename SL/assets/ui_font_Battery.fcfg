@@ -1,0 +1,16 @@
+{
+  "codename": "Battery",
+  "ttf_path": "/assets/Battery Icons.otf",
+  "bin_path": "/assets/ui_font_Battery.bin",
+  "c_path": "/assets/ui_font_Battery.c",
+  "cfg_path": "/assets/ui_font_Battery.fcfg",
+  "size": 40,
+  "bpp": 1,
+  "letters": 0,
+  "ranges": [
+    "0x20-0x7f"
+  ],
+  "symbols": "",
+  "customparams": "--no-compress --no-prefilter",
+  "uploaded": false
+}

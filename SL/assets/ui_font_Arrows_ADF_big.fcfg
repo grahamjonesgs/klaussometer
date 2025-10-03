@@ -1,0 +1,16 @@
+{
+  "codename": "Arrows_ADF_big",
+  "ttf_path": "/assets/Arrows ADF.ttf",
+  "bin_path": "/assets/ui_font_Arrows_ADF_big.bin",
+  "c_path": "/assets/ui_font_Arrows_ADF_big.c",
+  "cfg_path": "/assets/ui_font_Arrows_ADF_big.fcfg",
+  "size": 32,
+  "bpp": 1,
+  "letters": 0,
+  "ranges": [
+    "0x20-0x7f"
+  ],
+  "symbols": "",
+  "customparams": "--no-compress --no-prefilter",
+  "uploaded": false
+}
