@@ -41,13 +41,9 @@ unsigned long lastOTAUpdateCheck = 0;
 // Status messages
 char statusMessageValue[CHAR_LEN];
 
-// For Backlight PWM
-const int PWMFreq = 5000;
-const int PWMChannel = 4;
-const int PWMResolution = 10;
 const int MAX_DUTY_CYCLE = (int)(pow(2, PWMResolution) - 1);
-const int day_duty = 0;
-const int night_duty = MAX_DUTY_CYCLE * 0.96;
+const float DAYTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MAX_BRIGHTNESS);
+const float NIGHTTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MIN_BRIGHTNESS);
 
 // Screen config
 Arduino_ESP32RGBPanel* rgbpanel = new Arduino_ESP32RGBPanel(LCD_DE_PIN, LCD_VSYNC_PIN, LCD_HSYNC_PIN, LCD_PCLK_PIN, LCD_R0_PIN, LCD_R1_PIN, LCD_R2_PIN, LCD_R3_PIN, LCD_R4_PIN,
@@ -322,12 +318,12 @@ void loop() {
 
     // Update solar values
     set_solar_values();
-    if (time(NULL) - solar.currentUpdateTime > 2 * SOLAR_CURRENT_UPDATE_INTERVAL) {
+    if (time(NULL) - solar.currentUpdateTime > 2 * SOLAR_CURRENT_UPDATE_INTERVAL_SEC) {
         lv_obj_set_style_text_color(ui_SolarStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
     } else {
         lv_obj_set_style_text_color(ui_SolarStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
     }
-    if (time(NULL) - weather.updateTime > 2 * WEATHER_UPDATE_INTERVAL) {
+    if (time(NULL) - weather.updateTime > 2 * WEATHER_UPDATE_INTERVAL_SEC) {
         lv_obj_set_style_text_color(ui_WeatherStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
     } else {
         lv_obj_set_style_text_color(ui_WeatherStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
@@ -354,13 +350,13 @@ void loop() {
     }
 
     if (!weather.isDay) {
-        ledcWrite(PWMChannel, night_duty);
+        ledcWrite(PWMChannel, NIGHTTIME_DUTY);
         set_basic_text_color(lv_color_hex(COLOR_WHITE));
         lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
         lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
         lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
     } else {
-        ledcWrite(PWMChannel, day_duty);
+        ledcWrite(PWMChannel, DAYTIME_DUTY);
         set_basic_text_color(lv_color_hex(COLOR_BLACK));
         lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
         lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
@@ -410,7 +406,7 @@ void pin_init() {
 
     /*ledcAttachChannel(TFT_BL, PWMFreq, PWMResolution, PWMChannel); */
 
-    ledcWrite(PWMChannel, night_duty); // Start dim
+    ledcWrite(PWMChannel, NIGHTTIME_DUTY); // Start dim
 
     /*vTaskDelay(pdMS_TO_TICKS(100));
     digitalWrite(TOUCH_RST, LOW);

@@ -25,9 +25,9 @@ char post_buffer[POST_BUFFER_SIZE];
 void get_uv_t(void* pvParameters) {
     while (true) {
         if (weather.isDay) {
-            if (time(NULL) - uv.updateTime > UV_UPDATE_INTERVAL) {
+            if (time(NULL) - uv.updateTime > UV_UPDATE_INTERVAL_SEC) {
                 if (WiFi.status() == WL_CONNECTED) {
-                    if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+                    if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(API_SEMAPHORE_WAIT_SEC * 1000)) == pdTRUE) {
                         snprintf(url_buffer, URL_BUFFER_SIZE, "https://api.weatherbit.io/v2.0/current?city_id=%s&key=%s", WEATHERBIT_CITY_ID, WEATHERBIT_API);
                         http.begin(url_buffer);
                         int httpCode = http.GET();
@@ -55,7 +55,7 @@ void get_uv_t(void* pvParameters) {
                             http.end();
                             xSemaphoreGive(httpMutex);
                             logAndPublish("UV updated failed");
-                            vTaskDelay(pdMS_TO_TICKS(30000)); // Stop calling too often for errors
+                            vTaskDelay(pdMS_TO_TICKS(API_FAIL_DELAY_SEC * 1000)); // Stop calling too often for errors
                         }
                     }
                 }
@@ -69,15 +69,15 @@ void get_uv_t(void* pvParameters) {
             strftime(uv.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
             saveDataBlock(UV_DATA_FILENAME, &uv, sizeof(uv));
         }
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(API_LOOP_DELAY_SEC * 1000)); // Check every 10 seconds if an update is needed
     }
 }
 
 void get_weather_t(void* pvParameters) {
     while (true) {
-        if (time(NULL) - weather.updateTime > WEATHER_UPDATE_INTERVAL) {
+        if (time(NULL) - weather.updateTime > WEATHER_UPDATE_INTERVAL_SEC) {
             if (WiFi.status() == WL_CONNECTED) {
-                if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+                if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(API_SEMAPHORE_WAIT_SEC * 1000)) == pdTRUE) {
                     snprintf(url_buffer, URL_BUFFER_SIZE,
                              "https://api.open-meteo.com/v1/"
                              "forecast?latitude=%s&longitude=%s&daily="
@@ -129,12 +129,12 @@ void get_weather_t(void* pvParameters) {
                         logAndPublish("Weather updated failed");
                         http.end();
                         xSemaphoreGive(httpMutex);
-                        vTaskDelay(pdMS_TO_TICKS(30000)); // Stop calling too often for errors
+                        vTaskDelay(pdMS_TO_TICKS(API_FAIL_DELAY_SEC * 1000)); // Stop calling too often for errors
                     }
                 }
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(API_LOOP_DELAY_SEC * 1000)); // Check every 10 seconds if an update is needed
     }
 }
 
@@ -242,7 +242,7 @@ void get_solar_token_t(void* pvParameters) {
         // Check if the token is valid (not empty) or if it has expired
         if (strlen(token) == 0) {
             if (WiFi.status() == WL_CONNECTED) {
-                if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+                if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(API_SEMAPHORE_WAIT_SEC * 1000)) == pdTRUE) {
                     snprintf(url_buffer, sizeof(url_buffer), "https://%s/account/v1.0/token?appId=%s", SOLAR_URL, SOLAR_APPID);
                     http.begin(url_buffer);
                     http.addHeader("Content-Type", "application/json");
@@ -257,7 +257,7 @@ void get_solar_token_t(void* pvParameters) {
                             deserializeJson(root, payload_buffer);
                             if (root["access_token"].is<const char*>()) {
                                 const char* rec_token = root["access_token"];
-                                snprintf(token, SOLAR_TOKEN_LENGTH - 1, "bearer %s", rec_token);
+                                snprintf(token, SOLAR_TOKEN_LENGTH, "bearer %s", rec_token);
                                 logAndPublish("Solar token obtained");
                             } else {
                                 char log_message[CHAR_LEN];
@@ -277,7 +277,7 @@ void get_solar_token_t(void* pvParameters) {
                 }
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(10000)); // Check for token every 10 seconds
+        vTaskDelay(pdMS_TO_TICKS(API_LOOP_DELAY_SEC * 1000)); // Check for token every 10 seconds
     }
 }
 
@@ -285,15 +285,15 @@ void get_solar_token_t(void* pvParameters) {
 void get_current_solar_t(void* pvParameters) {
 
     while (true) {
-        if (time(NULL) - solar.currentUpdateTime > SOLAR_CURRENT_UPDATE_INTERVAL) {
+        if (time(NULL) - solar.currentUpdateTime > SOLAR_CURRENT_UPDATE_INTERVAL_SEC) {
             // First, check if the token is available
             if (strlen(token) == 0) {
-                vTaskDelay(pdMS_TO_TICKS(10000));
+                vTaskDelay(pdMS_TO_TICKS(SOLAR_TOKEN_WAIT_SEC * 1000));
                 continue; // Skip this loop iteration and try again after a short delay
             }
 
             if (WiFi.status() == WL_CONNECTED) {
-                if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+                if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(API_SEMAPHORE_WAIT_SEC * 1000)) == pdTRUE) {
                     snprintf(url_buffer, URL_BUFFER_SIZE, "https://%s/station/v1.0/realTime?language=en", SOLAR_URL);
                     http.begin(url_buffer);
                     http.addHeader("Content-Type", "application/json");
@@ -382,15 +382,14 @@ void get_current_solar_t(void* pvParameters) {
                         char log_message[CHAR_LEN];
                         snprintf(log_message, CHAR_LEN, "[HTTP] GET solar status failed, error: %d", httpCode);
                         errorPublish(log_message);
+                        vTaskDelay(pdMS_TO_TICKS(API_FAIL_DELAY_SEC * 1000)); // Stop calling too often for errors
                     }
                     http.end();
                     xSemaphoreGive(httpMutex);
-                } else {
-                    vTaskDelay(pdMS_TO_TICKS(10000));
                 }
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(API_LOOP_DELAY_SEC * 1000)); // Check every 10 seconds if an update is needed
     }
 }
 
@@ -402,10 +401,10 @@ void get_daily_solar_t(void* pvParameters) {
 
     // Define a buffer for the JSON payload
     while (true) {
-        if ((time(NULL) - solar.dailyUpdateTime > SOLAR_DAILY_UPDATE_INTERVAL)) {
+        if ((time(NULL) - solar.dailyUpdateTime > SOLAR_DAILY_UPDATE_INTERVAL_SEC)) {
             // First, check if the token is available
             if (strlen(token) == 0) {
-                vTaskDelay(pdMS_TO_TICKS(10000));
+                vTaskDelay(pdMS_TO_TICKS(SOLAR_TOKEN_WAIT_SEC * 1000));
                 continue; // Skip this loop iteration and try again after a short delay
             }
             if (WiFi.status() == WL_CONNECTED) {
@@ -468,12 +467,12 @@ void get_daily_solar_t(void* pvParameters) {
                         logAndPublish("Getting solar today buy value failed");
                         http.end();
                         xSemaphoreGive(httpMutex);
-                        vTaskDelay(pdMS_TO_TICKS(30000)); // Stop calling too often for errors
+                        vTaskDelay(pdMS_TO_TICKS(API_FAIL_DELAY_SEC * 1000)); // Stop calling too often for errors
                     }
                 }
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(API_LOOP_DELAY_SEC * 1000));
     }
 }
 
@@ -485,13 +484,13 @@ void get_monthly_solar_t(void* pvParameters) {
 
     // Get station status
     while (true) {
-        if ((time(NULL) - solar.monthlyUpdateTime > SOLAR_MONTHLY_UPDATE_INTERVAL)) {
+        if ((time(NULL) - solar.monthlyUpdateTime > SOLAR_MONTHLY_UPDATE_INTERVAL_SEC)) {
             if (strlen(token) == 0) {
-                vTaskDelay(pdMS_TO_TICKS(10000));
+                vTaskDelay(pdMS_TO_TICKS(SOLAR_TOKEN_WAIT_SEC * 1000));
                 continue; // Skip this loop iteration and try again after a short delay
             }
             if (WiFi.status() == WL_CONNECTED) {
-                if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+                if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(API_SEMAPHORE_WAIT_SEC * 1000)) == pdTRUE) {
                     /*
                       timeType 1 with start and end date of today gives array of size
                       "total", then in stationDataItems -> batterySoc to get battery
@@ -549,12 +548,12 @@ void get_monthly_solar_t(void* pvParameters) {
                         logAndPublish("Getting solar month buy value failed");
                         http.end();
                         xSemaphoreGive(httpMutex);
-                        vTaskDelay(pdMS_TO_TICKS(30000)); // Stop calling too often for errors
+                        vTaskDelay(pdMS_TO_TICKS(API_FAIL_DELAY_SEC * 1000)); // Stop calling too often for errors
                     }
                 }
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(API_LOOP_DELAY_SEC * 1000));
     }
 }
 

@@ -374,7 +374,7 @@ lv_obj_set_align( ui_ChargingTime, LV_ALIGN_CENTER );
 ui_TextKlaussometer = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_TextKlaussometer, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_TextKlaussometer, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_TextKlaussometer, -360 );
+lv_obj_set_x( ui_TextKlaussometer, -350 );
 lv_obj_set_y( ui_TextKlaussometer, -270 );
 lv_obj_set_align( ui_TextKlaussometer, LV_ALIGN_CENTER );
 lv_label_set_text(ui_TextKlaussometer,"Klaussometer V4.1");
@@ -465,7 +465,7 @@ lv_obj_set_height( ui_FCMin, LV_SIZE_CONTENT);   /// 1
 lv_obj_set_x( ui_FCMin, -68 );
 lv_obj_set_y( ui_FCMin, -65 );
 lv_obj_set_align( ui_FCMin, LV_ALIGN_CENTER );
-lv_label_set_text(ui_FCMin,"01C");
+lv_label_set_text(ui_FCMin,"01°C");
 lv_obj_set_style_text_font(ui_FCMin, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_FCMax = lv_label_create(ui_Screen1);
@@ -474,7 +474,7 @@ lv_obj_set_height( ui_FCMax, LV_SIZE_CONTENT);   /// 1
 lv_obj_set_x( ui_FCMax, 75 );
 lv_obj_set_y( ui_FCMax, -65 );
 lv_obj_set_align( ui_FCMax, LV_ALIGN_CENTER );
-lv_label_set_text(ui_FCMax,"99C");
+lv_label_set_text(ui_FCMax,"99°C");
 lv_obj_set_style_text_font(ui_FCMax, &lv_font_montserrat_20, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_HumidLabel5 = lv_label_create(ui_Screen1);

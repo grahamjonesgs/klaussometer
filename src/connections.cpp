@@ -24,7 +24,7 @@ void setup_wifi() {
         logAndPublish(messageBuffer);
         // WiFi.disconnect();
         // WiFi.reconnect();
-        vTaskDelay(pdMS_TO_TICKS(3000));
+        vTaskDelay(pdMS_TO_TICKS(WIFI_RETRY_DELAY_SEC * 1000)); // Wait before retrying
     }
     IPAddress ip = WiFi.localIP();
     char ipStr[16];
@@ -43,7 +43,7 @@ void mqtt_connect() {
     if (!mqttClient.connected()) {
         if (!mqttClient.connect(MQTT_SERVER, MQTT_PORT)) {
             logAndPublish("MQTT receive connection failed");
-            vTaskDelay(pdMS_TO_TICKS(3000));
+            vTaskDelay(pdMS_TO_TICKS(MQTT_RETRY_DELAY_SEC * 1000));
             return;
         }
     }
@@ -70,17 +70,16 @@ void connectivity_manager_t(void* pvParameters) {
         if (WiFi.status() != WL_CONNECTED) {
             wasDisconnected = true;
             logAndPublish("WiFi is reconnecting");
-            setup_wifi(); // This is the simplified, non-blocking function
-            // Add a small delay to avoid spamming the log if reconnection fails immediately
+            setup_wifi(); 
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
         if (wasDisconnected) {
             // Only do this if we were previously disconnected
-            time_init(); // Ensure time is synchronized
+            time_init();
         }
         if (WiFi.status() == WL_CONNECTED && !mqttClient.connected()) {
             logAndPublish("MQTT is reconnecting");
-            mqtt_connect(); // This is the simplified, non-blocking function
+            mqtt_connect();
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
 

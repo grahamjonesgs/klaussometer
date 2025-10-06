@@ -57,14 +57,21 @@ static const int DATA_BATTERY = 4;
 // Define constants used
 static const int MAX_NO_MESSAGE_SEC = 3600;           // Time before CHAR_NO_MESSAGE is set in seconds (long)
 static const int TIME_RETRIES = 100;                  // Number of time to retry getting the time during setup
-static const int WEATHER_UPDATE_INTERVAL = 300;       // Interval between weather updates
-static const int UV_UPDATE_INTERVAL = 3600;           // Interval between UV updates
-static const int SOLAR_CURRENT_UPDATE_INTERVAL = 60;  // Interval between solar updates
-static const int SOLAR_MONTHLY_UPDATE_INTERVAL = 300; // Interval between solar current updates
-static const int SOLAR_DAILY_UPDATE_INTERVAL = 300;   // Interval between solar daily updates
+static const int WEATHER_UPDATE_INTERVAL_SEC = 300;       // Interval between weather updates
+static const int UV_UPDATE_INTERVAL_SEC = 3600;           // Interval between UV updates
+static const int SOLAR_CURRENT_UPDATE_INTERVAL_SEC = 60;  // Interval between solar updates
+static const int SOLAR_MONTHLY_UPDATE_INTERVAL_SEC = 300; // Interval between solar current updates
+static const int SOLAR_DAILY_UPDATE_INTERVAL_SEC = 300;   // Interval between solar daily updates
+static const int SOLAR_TOKEN_WAIT_SEC = 10;            // Time to wait for solar token to be available
+static const int API_SEMAPHORE_WAIT_SEC = 10;                 // Time to wait for http semaphore
+static const int API_FAIL_DELAY_SEC = 30;             // Delay is API call fails
+static const int API_LOOP_DELAY_SEC = 10;                      // Time delay at end of API loops
 static const int STATUS_MESSAGE_TIME = 3;             // Seconds an status message can be displayed
-static const int MAX_SOLAR_TIME_STATUS = 24;          // Max time in hours for charge / discharge that a message will be displayed for
-static const int CHECK_UPDATE_INTERVAL = 300;         // Interval between checking for OTA updates
+static const int MAX_SOLAR_TIME_STATUS_HOURS = 24;          // Max time in hours for charge / discharge that a message will be displayed for
+static const int CHECK_UPDATE_INTERVAL_SEC = 300;         // Interval between checking for OTA updates
+
+static const int WIFI_RETRY_DELAY_SEC = 5;                 // Delay between WiFi connection attempts
+static const int MQTT_RETRY_DELAY_SEC = 5;                 // Delay between MQTT connection attempts
 
 // Touch screen settings
 static const int I2C_SDA_PIN = 17;
@@ -124,6 +131,14 @@ static const int LCD_PCLK_ACTIVE_NEG = 1;
 static const int LCD_PREFER_SPEED = 12000000; // was 16000000
 static const int LCD_WIDTH = 1024;
 static const int LCD_HEIGHT = 600;
+
+// For Backlight PWM
+static const int PWMFreq = 5000;
+static const int PWMChannel = 4;
+static const int PWMResolution = 10;
+static const float MAX_BRIGHTNESS = 1.0;
+static const float MIN_BRIGHTNESS = 0.1;
+
 
 // microSD card
 #define PIN_SD_CMD 11

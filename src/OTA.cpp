@@ -11,9 +11,9 @@ extern SemaphoreHandle_t httpMutex;
 void checkForUpdates_t(void* pvParameters) {
     char url[CHAR_LEN];
     while (true) {
-        if (time(NULL) - lastOTAUpdateCheck > CHECK_UPDATE_INTERVAL) {
+        if (time(NULL) - lastOTAUpdateCheck > CHECK_UPDATE_INTERVAL_SEC) {
             if (WiFi.status() == WL_CONNECTED) {
-                if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(5000)) == pdTRUE) {
+                if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(API_SEMAPHORE_WAIT_SEC * 1000)) == pdTRUE) {
                     // Check version
                     snprintf(url, CHAR_LEN, "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_VERSION_PATH);
                     http.begin(url);
@@ -43,7 +43,7 @@ void checkForUpdates_t(void* pvParameters) {
                 }
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        vTaskDelay(pdMS_TO_TICKS(API_LOOP_DELAY_SEC * 1000)); // Check every 10 seconds if an update is needed
     }
 }
 

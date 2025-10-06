@@ -46,7 +46,7 @@ void set_solar_values() {
             if ((floor(remain_hours) == 1) && (remain_minutes > 0)) {
                 snprintf(tempString, CHAR_LEN, "%2.0f hour %i mins\n remaining\n Until %s", remain_hours, remain_minutes_round % 60, time_buf_end);
             } else {
-                if ((remain_minutes_round > 0) && (remain_hours < MAX_SOLAR_TIME_STATUS)) {
+                if ((remain_minutes_round > 0) && (remain_hours < MAX_SOLAR_TIME_STATUS_HOURS)) {
                     snprintf(tempString, CHAR_LEN, "%2.0f hours %i mins\n remaining\n Until %s", remain_hours, remain_minutes_round % 60, time_buf_end);
                 } else {
                     snprintf(tempString, CHAR_LEN,
@@ -71,7 +71,7 @@ void set_solar_values() {
                 if ((floor(remain_hours) == 1) && (remain_minutes > 0)) {
                     snprintf(tempString, CHAR_LEN, "%2.0f hour %i mins to\n fully charged", remain_hours, remain_minutes_round % 60);
                 } else {
-                    if ((remain_minutes_round > 0) && (remain_hours < MAX_SOLAR_TIME_STATUS)) {
+                    if ((remain_minutes_round > 0) && (remain_hours < MAX_SOLAR_TIME_STATUS_HOURS)) {
                         snprintf(tempString, CHAR_LEN, "%2.0f hours %i mins to\n fully charged", remain_hours, remain_minutes_round % 60);
                     } else {
                         snprintf(tempString, CHAR_LEN,
