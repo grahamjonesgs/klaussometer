@@ -6309,7 +6309,7 @@
                 "flags": 17,
                 "strtype": "OBJECT/Position",
                 "intarray": [
-                  -350,
+                  10,
                   -270
                 ],
                 "InheritedType": 7
@@ -6327,7 +6327,7 @@
               {
                 "nid": -157358310,
                 "strtype": "OBJECT/Align",
-                "strval": "CENTER",
+                "strval": "LEFT_MID",
                 "InheritedType": 3
               },
               {
@@ -6392,7 +6392,7 @@
               {
                 "nid": 1938333714,
                 "strtype": "LABEL/Text",
-                "strval": "Klaussometer V4.1",
+                "strval": "Klaussometer",
                 "InheritedType": 10
               },
               {
@@ -10596,6 +10596,169 @@
               }
             ],
             "saved_objtypeKey": "LABEL"
+          },
+          {
+            "guid": "GUID36798806-935708S160304280",
+            "deepid": -612760066,
+            "dont_export": false,
+            "locked": false,
+            "properties": [
+              {
+                "nid": 766938864,
+                "strtype": "OBJECT/Name",
+                "strval": "Version",
+                "InheritedType": 10
+              },
+              {
+                "nid": 448052833,
+                "strtype": "OBJECT/Layout",
+                "InheritedType": 1
+              },
+              {
+                "Flow": 0,
+                "Wrap": false,
+                "Reversed": false,
+                "MainAlignment": 0,
+                "CrossAlignment": 0,
+                "TrackAlignment": 0,
+                "LayoutType": 0,
+                "nid": 988433761,
+                "strtype": "OBJECT/Layout_type",
+                "strval": "No_layout",
+                "InheritedType": 13
+              },
+              {
+                "nid": 1797002480,
+                "strtype": "OBJECT/Transform",
+                "InheritedType": 1
+              },
+              {
+                "nid": -1678045500,
+                "flags": 17,
+                "strtype": "OBJECT/Position",
+                "intarray": [
+                  -44,
+                  278
+                ],
+                "InheritedType": 7
+              },
+              {
+                "nid": -1978441847,
+                "flags": 51,
+                "strtype": "OBJECT/Size",
+                "intarray": [
+                  1,
+                  1
+                ],
+                "InheritedType": 7
+              },
+              {
+                "nid": -157358310,
+                "strtype": "OBJECT/Align",
+                "strval": "RIGHT_MID",
+                "InheritedType": 3
+              },
+              {
+                "nid": -1259090556,
+                "flags": 1048576,
+                "strtype": "OBJECT/Flags",
+                "InheritedType": 1
+              },
+              {
+                "nid": -1684123571,
+                "strtype": "OBJECT/Clickable",
+                "strval": "False",
+                "InheritedType": 2
+              },
+              {
+                "nid": 225,
+                "flags": 1048576,
+                "strtype": "OBJECT/Scrolling",
+                "InheritedType": 1
+              },
+              {
+                "nid": 459267169,
+                "strtype": "OBJECT/Scrollbar_mode",
+                "strval": "AUTO",
+                "InheritedType": 3
+              },
+              {
+                "nid": -935657125,
+                "strtype": "OBJECT/Scroll_direction",
+                "strval": "ALL",
+                "InheritedType": 3
+              },
+              {
+                "nid": 314,
+                "strtype": "OBJECT/Scroll_snap_x",
+                "strval": "NONE",
+                "InheritedType": 3
+              },
+              {
+                "nid": 315,
+                "strtype": "OBJECT/Scroll_snap_y",
+                "strval": "NONE",
+                "InheritedType": 3
+              },
+              {
+                "nid": 1818238459,
+                "flags": 1048576,
+                "strtype": "OBJECT/States",
+                "InheritedType": 1
+              },
+              {
+                "nid": 1921647273,
+                "strtype": "LABEL/Label",
+                "InheritedType": 1
+              },
+              {
+                "nid": 1824832733,
+                "strtype": "LABEL/Long_mode",
+                "strval": "WRAP",
+                "InheritedType": 3
+              },
+              {
+                "nid": 1938333714,
+                "strtype": "LABEL/Text",
+                "strval": "V1.1.1",
+                "InheritedType": 10
+              },
+              {
+                "part": "lv.PART.MAIN",
+                "childs": [
+                  {
+                    "nid": -486471786,
+                    "strtype": "_style/StyleState",
+                    "strval": "DEFAULT",
+                    "childs": [
+                      {
+                        "nid": 157219871,
+                        "strtype": "_style/Shadow_Color",
+                        "intarray": [
+                          0,
+                          0,
+                          0,
+                          255
+                        ],
+                        "InheritedType": 7
+                      }
+                    ],
+                    "InheritedType": 1
+                  }
+                ],
+                "nid": 569285839,
+                "strtype": "LABEL/Style_main",
+                "strval": "lv.PART.MAIN, Text, Rectangle, Pad, Transform",
+                "InheritedType": 11
+              },
+              {
+                "nid": -870065189,
+                "strtype": "LABEL/Recolor",
+                "strval": "False",
+                "InheritedType": 2
+              }
+            ],
+            "saved_objtypeKey": "LABEL"
           }
         ],
         "isPage": true,
@@ -10773,7 +10936,7 @@
     "uiExportFolderPath": "/Users/gjonesblackcyton/Documents/PlatformIO/Projects/klaussometer/src/UI",
     "projectExportFolderPath": "/Users/gjonesblackcyton/Documents/PlatformIO/Projects/klaussometer",
     "custom_variable_prefix": "uic",
-    "backup_cnt": 1374,
+    "backup_cnt": 1375,
     "autosave_cnt": 0,
     "group_color_cnt": 0,
     "lvgl_version": "8.3.6",

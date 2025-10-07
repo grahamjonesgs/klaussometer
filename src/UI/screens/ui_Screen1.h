@@ -80,6 +80,7 @@ extern lv_obj_t *ui_BatteryLabel1;
 extern lv_obj_t *ui_BatteryLabel2;
 extern lv_obj_t *ui_BatteryLabel4;
 extern lv_obj_t *ui_BatteryLabel3;
+extern lv_obj_t *ui_Version;
 // CUSTOM VARIABLES
 
 #ifdef __cplusplus

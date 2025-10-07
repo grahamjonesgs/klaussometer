@@ -158,8 +158,8 @@ void setup() {
         ui_init();
 
         // Set the initial values
-        String klaussometerText = "Klaussometer " + String(FIRMWARE_VERSION);
-        lv_label_set_text(ui_TextKlaussometer, klaussometerText.c_str());
+        String versionText = "V " + String(FIRMWARE_VERSION);
+        lv_label_set_text(ui_Version, versionText.c_str());
 
         for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
             lv_label_set_text(*roomNames[i], readings[i].description);

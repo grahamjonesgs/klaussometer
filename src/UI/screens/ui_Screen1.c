@@ -5,7 +5,7 @@
 
 #include "../ui.h"
 
-lv_obj_t *ui_Screen1 = NULL;lv_obj_t *ui_Container1 = NULL;lv_obj_t *ui_Container2 = NULL;lv_obj_t *ui_TempArc1 = NULL;lv_obj_t *ui_TempArc2 = NULL;lv_obj_t *ui_TempArc3 = NULL;lv_obj_t *ui_TempArc4 = NULL;lv_obj_t *ui_TempLabel1 = NULL;lv_obj_t *ui_TempLabel2 = NULL;lv_obj_t *ui_TempLabel3 = NULL;lv_obj_t *ui_TempLabel4 = NULL;lv_obj_t *ui_RoomName1 = NULL;lv_obj_t *ui_RoomName2 = NULL;lv_obj_t *ui_RoomName3 = NULL;lv_obj_t *ui_RoomName4 = NULL;lv_obj_t *ui_StatusMessage = NULL;lv_obj_t *ui_HumidLabel1 = NULL;lv_obj_t *ui_HumidLabel3 = NULL;lv_obj_t *ui_HumidLabel4 = NULL;lv_obj_t *ui_HumidLabel2 = NULL;lv_obj_t *ui_Time = NULL;lv_obj_t *ui_TextRooms = NULL;lv_obj_t *ui_TempArcFC = NULL;lv_obj_t *ui_TempLabelFC = NULL;lv_obj_t *ui_TextForecastName = NULL;lv_obj_t *ui_FCConditions = NULL;lv_obj_t *ui_FCWindSpeed = NULL;lv_obj_t *ui_FCUpdateTime = NULL;lv_obj_t *ui_BatteryArc = NULL;lv_obj_t *ui_BatteryLabel = NULL;lv_obj_t *ui_TextBattery = NULL;lv_obj_t *ui_SolarArc = NULL;lv_obj_t *ui_SolarLabel = NULL;lv_obj_t *ui_TextSolar = NULL;lv_obj_t *ui_UsingArc = NULL;lv_obj_t *ui_TextUsing = NULL;lv_obj_t *ui_UsingLabel = NULL;lv_obj_t *ui_ChargingLabel = NULL;lv_obj_t *ui_AsofTimeLabel = NULL;lv_obj_t *ui_ChargingTime = NULL;lv_obj_t *ui_TextKlaussometer = NULL;lv_obj_t *ui_WiFiStatus = NULL;lv_obj_t *ui_ServerStatus = NULL;lv_obj_t *ui_WeatherStatus = NULL;lv_obj_t *ui_SolarStatus = NULL;lv_obj_t *ui_SolarMinMax = NULL;lv_obj_t *ui_GridBought = NULL;lv_obj_t *ui_TempArc5 = NULL;lv_obj_t *ui_TempLabel5 = NULL;lv_obj_t *ui_RoomName5 = NULL;lv_obj_t *ui_FCMin = NULL;lv_obj_t *ui_FCMax = NULL;lv_obj_t *ui_HumidLabel5 = NULL;lv_obj_t *ui_Direction1 = NULL;lv_obj_t *ui_Direction2 = NULL;lv_obj_t *ui_Direction3 = NULL;lv_obj_t *ui_Direction4 = NULL;lv_obj_t *ui_Direction5 = NULL;lv_obj_t *ui_UVArc = NULL;lv_obj_t *ui_UVLabel = NULL;lv_obj_t *ui_TextUV = NULL;lv_obj_t *ui_BatteryLabel5 = NULL;lv_obj_t *ui_UVUpdateTime = NULL;lv_obj_t *ui_BatteryLabel1 = NULL;lv_obj_t *ui_BatteryLabel2 = NULL;lv_obj_t *ui_BatteryLabel4 = NULL;lv_obj_t *ui_BatteryLabel3 = NULL;
+lv_obj_t *ui_Screen1 = NULL;lv_obj_t *ui_Container1 = NULL;lv_obj_t *ui_Container2 = NULL;lv_obj_t *ui_TempArc1 = NULL;lv_obj_t *ui_TempArc2 = NULL;lv_obj_t *ui_TempArc3 = NULL;lv_obj_t *ui_TempArc4 = NULL;lv_obj_t *ui_TempLabel1 = NULL;lv_obj_t *ui_TempLabel2 = NULL;lv_obj_t *ui_TempLabel3 = NULL;lv_obj_t *ui_TempLabel4 = NULL;lv_obj_t *ui_RoomName1 = NULL;lv_obj_t *ui_RoomName2 = NULL;lv_obj_t *ui_RoomName3 = NULL;lv_obj_t *ui_RoomName4 = NULL;lv_obj_t *ui_StatusMessage = NULL;lv_obj_t *ui_HumidLabel1 = NULL;lv_obj_t *ui_HumidLabel3 = NULL;lv_obj_t *ui_HumidLabel4 = NULL;lv_obj_t *ui_HumidLabel2 = NULL;lv_obj_t *ui_Time = NULL;lv_obj_t *ui_TextRooms = NULL;lv_obj_t *ui_TempArcFC = NULL;lv_obj_t *ui_TempLabelFC = NULL;lv_obj_t *ui_TextForecastName = NULL;lv_obj_t *ui_FCConditions = NULL;lv_obj_t *ui_FCWindSpeed = NULL;lv_obj_t *ui_FCUpdateTime = NULL;lv_obj_t *ui_BatteryArc = NULL;lv_obj_t *ui_BatteryLabel = NULL;lv_obj_t *ui_TextBattery = NULL;lv_obj_t *ui_SolarArc = NULL;lv_obj_t *ui_SolarLabel = NULL;lv_obj_t *ui_TextSolar = NULL;lv_obj_t *ui_UsingArc = NULL;lv_obj_t *ui_TextUsing = NULL;lv_obj_t *ui_UsingLabel = NULL;lv_obj_t *ui_ChargingLabel = NULL;lv_obj_t *ui_AsofTimeLabel = NULL;lv_obj_t *ui_ChargingTime = NULL;lv_obj_t *ui_TextKlaussometer = NULL;lv_obj_t *ui_WiFiStatus = NULL;lv_obj_t *ui_ServerStatus = NULL;lv_obj_t *ui_WeatherStatus = NULL;lv_obj_t *ui_SolarStatus = NULL;lv_obj_t *ui_SolarMinMax = NULL;lv_obj_t *ui_GridBought = NULL;lv_obj_t *ui_TempArc5 = NULL;lv_obj_t *ui_TempLabel5 = NULL;lv_obj_t *ui_RoomName5 = NULL;lv_obj_t *ui_FCMin = NULL;lv_obj_t *ui_FCMax = NULL;lv_obj_t *ui_HumidLabel5 = NULL;lv_obj_t *ui_Direction1 = NULL;lv_obj_t *ui_Direction2 = NULL;lv_obj_t *ui_Direction3 = NULL;lv_obj_t *ui_Direction4 = NULL;lv_obj_t *ui_Direction5 = NULL;lv_obj_t *ui_UVArc = NULL;lv_obj_t *ui_UVLabel = NULL;lv_obj_t *ui_TextUV = NULL;lv_obj_t *ui_BatteryLabel5 = NULL;lv_obj_t *ui_UVUpdateTime = NULL;lv_obj_t *ui_BatteryLabel1 = NULL;lv_obj_t *ui_BatteryLabel2 = NULL;lv_obj_t *ui_BatteryLabel4 = NULL;lv_obj_t *ui_BatteryLabel3 = NULL;lv_obj_t *ui_Version = NULL;
 // event funtions
 
 // build funtions
@@ -374,10 +374,10 @@ lv_obj_set_align( ui_ChargingTime, LV_ALIGN_CENTER );
 ui_TextKlaussometer = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_TextKlaussometer, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_TextKlaussometer, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_TextKlaussometer, -350 );
+lv_obj_set_x( ui_TextKlaussometer, 10 );
 lv_obj_set_y( ui_TextKlaussometer, -270 );
-lv_obj_set_align( ui_TextKlaussometer, LV_ALIGN_CENTER );
-lv_label_set_text(ui_TextKlaussometer,"Klaussometer V4.1");
+lv_obj_set_align( ui_TextKlaussometer, LV_ALIGN_LEFT_MID );
+lv_label_set_text(ui_TextKlaussometer,"Klaussometer");
 lv_obj_set_style_text_font(ui_TextKlaussometer, &ui_font_Monserrat_bold_32, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_shadow_color(ui_TextKlaussometer, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
 lv_obj_set_style_shadow_opa(ui_TextKlaussometer, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
@@ -625,6 +625,16 @@ lv_obj_set_style_text_color(ui_BatteryLabel3, lv_color_hex(0x0000FF), LV_PART_MA
 lv_obj_set_style_text_opa(ui_BatteryLabel3, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_font(ui_BatteryLabel3, &ui_font_Battery2, LV_PART_MAIN| LV_STATE_DEFAULT);
 
+ui_Version = lv_label_create(ui_Screen1);
+lv_obj_set_width( ui_Version, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_Version, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_x( ui_Version, -44 );
+lv_obj_set_y( ui_Version, 278 );
+lv_obj_set_align( ui_Version, LV_ALIGN_RIGHT_MID );
+lv_label_set_text(ui_Version,"V1.1.1");
+lv_obj_set_style_shadow_color(ui_Version, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
+lv_obj_set_style_shadow_opa(ui_Version, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
+
 }
 
 void ui_Screen1_screen_destroy(void)
@@ -699,5 +709,6 @@ ui_BatteryLabel1= NULL;
 ui_BatteryLabel2= NULL;
 ui_BatteryLabel4= NULL;
 ui_BatteryLabel3= NULL;
+ui_Version= NULL;
 
 }
