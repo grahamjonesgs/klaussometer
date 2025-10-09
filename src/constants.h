@@ -2,22 +2,23 @@
 #define CONSTANTS_H
 
 #define STORED_READING 6
-#define READINGS_ARRAY                                                                                                             \
-    {"Cave", "cave/tempset-ambient/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0},                  \
-        {"Living room", "livingroom/tempset-ambient/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0}, \
-        {"Playroom", "guest/tempset-ambient/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0},         \
-        {"Bedroom", "bedroom/tempset-ambient/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0},        \
-        {"Outside", "outside/tempset-ambient/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0},        \
-        {"Cave", "cave/tempset-humidity/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY, 0, 0},                \
-        {"Living room", "livingroom/tempset-humidity/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY, 0, 0},   \
-        {"Playroom", "guest/tempset-humidity/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY, 0, 0},           \
-        {"Bedroom", "bedroom/tempset-humidity/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY, 0, 0},          \
-        {"Living room", "outside/tempset-humidity/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY, 0, 0},      \
-        {"Cave", "cave/battery/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY, 0, 0},                          \
-        {"Living room", "livingroom/battery/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY, 0, 0},             \
-        {"Playroom", "guest/battery/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY, 0, 0},                     \
-        {"Bedroom", "bedroom/battery/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY, 0, 0},                    \
-        {"Outside", "outside/battery/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY, 0, 0}
+#define READINGS_ARRAY                                                                                                              \
+        {"Cave",        "cave/tempset-ambient/set",        NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0}, \
+        {"Living room", "livingroom/tempset-ambient/set",  NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0}, \
+        {"Playroom",    "guest/tempset-ambient/set",       NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0}, \
+        {"Bedroom",     "bedroom/tempset-ambient/set",     NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0}, \
+        {"Outside",     "outside/tempset-ambient/set",     NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0}, \
+        {"Cave",        "cave/tempset-humidity/set",       NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY,    0, 0}, \
+        {"Living room", "livingroom/tempset-humidity/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY,    0, 0}, \
+        {"Playroom",    "guest/tempset-humidity/set",      NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY,    0, 0}, \
+        {"Bedroom",     "bedroom/tempset-humidity/set",    NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY,    0, 0}, \
+        {"Outside",     "outside/tempset-humidity/set",    NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY,    0, 0}, \
+        {"Cave",        "cave/battery/set",                NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY,     0, 0}, \
+        {"Living room", "livingroom/battery/set",          NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY,     0, 0}, \
+        {"Playroom",    "guest/battery/set",               NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY,     0, 0}, \
+        {"Bedroom",     "bedroom/battery/set",             NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY,     0, 0}, \
+        {"Outside",     "outside/battery/set",             NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY,     0, 0}
+       
 
 #define ROOM_NAME_LABELS {&ui_RoomName1, &ui_RoomName2, &ui_RoomName3, &ui_RoomName4, &ui_RoomName5}
 #define TEMP_ARC_LABELS {&ui_TempArc1, &ui_TempArc2, &ui_TempArc3, &ui_TempArc4, &ui_TempArc5}
@@ -66,7 +67,7 @@ static const int SOLAR_TOKEN_WAIT_SEC = 10;            // Time to wait for solar
 static const int API_SEMAPHORE_WAIT_SEC = 10;                 // Time to wait for http semaphore
 static const int API_FAIL_DELAY_SEC = 30;             // Delay is API call fails
 static const int API_LOOP_DELAY_SEC = 10;                      // Time delay at end of API loops
-static const int STATUS_MESSAGE_TIME = 3;             // Seconds an status message can be displayed
+static const int STATUS_MESSAGE_TIME = 1;             // Seconds an status message can be displayed
 static const int MAX_SOLAR_TIME_STATUS_HOURS = 24;          // Max time in hours for charge / discharge that a message will be displayed for
 static const int CHECK_UPDATE_INTERVAL_SEC = 300;         // Interval between checking for OTA updates
 

@@ -112,10 +112,10 @@ void setup() {
         }
         if (loadDataBlock(READINGS_DATA_FILENAME, &readings, sizeof(readings))) {
             logAndPublish("Readings state restored OK");
-            invalidateOldReadings();
+            invalidateOldReadings(); 
         } else {
             logAndPublish("Readings state restore failed");
-        }
+        } 
     }
 
     pin_init();

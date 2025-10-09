@@ -21,6 +21,12 @@ bool saveDataBlock(const char* filename, const void* data_ptr, size_t size) {
     char log_message[CHAR_LEN];
     snprintf(log_message, sizeof(log_message), "Error opening file %s for writing", filename);
     logAndPublish(log_message);
+    SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0);
+    if (!SD_MMC.begin("/sdcard", true, true)) {
+        logAndPublish("SD Card initialization failed!");
+    } else {
+        logAndPublish("SD Card initialized");
+    }
     return false;
   }
 
