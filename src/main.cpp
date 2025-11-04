@@ -112,10 +112,10 @@ void setup() {
         }
         if (loadDataBlock(READINGS_DATA_FILENAME, &readings, sizeof(readings))) {
             logAndPublish("Readings state restored OK");
-            invalidateOldReadings(); 
+            invalidateOldReadings();
         } else {
             logAndPublish("Readings state restore failed");
-        } 
+        }
     }
 
     pin_init();
@@ -273,7 +273,11 @@ void loop() {
     // Update UV
     if (uv.updateTime > 0) {
         lv_obj_clear_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
-        snprintf(tempString, CHAR_LEN, "Updated %s", uv.time_string);
+        if (weather.isDay) {
+            snprintf(tempString, CHAR_LEN, "Updated %s", uv.time_string);
+        } else {
+            snprintf(tempString, CHAR_LEN, "");
+        }
         lv_label_set_text(ui_UVUpdateTime, tempString);
         snprintf(tempString, CHAR_LEN, "%i", uv.index);
         lv_label_set_text(ui_UVLabel, tempString);
@@ -379,7 +383,7 @@ void invalidateOldReadings() {
             readings[i].currentValue = 0.0;
         }
     }
-}   
+}
 
 // Flush function for LVGL
 void my_disp_flush(lv_disp_drv_t* disp, const lv_area_t* area, lv_color_t* color_p) {
