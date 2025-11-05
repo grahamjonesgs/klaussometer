@@ -4,7 +4,7 @@
  * Opts: --bpp 1 --size 40 --font /Users/gjonesblackcyton/Documents/PlatformIO/Projects/klaussometerV4.1/SL/assets/icon-works-webfont.ttf -o /Users/gjonesblackcyton/Documents/PlatformIO/Projects/klaussometerV4.1/SL/assets/ui_font_Battery2.c --format lvgl -r 0x20-0x7f --no-compress --no-prefilter
  ******************************************************************************/
 
-#include "../ui.h"
+#include "ui.h"
 
 #ifndef UI_FONT_BATTERY2
 #define UI_FONT_BATTERY2 1

@@ -1,10 +1,10 @@
 /*******************************************************************************
  * Size: 32 px
  * Bpp: 1
- * Opts: --bpp 1 --size 32 --font /Users/gjonesblackcyton/Documents/src/matouch/klaussometer/SL/assets/Montserrat-Bold.ttf -o /Users/gjonesblackcyton/Documents/src/matouch/klaussometer/SL/assets/ui_font_Monserrat_bold_32.c --format lvgl -r 0x20-0x7f --no-compress --no-prefilter
+ * Opts: --bpp 1 --size 32 --font /Users/gjonesblackcyton/Documents/PlatformIO/Projects/klaussometer_test/SL/assets/Montserrat-Bold.ttf -o /Users/gjonesblackcyton/Documents/PlatformIO/Projects/klaussometer_test/SL/assets/ui_font_Monserrat_bold_32.c --format lvgl -r 0x20-0x7f --no-compress --no-prefilter
  ******************************************************************************/
 
-#include "../ui.h"
+#include "ui.h"
 
 #ifndef UI_FONT_MONSERRAT_BOLD_32
 #define UI_FONT_MONSERRAT_BOLD_32 1
@@ -922,9 +922,12 @@ static const lv_font_fmt_txt_cmap_t cmaps[] =
  *  ALL CUSTOM DATA
  *--------------------*/
 
-#if LV_VERSION_CHECK(8, 0, 0)
+#if LVGL_VERSION_MAJOR == 8
 /*Store all the custom data of the font*/
 static  lv_font_fmt_txt_glyph_cache_t cache;
+#endif
+
+#if LVGL_VERSION_MAJOR >= 8
 static const lv_font_fmt_txt_dsc_t font_dsc = {
 #else
 static lv_font_fmt_txt_dsc_t font_dsc = {
@@ -938,10 +941,11 @@ static lv_font_fmt_txt_dsc_t font_dsc = {
     .bpp = 1,
     .kern_classes = 0,
     .bitmap_format = 0,
-#if LV_VERSION_CHECK(8, 0, 0)
+#if LVGL_VERSION_MAJOR == 8
     .cache = &cache
 #endif
 };
+
 
 
 /*-----------------
@@ -949,7 +953,7 @@ static lv_font_fmt_txt_dsc_t font_dsc = {
  *----------------*/
 
 /*Initialize a public general font descriptor*/
-#if LV_VERSION_CHECK(8, 0, 0)
+#if LVGL_VERSION_MAJOR >= 8
 const lv_font_t ui_font_Monserrat_bold_32 = {
 #else
 lv_font_t ui_font_Monserrat_bold_32 = {
@@ -965,7 +969,11 @@ lv_font_t ui_font_Monserrat_bold_32 = {
     .underline_position = -3,
     .underline_thickness = 2,
 #endif
-    .dsc = &font_dsc           /*The custom font data. Will be accessed by `get_glyph_bitmap/dsc` */
+    .dsc = &font_dsc,          /*The custom font data. Will be accessed by `get_glyph_bitmap/dsc` */
+#if LV_VERSION_CHECK(8, 2, 0) || LVGL_VERSION_MAJOR >= 9
+    .fallback = NULL,
+#endif
+    .user_data = NULL,
 };
 
 

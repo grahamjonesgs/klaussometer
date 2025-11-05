@@ -4,7 +4,7 @@
  * Opts: --bpp 1 --size 40 --font /Users/gjonesblackcyton/Documents/src/matouch/klaussometerV4/SL/assets/Battery Icons.otf -o /Users/gjonesblackcyton/Documents/src/matouch/klaussometerV4/SL/assets/ui_font_Battery.c --format lvgl -r 0x20-0x7f --no-compress --no-prefilter
  ******************************************************************************/
 
-#include "../ui.h"
+#include "ui.h"
 
 #ifndef UI_FONT_BATTERY
 #define UI_FONT_BATTERY 1

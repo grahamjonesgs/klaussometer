@@ -24,7 +24,7 @@ SemaphoreHandle_t httpMutex;
 
 // Global variables
 struct tm timeinfo;
-void touch_read(lv_indev_drv_t* indev_driver, lv_indev_data_t* data);
+// void touch_read(lv_indev_drv_t* indev_driver, lv_indev_data_t* data);
 Weather weather = {0.0, 0.0, 0.0, 0.0, false, 0, "", "", "--:--:--"};
 UV uv = {0, 0, "--:--:--"};
 Solar solar = {0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, "--:--:--", 100, 0, false, 0.0, 0.0};
@@ -60,9 +60,8 @@ int touch_last_y = 0;
 // Screen setting
 static uint32_t screenWidth = LCD_WIDTH;
 static uint32_t screenHeight = LCD_HEIGHT;
-static lv_disp_draw_buf_t draw_buf;
+static lv_display_t* disp = NULL;
 static lv_color_t* disp_draw_buf;
-static lv_disp_drv_t disp_drv;
 
 // Arrays of UI objects
 #define ROOM_COUNT 5
@@ -127,116 +126,120 @@ void setup() {
     snprintf(error_topic, CHAR_LEN, "klaussometer/%s/error", chip_id);
 
     // Init Display
+    pin_init();
+
+    // Init Display Hardware
     gfx->begin();
     gfx->fillScreen(BLACK);
     lv_init();
     screenWidth = gfx->width();
     screenHeight = gfx->height();
-    disp_draw_buf = (lv_color_t*)heap_caps_malloc(sizeof(lv_color_t) * screenWidth * 10, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 
-    // Create display buffer
+    // Allocate display buffer
+    size_t bufferSize = sizeof(lv_color_t) * screenWidth * 10;
+
+    disp_draw_buf = (lv_color_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!disp_draw_buf) {
-        logAndPublish("LVGL disp_draw_buf allocate failed!");
-    } else {
-        lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, screenWidth * 10);
-
-        /* Initialize the display */
-        lv_disp_drv_init(&disp_drv);
-        disp_drv.hor_res = screenWidth;
-        disp_drv.ver_res = screenHeight;
-        disp_drv.flush_cb = my_disp_flush;
-        disp_drv.draw_buf = &draw_buf;
-        lv_disp_drv_register(&disp_drv);
-
-        /* Initialize the input device driver */
-        /*static lv_indev_drv_t indev_drv;
-        lv_indev_drv_init(&indev_drv);
-        indev_drv.type = LV_INDEV_TYPE_POINTER;
-        indev_drv.read_cb = touch_read;
-        lv_indev_drv_register(&indev_drv);*/
-
-        ui_init();
-
-        // Set the initial values
-        String versionText = "V " + String(FIRMWARE_VERSION);
-        lv_label_set_text(ui_Version, versionText.c_str());
-
-        for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
-            lv_label_set_text(*roomNames[i], readings[i].description);
-            lv_arc_set_value(*tempArcs[i], readings[i].currentValue);
-            lv_obj_add_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(*tempLabels[i], readings[i].output);
-            lv_label_set_text(*directionLabels[i], "");
-            lv_label_set_text(*humidityLabels[i], readings[i + ROOM_COUNT].output);
-            lv_label_set_text(*batteryLabels[i], "");
-        }
-
-        lv_label_set_text(ui_FCConditions, "");
-        lv_label_set_text(ui_FCWindSpeed, "");
-        lv_label_set_text(ui_FCUpdateTime, "");
-        lv_label_set_text(ui_FCMin, "");
-        lv_label_set_text(ui_FCMax, "");
-        lv_label_set_text(ui_UVUpdateTime, "");
-        lv_label_set_text(ui_TempLabelFC, "--");
-        lv_label_set_text(ui_UVLabel, "--");
-
-        lv_obj_add_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(ui_BatteryArc, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(ui_SolarArc, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(ui_UsingArc, LV_OBJ_FLAG_HIDDEN);
-
-        lv_arc_set_value(ui_BatteryArc, 0);
-        lv_label_set_text(ui_BatteryLabel, "--");
-        lv_arc_set_value(ui_SolarArc, 0);
-        lv_label_set_text(ui_SolarLabel, "--");
-        lv_arc_set_value(ui_UsingArc, 0);
-        lv_label_set_text(ui_UsingLabel, "--");
-        lv_label_set_text(ui_ChargingLabel, "");
-        lv_label_set_text(ui_AsofTimeLabel, "");
-        lv_label_set_text(ui_ChargingTime, "");
-        lv_label_set_text(ui_SolarMinMax, "");
-
-        lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-        lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-        lv_obj_set_style_text_color(ui_WeatherStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-        lv_obj_set_style_text_color(ui_SolarStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-
-        // Set to night settings at first
-        lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
-        lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-        lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-
-        lv_label_set_text(ui_GridBought, "Bought\nToday - Pending\nThis Month - Pending");
-
-        lv_timer_handler();
-
-        // Get old battery min and max
-        storage.begin("KO");
-        solar.today_battery_min = storage.getFloat("solarmin");
-        if (isnan(solar.today_battery_min)) {
-            solar.today_battery_min = 100;
-        }
-        solar.today_battery_max = storage.getFloat("solarmax");
-        if (isnan(solar.today_battery_max)) {
-            solar.today_battery_max = 0;
-        }
-        storage.end();
-
-        configTime(TIME_OFFSET, 0, NTP_SERVER); // Setup as used to display time from stored values
-
-        // Start tasks
-        xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", 8192, NULL, 4, NULL, 0);
-        xTaskCreatePinnedToCore(get_weather_t, "Weather", 8192, NULL, 3, NULL, 0);
-        xTaskCreatePinnedToCore(get_uv_t, "Get UV", 8192, NULL, 3, NULL, 0);
-        xTaskCreatePinnedToCore(get_daily_solar_t, "Daily Solar", 8192, NULL, 3, NULL, 0);
-        xTaskCreatePinnedToCore(get_monthly_solar_t, "Monthly Solar", 8192, NULL, 3, NULL, 0);
-        xTaskCreatePinnedToCore(get_current_solar_t, "Current Solar", 8192, NULL, 3, NULL, 0);
-        xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", 8192, NULL, 0, NULL, 0);
-        xTaskCreatePinnedToCore(checkForUpdates_t, "Updates", 8192, NULL, 0, NULL, 0);
-        xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", 8192, NULL, 0, NULL, 0);
-        xTaskCreatePinnedToCore(get_solar_token_t, "Solar Token", 8192, NULL, 5, NULL, 1);
+        disp_draw_buf = (lv_color_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
+
+    if (!disp_draw_buf) {
+        Serial.println("ERROR: Display buffer allocation FAILED!");
+        while (1) {
+            delay(1000);
+        }
+    }
+
+    // Create LVGL display
+    disp = lv_display_create(screenWidth, screenHeight);
+    if (!disp) {
+        while (1) {
+            delay(1000);
+        }
+    }
+    lv_display_set_flush_cb(disp, my_disp_flush);
+    lv_display_set_buffers(disp, disp_draw_buf, NULL, bufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    ui_init();
+
+    // Set initial UI values
+    String versionText = "V " + String(FIRMWARE_VERSION);
+    lv_label_set_text(ui_Version, versionText.c_str());
+
+    for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
+        lv_label_set_text(*roomNames[i], readings[i].description);
+        lv_arc_set_value(*tempArcs[i], readings[i].currentValue);
+        lv_obj_add_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(*tempLabels[i], readings[i].output);
+        lv_label_set_text(*directionLabels[i], "");
+        lv_label_set_text(*humidityLabels[i], readings[i + ROOM_COUNT].output);
+        lv_label_set_text(*batteryLabels[i], "");
+    }
+
+    lv_label_set_text(ui_FCConditions, "");
+    lv_label_set_text(ui_FCWindSpeed, "");
+    lv_label_set_text(ui_FCUpdateTime, "");
+    lv_label_set_text(ui_FCMin, "");
+    lv_label_set_text(ui_FCMax, "");
+    lv_label_set_text(ui_UVUpdateTime, "");
+    lv_label_set_text(ui_TempLabelFC, "--");
+    lv_label_set_text(ui_UVLabel, "--");
+
+    lv_obj_add_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ui_BatteryArc, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ui_SolarArc, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ui_UsingArc, LV_OBJ_FLAG_HIDDEN);
+
+    lv_arc_set_value(ui_BatteryArc, 0);
+    lv_label_set_text(ui_BatteryLabel, "--");
+    lv_arc_set_value(ui_SolarArc, 0);
+    lv_label_set_text(ui_SolarLabel, "--");
+    lv_arc_set_value(ui_UsingArc, 0);
+    lv_label_set_text(ui_UsingLabel, "--");
+    lv_label_set_text(ui_ChargingLabel, "");
+    lv_label_set_text(ui_AsofTimeLabel, "");
+    lv_label_set_text(ui_ChargingTime, "");
+    lv_label_set_text(ui_SolarMinMax, "");
+
+    lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_WeatherStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_SolarStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
+
+    // Set to night settings at first
+    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
+
+    lv_label_set_text(ui_GridBought, "Bought\nToday - Pending\nThis Month - Pending");
+
+    lv_timer_handler();
+
+    // Get old battery min and max
+    storage.begin("KO");
+    solar.today_battery_min = storage.getFloat("solarmin");
+    if (isnan(solar.today_battery_min)) {
+        solar.today_battery_min = 100;
+    }
+    solar.today_battery_max = storage.getFloat("solarmax");
+    if (isnan(solar.today_battery_max)) {
+        solar.today_battery_max = 0;
+    }
+    storage.end();
+
+    configTime(TIME_OFFSET, 0, NTP_SERVER); // Setup as used to display time from stored values
+
+    // Start tasks
+    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", 8192, NULL, 4, NULL, 0);
+    xTaskCreatePinnedToCore(get_weather_t, "Weather", 8192, NULL, 3, NULL, 0);
+    xTaskCreatePinnedToCore(get_uv_t, "Get UV", 8192, NULL, 3, NULL, 0);
+    xTaskCreatePinnedToCore(get_daily_solar_t, "Daily Solar", 8192, NULL, 3, NULL, 0);
+    xTaskCreatePinnedToCore(get_monthly_solar_t, "Monthly Solar", 8192, NULL, 3, NULL, 0);
+    xTaskCreatePinnedToCore(get_current_solar_t, "Current Solar", 8192, NULL, 3, NULL, 0);
+    xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", 8192, NULL, 0, NULL, 0);
+    xTaskCreatePinnedToCore(checkForUpdates_t, "Updates", 8192, NULL, 0, NULL, 0);
+    xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", 8192, NULL, 0, NULL, 0);
+    xTaskCreatePinnedToCore(get_solar_token_t, "Solar Token", 8192, NULL, 5, NULL, 1);
 }
 
 void loop() {
@@ -244,9 +247,24 @@ void loop() {
     char icon;
     lv_color_t colour;
 
+    static unsigned long lastTick = 0;
+    unsigned long currentMillis = millis();
+    unsigned long elapsed = currentMillis - lastTick;
+    
+    if (elapsed > 0) {
+        lv_tick_inc(elapsed);  // Tell LVGL how much time passed
+        lastTick = currentMillis;
+    }
+
     vTaskDelay(pdMS_TO_TICKS(50));
     lv_timer_handler(); // Run GUI
     webServer.handleClient();
+
+    static unsigned long lastRefresh = 0;
+    if (millis() - lastRefresh > 100) {  // Every 100ms
+        lv_obj_invalidate(lv_screen_active());  // Mark screen as needing redraw
+        lastRefresh = millis();
+    }
 
     // Update values
     for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
@@ -386,17 +404,19 @@ void invalidateOldReadings() {
 }
 
 // Flush function for LVGL
-void my_disp_flush(lv_disp_drv_t* disp, const lv_area_t* area, lv_color_t* color_p) {
+void my_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
+    lv_color_t* color_p = (lv_color_t*)px_map;
+
 #if (LV_COLOR_16_SWAP != 0)
-    gfx_new->draw16bitBeRGBBitmap(area->x1, area->y1, (uint16_t*)&color_p->full, w, h);
+    gfx->draw16bitBeRGBBitmap(area->x1, area->y1, (uint16_t*)color_p, w, h);
 #else
-    gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t*)&color_p->full, w, h);
+    gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t*)color_p, w, h);
 #endif
 
-    lv_disp_flush_ready(disp);
+    lv_display_flush_ready(disp);
 }
 
 // Initialise pins for touch and backlight
@@ -430,19 +450,19 @@ void touch_init(void) {
     ts.setRotation(ROTATION_INVERTED);
 }
 
-void touch_read(lv_indev_drv_t* indev_driver, lv_indev_data_t* data) {
+void touch_read(lv_indev_t* indev, lv_indev_data_t* data) {
     ts.read();
     if (ts.isTouched) {
         touch_last_x = map(ts.points[0].x, 0, 1024, 0, LCD_WIDTH);
         touch_last_y = map(ts.points[0].y, 0, 750, 0, LCD_HEIGHT);
         data->point.x = touch_last_x;
         data->point.y = touch_last_y;
-        data->state = LV_INDEV_STATE_PR;
+        data->state = LV_INDEV_STATE_PRESSED; // Note: renamed constant
 
         ts.isTouched = false;
     } else {
         data->point.x = touch_last_x;
-        data->state = LV_INDEV_STATE_REL;
+        data->state = LV_INDEV_STATE_RELEASED; // Note: renamed constant
     }
 }
 
