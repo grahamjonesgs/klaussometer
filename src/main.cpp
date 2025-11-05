@@ -1,8 +1,8 @@
 /* Set ESP32 type to ESP-S3 Dev Module
- lvgl 8.3.6, GFX Lib Arduino 1.50, TAMC GT911 1.0.2, Squareline 1.4.0 and
+ lvgl 9.4.0, GFX Lib Arduino 1.5.0, TAMC GT911 1.0.2, Squareline 1.54.0 and
 esp32 3.3.
 
-n Arduino IDE Tools menu:
+Arduino IDE Tools menu:
 Board: ESP32 Dev Module
 Flash Size: 16M Flash
 Flash Mode QIO 80Mhz
@@ -256,7 +256,7 @@ void loop() {
         lastTick = currentMillis;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(200));
     lv_timer_handler(); // Run GUI
     webServer.handleClient();
 
@@ -514,7 +514,7 @@ void logAndPublish(const char* messageBuffer) {
 
     // Check if the MQTT client is connected and publish the message
     if (mqttClient.connected()) {
-        if (xSemaphoreTake(mqttMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (xSemaphoreTake(mqttMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
             // We have successfully acquired the lock
             esp_task_wdt_reset();
             if (mqttClient.connected()) {

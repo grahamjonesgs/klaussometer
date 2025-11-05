@@ -9,7 +9,7 @@ extern struct tm timeinfo;
 
 extern HTTPClient http;
 #define SOLAR_TOKEN_LENGTH 2048
-char token[SOLAR_TOKEN_LENGTH] = {0};
+char solar_token[SOLAR_TOKEN_LENGTH] = {0};
 
 // The semaphore to protect the HTTPClient object
 extern SemaphoreHandle_t httpMutex;
@@ -17,9 +17,9 @@ extern SemaphoreHandle_t httpMutex;
 const size_t JSON_PAYLOAD_SIZE = 4096;
 char payload_buffer[JSON_PAYLOAD_SIZE] = {0};
 const size_t URL_BUFFER_SIZE = 512;
-char url_buffer[URL_BUFFER_SIZE];
+char url_buffer[URL_BUFFER_SIZE]  = {0};
 const size_t POST_BUFFER_SIZE = 512;
-char post_buffer[POST_BUFFER_SIZE];
+char post_buffer[POST_BUFFER_SIZE] = {0};
 
 // Get UV from weatherbit.io
 void get_uv_t(void* pvParameters) {
@@ -240,7 +240,7 @@ const char* wmoToText(int code, bool isDay) {
 void get_solar_token_t(void* pvParameters) {
     while (true) {
         // Check if the token is valid (not empty) or if it has expired
-        if (strlen(token) == 0) {
+        if (strlen(solar_token) == 0) {
             if (WiFi.status() == WL_CONNECTED) {
                 if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(API_SEMAPHORE_WAIT_SEC * 1000)) == pdTRUE) {
                     snprintf(url_buffer, sizeof(url_buffer), "https://%s/account/v1.0/token?appId=%s", SOLAR_URL, SOLAR_APPID);
@@ -257,7 +257,7 @@ void get_solar_token_t(void* pvParameters) {
                             deserializeJson(root, payload_buffer);
                             if (root["access_token"].is<const char*>()) {
                                 const char* rec_token = root["access_token"];
-                                snprintf(token, SOLAR_TOKEN_LENGTH, "bearer %s", rec_token);
+                                snprintf(solar_token, SOLAR_TOKEN_LENGTH, "bearer %s", rec_token);
                                 logAndPublish("Solar token obtained");
                             } else {
                                 char log_message[CHAR_LEN];
@@ -287,7 +287,7 @@ void get_current_solar_t(void* pvParameters) {
     while (true) {
         if (time(NULL) - solar.currentUpdateTime > SOLAR_CURRENT_UPDATE_INTERVAL_SEC) {
             // First, check if the token is available
-            if (strlen(token) == 0) {
+            if (strlen(solar_token) == 0) {
                 vTaskDelay(pdMS_TO_TICKS(SOLAR_TOKEN_WAIT_SEC * 1000));
                 continue; // Skip this loop iteration and try again after a short delay
             }
@@ -297,7 +297,7 @@ void get_current_solar_t(void* pvParameters) {
                     snprintf(url_buffer, URL_BUFFER_SIZE, "https://%s/station/v1.0/realTime?language=en", SOLAR_URL);
                     http.begin(url_buffer);
                     http.addHeader("Content-Type", "application/json");
-                    http.addHeader("Authorization", token);
+                    http.addHeader("Authorization", solar_token);
                     snprintf(post_buffer, POST_BUFFER_SIZE, "{\n\"stationId\" : \"%s\"\n}", SOLAR_STATIONID);
                     int httpCode = http.POST(post_buffer);
 
@@ -368,7 +368,7 @@ void get_current_solar_t(void* pvParameters) {
                                 const char* msg = root["msg"];
                                 if (msg && strcmp(msg, "auth invalid token") == 0) {
                                     logAndPublish("Solar token expired, clearing for refresh");
-                                    strcpy(token, ""); // Clear the token to trigger a refresh in the other task
+                                    strcpy(solar_token, ""); // Clear the token to trigger a refresh in the other task
                                 } else {
                                     char log_message[CHAR_LEN];
                                     snprintf(log_message, CHAR_LEN, "Solar status failed: %s", msg);
@@ -403,7 +403,7 @@ void get_daily_solar_t(void* pvParameters) {
     while (true) {
         if ((time(NULL) - solar.dailyUpdateTime > SOLAR_DAILY_UPDATE_INTERVAL_SEC)) {
             // First, check if the token is available
-            if (strlen(token) == 0) {
+            if (strlen(solar_token) == 0) {
                 vTaskDelay(pdMS_TO_TICKS(SOLAR_TOKEN_WAIT_SEC * 1000));
                 continue; // Skip this loop iteration and try again after a short delay
             }
@@ -434,7 +434,7 @@ void get_daily_solar_t(void* pvParameters) {
                     snprintf(url_buffer, URL_BUFFER_SIZE, "https://%s/station/v1.0/history?language=en", SOLAR_URL);
                     http.begin(url_buffer);
                     http.addHeader("Content-Type", "application/json");
-                    http.addHeader("Authorization", token);
+                    http.addHeader("Authorization", solar_token);
 
                     snprintf(post_buffer, POST_BUFFER_SIZE, "{\n\"stationId\" : \"%s\",\n\"timeType\" : 2,\n\"startTime\" : \"%s\",\n\"endTime\" : \"%s\"\n}", SOLAR_STATIONID,
                              currentDate, currentDate);
@@ -485,7 +485,7 @@ void get_monthly_solar_t(void* pvParameters) {
     // Get station status
     while (true) {
         if ((time(NULL) - solar.monthlyUpdateTime > SOLAR_MONTHLY_UPDATE_INTERVAL_SEC)) {
-            if (strlen(token) == 0) {
+            if (strlen(solar_token) == 0) {
                 vTaskDelay(pdMS_TO_TICKS(SOLAR_TOKEN_WAIT_SEC * 1000));
                 continue; // Skip this loop iteration and try again after a short delay
             }
@@ -515,7 +515,7 @@ void get_monthly_solar_t(void* pvParameters) {
                     snprintf(url_buffer, URL_BUFFER_SIZE, "https://%s/station/v1.0/history?language=en", SOLAR_URL);
                     http.begin(url_buffer);
                     http.addHeader("Content-Type", "application/json");
-                    http.addHeader("Authorization", token);
+                    http.addHeader("Authorization", solar_token);
 
                     snprintf(post_buffer, POST_BUFFER_SIZE, "{\n\"stationId\" : \"%s\",\n\"timeType\" : 3,\n\"startTime\" : \"%s\",\n\"endTime\" : \"%s\"\n}", SOLAR_STATIONID,
                              currentYearMonth, currentYearMonth);

@@ -50,7 +50,7 @@ void checkForUpdates_t(void* pvParameters) {
 void updateFirmware() {
     char binUrl[CHAR_LEN];
     snprintf(binUrl, CHAR_LEN, "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_BIN_PATH);
-    if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(10000)) == pdTRUE) { // Long wait as we need this to happen
+    if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(10000)) == pdTRUE) {
         http.begin(binUrl);
         int httpCode = http.GET();
         if (httpCode == HTTP_CODE_OK) {
@@ -58,13 +58,44 @@ void updateFirmware() {
             bool canBegin = Update.begin(contentLength);
             if (canBegin) {
                 logAndPublish("Beginning OTA update. This may take a few moments");
+                
                 WiFiClient& client = http.getStream();
-                size_t written = Update.writeStream(client);
+                
+                // Manual chunked download with watchdog resets
+                uint8_t buff[128];
+                size_t written = 0;
+                int lastProgress = -1;
+                
+                while (client.connected() && written < contentLength) {
+                    size_t available = client.available();
+                    if (available) {
+                        int c = client.readBytes(buff, std::min(available, sizeof(buff)));
+                        if (c > 0) {
+                            Update.write(buff, c);
+                            written += c;
+                            
+                            esp_task_wdt_reset();
+                            
+                            int progress = (written * 100) / contentLength;
+                            if (progress != lastProgress && progress % 10 == 0) {
+                                char log_message[CHAR_LEN];
+                                snprintf(log_message, CHAR_LEN, "Download Progress: %d%%", progress);
+                                logAndPublish(log_message);
+                                lastProgress = progress;
+                            }
+                        }
+                    }
+                    vTaskDelay(pdMS_TO_TICKS(1));  // Allow other tasks to run
+                }
+                
                 if (written == contentLength) {
                     logAndPublish("OTA update written successfully");
                 } else {
-                    logAndPublish("OTA update failed to write completely");
+                    char log_message[CHAR_LEN];
+                    snprintf(log_message, CHAR_LEN, "OTA incomplete: %d/%d bytes", written, contentLength);
+                    logAndPublish(log_message);
                 }
+                
                 if (Update.end()) {
                     logAndPublish("Update finished successfully. Restarting");
                     ESP.restart();

@@ -9,7 +9,7 @@ extern int numberOfReadings;
 void receive_mqtt_messages_t(void* pvParams) {
     int messageSize = 0;
     char topicBuffer[CHAR_LEN];
-    char recMessage[CHAR_LEN];  // Remove = {0} here
+    char recMessage[CHAR_LEN]; // Remove = {0} here
     int index;
 
     while (true) {
@@ -25,23 +25,28 @@ void receive_mqtt_messages_t(void* pvParams) {
                 // Clear buffers at the start of each message processing
                 memset(topicBuffer, 0, sizeof(topicBuffer));
                 memset(recMessage, 0, sizeof(recMessage));
-                
+
                 int topicLength = mqttClient.messageTopic().length();
                 mqttClient.messageTopic().toCharArray(topicBuffer, topicLength + 1);
-                
+
                 // Read exactly messageSize bytes
                 int bytesRead = mqttClient.read((unsigned char*)recMessage, messageSize);
                 xSemaphoreGive(mqttMutex);
-                
+
                 if (bytesRead != messageSize) {
                     char log_msg[CHAR_LEN];
                     snprintf(log_msg, CHAR_LEN, "MQTT read mismatch: expected %d, got %d", messageSize, bytesRead);
                     logAndPublish(log_msg);
                     continue;
                 }
-                
-                recMessage[messageSize] = '\0';
-                
+
+                if (messageSize >= CHAR_LEN) {
+                    logAndPublish("MQTT message exceeds buffer size");
+                    xSemaphoreGive(mqttMutex);
+                    continue;
+                }
+
+
                 // Additional validation - check if message is empty or just whitespace
                 if (messageSize == 0 || recMessage[0] == '\0') {
                     char log_msg[CHAR_LEN];
@@ -49,27 +54,25 @@ void receive_mqtt_messages_t(void* pvParams) {
                     logAndPublish(log_msg);
                     continue;
                 }
-                
+
                 bool messageProcessed = false;
                 for (int i = 0; i < numberOfReadings; i++) {
                     if (strcmp(topicBuffer, readings[i].topic) == 0) {
                         index = i;
-                        if (readings[i].dataType == DATA_TEMPERATURE || 
-                            readings[i].dataType == DATA_HUMIDITY || 
-                            readings[i].dataType == DATA_BATTERY) {
+                        if (readings[i].dataType == DATA_TEMPERATURE || readings[i].dataType == DATA_HUMIDITY || readings[i].dataType == DATA_BATTERY) {
                             update_readings(recMessage, index, readings[i].dataType);
                             messageProcessed = true;
                         }
-                        break;  // Found matching topic, no need to continue loop
+                        break; // Found matching topic, no need to continue loop
                     }
                 }
-                
+
                 if (!messageProcessed) {
                     char log_msg[CHAR_LEN];
                     snprintf(log_msg, CHAR_LEN, "Unhandled MQTT topic: %s, message: %s", topicBuffer, recMessage);
                     logAndPublish(log_msg);
                 }
-                
+
                 saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings);
             } else {
                 // No message
