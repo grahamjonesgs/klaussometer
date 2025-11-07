@@ -621,7 +621,7 @@ void addToLogBuffer(const char* message, LogEntry* logBuffer, volatile int& logB
     if (xSemaphoreTake(logMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         int idx = logBufferIndex;
         memset(&logBuffer[idx], 0, sizeof(LogEntry));
-        logBuffer[idx].timestamp = millis();
+        logBuffer[idx].timestamp = time(NULL);
         strncpy(logBuffer[idx].message, message, sizeof(logBuffer[idx].message) - 1);
         logBuffer[idx].message[sizeof(logBuffer[idx].message) - 1] = '\0';
         logBufferIndex = (logBufferIndex + 1) % log_size;

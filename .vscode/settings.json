@@ -24,5 +24,11 @@
         "ukmo",
         "UNSCII"
     ],
-    "cmake.sourceDirectory": "/Users/gjonesblackcyton/Documents/PlatformIO/Projects/klaussometerV4.1/src/UI"
+    "cmake.sourceDirectory": "/Users/gjonesblackcyton/Documents/PlatformIO/Projects/klaussometerV4.1/src/UI",
+    "files.associations": {
+        "*.embeddedhtml": "html",
+        "*.hs": "haskell",
+        "*.html": "html",
+        "chrono": "cpp"
+    }
 }

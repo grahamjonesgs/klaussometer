@@ -58,14 +58,14 @@ void updateFirmware() {
             bool canBegin = Update.begin(contentLength);
             if (canBegin) {
                 logAndPublish("Beginning OTA update. This may take a few moments");
-                
+
                 WiFiClient& client = http.getStream();
-                
+
                 // Manual chunked download with watchdog resets
                 uint8_t buff[128];
                 size_t written = 0;
                 int lastProgress = -1;
-                
+
                 while (client.connected() && written < contentLength) {
                     size_t available = client.available();
                     if (available) {
@@ -73,9 +73,9 @@ void updateFirmware() {
                         if (c > 0) {
                             Update.write(buff, c);
                             written += c;
-                            
+
                             esp_task_wdt_reset();
-                            
+
                             int progress = (written * 100) / contentLength;
                             if (progress != lastProgress && progress % 10 == 0) {
                                 char log_message[CHAR_LEN];
@@ -85,9 +85,9 @@ void updateFirmware() {
                             }
                         }
                     }
-                    vTaskDelay(pdMS_TO_TICKS(1));  // Allow other tasks to run
+                    vTaskDelay(pdMS_TO_TICKS(1)); // Allow other tasks to run
                 }
-                
+
                 if (written == contentLength) {
                     logAndPublish("OTA update written successfully");
                 } else {
@@ -95,7 +95,7 @@ void updateFirmware() {
                     snprintf(log_message, CHAR_LEN, "OTA incomplete: %d/%d bytes", written, contentLength);
                     logAndPublish(log_message);
                 }
-                
+
                 if (Update.end()) {
                     logAndPublish("Update finished successfully. Restarting");
                     ESP.restart();
@@ -116,6 +116,25 @@ void updateFirmware() {
 }
 
 void setup_OTA_web() {
+
+    webServer.on("/logs", HTTP_GET, []() {
+        extern LogEntry* normalLogBuffer;
+        extern volatile int normalLogBufferIndex;
+        extern SemaphoreHandle_t normalLogMutex;
+        extern LogEntry* errorLogBuffer;
+        extern volatile int errorLogBufferIndex;
+        extern SemaphoreHandle_t errorLogMutex;
+
+        String normalLogsHTML = getLogBufferHTML(normalLogBuffer, normalLogBufferIndex, normalLogMutex, NORMAL_LOG_BUFFER_SIZE);
+        String errorLogsHTML = getLogBufferHTML(errorLogBuffer, errorLogBufferIndex, errorLogMutex, ERROR_LOG_BUFFER_SIZE);
+
+        String html = logs_html;
+        html.replace("{{normal_logs}}", normalLogsHTML);
+        html.replace("{{error_logs}}", errorLogsHTML);
+
+        webServer.send(200, "text/html", html);
+    });
+
     webServer.on("/", HTTP_GET, []() {
         String content = "<p class='section-title'>Board Details</p>"
                          "<table class='data-table'>"
@@ -135,6 +154,9 @@ void setup_OTA_web() {
 
         String html = info_html;
         html.replace("{{content}}", content);
+        // Add logs link before the update button
+        html.replace("<a href=\"/update\" class=\"link-button\">Update Firmware</a>",
+                     "<a href=\"/logs\" class=\"link-button\">View Logs</a><br><br><a href=\"/update\" class=\"link-button\">Update Firmware</a>");
         webServer.send(200, "text/html", html);
     });
 
@@ -188,12 +210,7 @@ String getUptime() {
 
     char buffer[64];
 
-    snprintf(buffer, sizeof(buffer), "%lu%s, %02lu:%02lu:%02lu",
-             days,
-             day_label,
-             hours,
-             minutes,
-             remaining_seconds);
+    snprintf(buffer, sizeof(buffer), "%lu%s, %02lu:%02lu:%02lu", days, day_label, hours, minutes, remaining_seconds);
 
     // Convert the char array back to a String and return
     return String(buffer);
@@ -219,4 +236,121 @@ int compareVersions(const String& v1, const String& v2) {
         j++;
     }
     return 0;
+}
+
+// Add this helper function to safely read and format log buffer
+String getLogBufferHTML(LogEntry* logBuffer, volatile int& logBufferIndex, SemaphoreHandle_t logMutex, int log_size) {
+    if (logBuffer == nullptr || logMutex == nullptr) {
+        return "<div class='log-entry'><span class='message'>Log buffer not initialized</span></div>";
+    }
+    
+    String html = "";
+    
+    // Threshold for detecting if time was synced (Jan 1, 2020)
+    const time_t TIME_SYNC_THRESHOLD = 1577836800;
+    
+    if (xSemaphoreTake(logMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        // Read from oldest to newest (circular buffer)
+        int count = 0;
+        
+        // Count valid entries
+        for (int i = 0; i < log_size; i++) {
+            if (logBuffer[i].timestamp != 0) {
+                count++;
+            }
+        }
+        
+        if (count == 0) {
+            html = "<div class='log-entry'><span class='message'>No log entries yet</span></div>";
+        } else {
+            // Build array of valid entries with their indices
+            struct LogWithIndex {
+                int index;
+                time_t timestamp;
+            };
+            LogWithIndex* entries = new LogWithIndex[count];
+            int validCount = 0;
+            
+            for (int i = 0; i < log_size; i++) {
+                if (logBuffer[i].timestamp != 0) {
+                    entries[validCount].index = i;
+                    entries[validCount].timestamp = logBuffer[i].timestamp;
+                    validCount++;
+                }
+            }
+            
+            // Sort by timestamp (bubble sort for simplicity)
+            for (int i = 0; i < validCount - 1; i++) {
+                for (int j = 0; j < validCount - i - 1; j++) {
+                    if (entries[j].timestamp > entries[j + 1].timestamp) {
+                        LogWithIndex temp = entries[j];
+                        entries[j] = entries[j + 1];
+                        entries[j + 1] = temp;
+                    }
+                }
+            }
+            
+            // Display in reverse order (newest first)
+            for (int i = validCount - 1; i >= 0; i--) {
+                int idx = entries[i].index;
+                
+                // Format timestamp - check if time was synced
+                char timeStr[64];
+                bool timeWasSynced = (logBuffer[idx].timestamp >= TIME_SYNC_THRESHOLD);
+                
+                if (logBuffer[idx].timestamp > 0) {
+                    if (timeWasSynced) {
+                        // Time was synced - display as date/time
+                        struct tm* timeinfo = localtime(&logBuffer[idx].timestamp);
+                        if (timeinfo != nullptr) {
+                            // Format: "2025-11-07 14:35:22"
+                            strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", timeinfo);
+                        } else {
+                            snprintf(timeStr, sizeof(timeStr), "Invalid time");
+                        }
+                    } else {
+                        // Time wasn't synced - display as uptime
+                        unsigned long seconds = (unsigned long)logBuffer[idx].timestamp;
+                        unsigned long days = seconds / (24 * 3600);
+                        unsigned long hours = (seconds % (24 * 3600)) / 3600;
+                        unsigned long minutes = (seconds % 3600) / 60;
+                        unsigned long secs = seconds % 60;
+                        
+                        if (days > 0) {
+                            snprintf(timeStr, sizeof(timeStr), "+%lud %02lu:%02lu:%02lu", 
+                                    days, hours, minutes, secs);
+                        } else {
+                            snprintf(timeStr, sizeof(timeStr), "+%02lu:%02lu:%02lu", 
+                                    hours, minutes, secs);
+                        }
+                    }
+                } else {
+                    snprintf(timeStr, sizeof(timeStr), "Time not set");
+                    timeWasSynced = false;
+                }
+                
+                // Escape any HTML characters in the message
+                String message = String(logBuffer[idx].message);
+                message.replace("&", "&amp;");
+                message.replace("<", "&lt;");
+                message.replace(">", "&gt;");
+                
+                // Add CSS class to distinguish synced vs unsynced times
+                String cssClass = timeWasSynced ? "log-entry" : "log-entry unsynced";
+                
+                html += "<div class='" + cssClass + "'>";
+                html += "<span class='timestamp'>" + String(timeStr) + "</span>";
+                html += "<span class='message'>" + message + "</span>";
+                html += "</div>";
+            }
+            
+            delete[] entries;
+        }
+        
+        xSemaphoreGive(logMutex);
+    } else {
+        html = "<div class='log-entry'><span class='message'>Could not access log buffer (mutex timeout)</span></div>";
+    }
+    
+    return html;
 }

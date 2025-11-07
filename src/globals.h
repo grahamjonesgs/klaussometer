@@ -85,7 +85,7 @@ typedef struct {
 
 struct LogEntry {
     char message[CHAR_LEN];
-    unsigned long timestamp;
+    time_t timestamp;
 };
 
 // main
@@ -140,6 +140,7 @@ void updateFirmware();
 void checkForUpdates_t(void* pvParameters);
 String getUptime();
 int compareVersions(const String& v1, const String& v2);
+String getLogBufferHTML(LogEntry* logBuffer, volatile int& logBufferIndex, SemaphoreHandle_t logMutex, int log_size);
 
 // SDCard
 uint8_t calculateChecksum(const void* data_ptr, size_t size);
