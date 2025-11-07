@@ -151,4 +151,8 @@ static const char* WEATHER_DATA_FILENAME = "/weather_data.bin";
 static const char* UV_DATA_FILENAME = "/uv_data.bin";
 static const char* READINGS_DATA_FILENAME = "/readings_data.bin";
 
+// Log settings
+#define NORMAL_LOG_BUFFER_SIZE 500
+#define ERROR_LOG_BUFFER_SIZE 500
+
 #endif // CONSTANTS_H

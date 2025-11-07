@@ -37,6 +37,14 @@ char error_topic[CHAR_LEN];
 char chip_id[CHAR_LEN];
 String macAddress;
 unsigned long lastOTAUpdateCheck = 0;
+LogEntry* normalLogBuffer;
+volatile int normalLogBufferIndex;
+SemaphoreHandle_t normalLogMutex;
+LogEntry* errorLogBuffer;
+volatile int errorLogBufferIndex;
+SemaphoreHandle_t errorLogMutex;
+
+
 
 // Status messages
 char statusMessageValue[CHAR_LEN];
@@ -88,6 +96,15 @@ void setup() {
         // Handle error: The queue could not be created
         logAndPublish("Error: Failed to create status message queue");
     }
+
+    // Setup log buffers
+    normalLogBuffer= initLogBuffer(NORMAL_LOG_BUFFER_SIZE);
+    errorLogBuffer= initLogBuffer(ERROR_LOG_BUFFER_SIZE);
+    normalLogBufferIndex=0;
+    normalLogMutex = xSemaphoreCreateMutex();
+    errorLogBufferIndex=0;
+    errorLogMutex = xSemaphoreCreateMutex();
+
     // Initialize the SD card
     SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0);
     if (!SD_MMC.begin("/sdcard", true, true)) {
@@ -511,6 +528,7 @@ void logAndPublish(const char* messageBuffer) {
 
     // Print to the serial console
     Serial.println(messageBuffer);
+    addToLogBuffer(messageBuffer, normalLogBuffer, normalLogBufferIndex, normalLogMutex, NORMAL_LOG_BUFFER_SIZE);
 
     // Check if the MQTT client is connected and publish the message
     if (mqttClient.connected()) {
@@ -537,10 +555,9 @@ void logAndPublish(const char* messageBuffer) {
 
 void errorPublish(const char* messageBuffer) {
 
-    // Format the message using the variable arguments
-
     // Print to the serial console
     Serial.println(messageBuffer);
+    //addToLogBuffer(messageBuffer, errorLogBuffer, errorLogBufferIndex, errorLogMutex, ERROR_LOG_BUFFER_SIZE);
 
     // Check if the MQTT client is connected and publish the message
     if (mqttClient.connected()) {
@@ -555,5 +572,59 @@ void errorPublish(const char* messageBuffer) {
             // Give the mutex back to allow other tasks to use the client
             xSemaphoreGive(mqttMutex);
         }
+    }
+}   
+
+LogEntry* initLogBuffer(int log_size) {
+    LogEntry* logBuffer = nullptr;
+    if (psramFound()) {
+        Serial.println("PSRAM detected, allocating log buffer...");
+        logBuffer = (LogEntry*)heap_caps_malloc(
+            log_size * sizeof(LogEntry),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+        );
+
+        if (logBuffer != nullptr) {
+            Serial.printf("✓ Allocated %d KB in PSRAM for %d log entries\n",
+                         (log_size * sizeof(LogEntry)) / 1024,
+                         log_size);
+        }
+    }
+    
+    if (logBuffer == nullptr) {
+        Serial.println("Allocating in internal RAM...");
+        logBuffer = (LogEntry*)malloc(log_size * sizeof(LogEntry));
+
+        if (logBuffer != nullptr) {
+            Serial.printf("✓ Allocated %d KB in internal RAM for %d log entries\n",
+                         (log_size * sizeof(LogEntry)) / 1024,
+                         log_size);
+        }
+    }
+    
+    if (logBuffer == nullptr) {
+        Serial.println("✗✗✗ FATAL: Could not allocate log buffer!");
+        while(1) delay(1000);
+    }
+    
+    for (int i = 0; i < log_size; i++) {
+        logBuffer[i].timestamp = 0;
+        memset(logBuffer[i].message, 0, sizeof(logBuffer[i].message));
+    }
+    return logBuffer;
+}
+
+void addToLogBuffer(const char* message, LogEntry* logBuffer, volatile int& logBufferIndex, SemaphoreHandle_t logMutex, int log_size) {
+    if (message == NULL || strlen(message) == 0) return;
+    if (logMutex == NULL) return;
+
+    if (xSemaphoreTake(logMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        int idx = logBufferIndex;
+        memset(&logBuffer[idx], 0, sizeof(LogEntry));
+        logBuffer[idx].timestamp = millis();
+        strncpy(logBuffer[idx].message, message, sizeof(logBuffer[idx].message) - 1);
+        logBuffer[idx].message[sizeof(logBuffer[idx].message) - 1] = '\0';
+        logBufferIndex = (logBufferIndex + 1) % log_size;
+        xSemaphoreGive(logMutex);
     }
 }

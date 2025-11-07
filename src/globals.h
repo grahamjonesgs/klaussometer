@@ -81,6 +81,13 @@ typedef struct {
     int duration_s; // Duration in seconds
 } StatusMessage;
 
+
+
+struct LogEntry {
+    char message[CHAR_LEN];
+    unsigned long timestamp;
+};
+
 // main
 void pin_init();
 void setup_wifi();
@@ -95,6 +102,8 @@ void displayStatusMessages_t(void* pvParameters);
 void logAndPublish(const char* messageBuffer);
 void errorPublish(const char* messageBuffer);
 void invalidateOldReadings();
+LogEntry* initLogBuffer(int log_size);
+void addToLogBuffer(const char* message, LogEntry* logBuffer, volatile int& logBufferIndex, SemaphoreHandle_t logMutex, int log_size);
 
 // Connections
 void setup_wifi();
