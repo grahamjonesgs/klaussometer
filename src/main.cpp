@@ -622,8 +622,9 @@ void addToLogBuffer(const char* message, LogEntry* logBuffer, volatile int& logB
         int idx = logBufferIndex;
         memset(&logBuffer[idx], 0, sizeof(LogEntry));
         logBuffer[idx].timestamp = time(NULL);
-        strncpy(logBuffer[idx].message, message, sizeof(logBuffer[idx].message) - 1);
-        logBuffer[idx].message[sizeof(logBuffer[idx].message) - 1] = '\0';
+        const size_t max_len = CHAR_LEN; 
+        strncpy(logBuffer[idx].message, message, max_len - 1);
+        logBuffer[idx].message[max_len - 1] = '\0'; 
         logBufferIndex = (logBufferIndex + 1) % log_size;
         xSemaphoreGive(logMutex);
     }
