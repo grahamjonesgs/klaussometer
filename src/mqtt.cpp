@@ -149,7 +149,7 @@ void update_readings(char* recMessage, int index, int dataType) {
 
     readings[index].lastValue[readings[index].readingIndex] = readings[index].currentValue;
     readings[index].readingIndex++;
-    readings[index].lastMessageTime = millis();
+    readings[index].lastMessageTime = time(NULL);
 
     char log_message[CHAR_LEN];
     snprintf(log_message, CHAR_LEN, "%s %s updated", readings[index].description, log_message_suffix);

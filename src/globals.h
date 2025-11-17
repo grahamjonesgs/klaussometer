@@ -33,7 +33,7 @@ typedef struct __attribute__((packed)) {                // Array to hold the inc
     bool enoughData;                  // to indicate is a full set of STORED_READING number of data points received
     int dataType;                     // Type of data received
     int readingIndex;                 // Index of current reading max will be STORED_READING
-    unsigned long lastMessageTime;    // Millis this was last updated
+    time_t lastMessageTime;           // Time this was last updated
 } Readings;
 
 typedef struct __attribute__((packed)) {
@@ -146,5 +146,7 @@ String getLogBufferHTML(LogEntry* logBuffer, volatile int& logBufferIndex, Semap
 uint8_t calculateChecksum(const void* data_ptr, size_t size);
 bool saveDataBlock(const char* filename, const void* data_ptr, size_t size);
 bool loadDataBlock(const char* filename, void* data_ptr, size_t expected_size);
+
+static const time_t TIME_SYNC_THRESHOLD = 1577836800;
 
 #endif // GLOBALS_H

@@ -115,7 +115,7 @@ void updateFirmware() {
 }
 
 void getLogsJSON(LogEntry* logBuffer, volatile int& logBufferIndex, SemaphoreHandle_t logMutex, int log_size) {
-    const time_t TIME_SYNC_THRESHOLD = 1577836800;
+
     
     webServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
     webServer.send(200, "application/json", "");

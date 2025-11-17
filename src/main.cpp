@@ -44,8 +44,6 @@ LogEntry* errorLogBuffer;
 volatile int errorLogBufferIndex;
 SemaphoreHandle_t errorLogMutex;
 
-
-
 // Status messages
 char statusMessageValue[CHAR_LEN];
 
@@ -98,11 +96,11 @@ void setup() {
     }
 
     // Setup log buffers
-    normalLogBuffer= initLogBuffer(NORMAL_LOG_BUFFER_SIZE);
-    errorLogBuffer= initLogBuffer(ERROR_LOG_BUFFER_SIZE);
-    normalLogBufferIndex=0;
+    normalLogBuffer = initLogBuffer(NORMAL_LOG_BUFFER_SIZE);
+    errorLogBuffer = initLogBuffer(ERROR_LOG_BUFFER_SIZE);
+    normalLogBufferIndex = 0;
     normalLogMutex = xSemaphoreCreateMutex();
-    errorLogBufferIndex=0;
+    errorLogBufferIndex = 0;
     errorLogMutex = xSemaphoreCreateMutex();
 
     // Initialize the SD card
@@ -261,15 +259,15 @@ void setup() {
 
 void loop() {
     char tempString[CHAR_LEN];
-    char icon;
-    lv_color_t colour;
+    char batteryIcon;
+    lv_color_t batteryColour;
 
     static unsigned long lastTick = 0;
     unsigned long currentMillis = millis();
     unsigned long elapsed = currentMillis - lastTick;
-    
+
     if (elapsed > 0) {
-        lv_tick_inc(elapsed);  // Tell LVGL how much time passed
+        lv_tick_inc(elapsed); // Tell LVGL how much time passed
         lastTick = currentMillis;
     }
 
@@ -278,8 +276,8 @@ void loop() {
     webServer.handleClient();
 
     static unsigned long lastRefresh = 0;
-    if (millis() - lastRefresh > 100) {  // Every 100ms
-        lv_obj_invalidate(lv_screen_active());  // Mark screen as needing redraw
+    if (millis() - lastRefresh > 100) {        // Every 100ms
+        lv_obj_invalidate(lv_screen_active()); // Mark screen as needing redraw
         lastRefresh = millis();
     }
 
@@ -292,17 +290,21 @@ void loop() {
         } else {
             lv_obj_add_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
         }
-        snprintf(tempString, CHAR_LEN, "%c", readings[i].changeChar);
+        if (readings[i].changeChar == CHAR_NO_MESSAGE) {
+            snprintf(tempString, CHAR_LEN, "%c", CHAR_SAME);
+        } else {
+            snprintf(tempString, CHAR_LEN, "%c", readings[i].changeChar);
+        }
         lv_label_set_text(*directionLabels[i], tempString);
         lv_label_set_text(*humidityLabels[i], readings[i + ROOM_COUNT].output);
     }
 
     // Battery updates
     for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
-        getBatteryStatus(readings[i + 2 * ROOM_COUNT].currentValue, readings[i + 2 * ROOM_COUNT].readingIndex, &icon, &colour);
-        snprintf(tempString, CHAR_LEN, "%c", icon);
+        getBatteryStatus(readings[i + 2 * ROOM_COUNT].currentValue, readings[i + 2 * ROOM_COUNT].readingIndex, &batteryIcon, &batteryColour);
+        snprintf(tempString, CHAR_LEN, "%c", batteryIcon);
         lv_label_set_text(*batteryLabels[i], tempString);
-        lv_obj_set_style_text_color(*batteryLabels[i], colour, LV_PART_MAIN);
+        lv_obj_set_style_text_color(*batteryLabels[i], batteryColour, LV_PART_MAIN);
     }
 
     // Update UV
@@ -410,12 +412,14 @@ void loop() {
 }
 
 void invalidateOldReadings() {
-    for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
-        if ((millis() > readings[i].lastMessageTime + (MAX_NO_MESSAGE_SEC * 1000)) && (strcmp(readings[i].output, NO_READING) != 0) &&
-            (readings[i].changeChar != CHAR_NO_MESSAGE)) {
-            readings[i].changeChar = CHAR_NO_MESSAGE;
-            snprintf(readings[i].output, 10, NO_READING);
-            readings[i].currentValue = 0.0;
+    if (time(NULL) > TIME_SYNC_THRESHOLD) {
+        for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
+            if ((time(NULL) > readings[i].lastMessageTime + (MAX_NO_MESSAGE_SEC))) {
+                Serial.printf("Invalidating reading %d\n", i);
+                readings[i].changeChar = CHAR_NO_MESSAGE;
+                snprintf(readings[i].output, 10, NO_READING);
+                readings[i].currentValue = 0.0;
+            }
         }
     }
 }
@@ -484,7 +488,6 @@ void touch_read(lv_indev_t* indev, lv_indev_data_t* data) {
 }
 
 void getBatteryStatus(float batteryValue, int readingIndex, char* iconCharacterPtr, lv_color_t* colorPtr) {
-    // Use a single if-else if-else structure for cleaner logic
     if (batteryValue > BATTERY_OK) {
         // Battery is ok
         *iconCharacterPtr = CHAR_BATTERY_GOOD;
@@ -497,18 +500,16 @@ void getBatteryStatus(float batteryValue, int readingIndex, char* iconCharacterP
         // Battery is low, but not critical
         *iconCharacterPtr = CHAR_BATTERY_BAD;
         *colorPtr = lv_color_hex(COLOR_YELLOW);
-    } else {
+    } else if (batteryValue > 0.0) {
         // Battery is critical
-        if (readingIndex != 0) {
-            *iconCharacterPtr = CHAR_BATTERY_CRITICAL;
-            *colorPtr = lv_color_hex(COLOR_RED);
-        } else {
-            // Default or fallback case if readingIndex is 0
-            *iconCharacterPtr = CHAR_BLANK; // Or some other default
-            *colorPtr = lv_color_hex(COLOR_GREEN);
-        }
+        *iconCharacterPtr = CHAR_BATTERY_CRITICAL;
+        *colorPtr = lv_color_hex(COLOR_RED);
+    } else {
+        *iconCharacterPtr = CHAR_BLANK;
+        *colorPtr = lv_color_hex(COLOR_GREEN);
     }
 }
+
 
 void displayStatusMessages_t(void* pvParameters) {
     StatusMessage receivedMsg;
@@ -557,7 +558,7 @@ void errorPublish(const char* messageBuffer) {
 
     // Print to the serial console
     Serial.println(messageBuffer);
-    //addToLogBuffer(messageBuffer, errorLogBuffer, errorLogBufferIndex, errorLogMutex, ERROR_LOG_BUFFER_SIZE);
+    // addToLogBuffer(messageBuffer, errorLogBuffer, errorLogBufferIndex, errorLogMutex, ERROR_LOG_BUFFER_SIZE);
 
     // Check if the MQTT client is connected and publish the message
     if (mqttClient.connected()) {
@@ -573,40 +574,34 @@ void errorPublish(const char* messageBuffer) {
             xSemaphoreGive(mqttMutex);
         }
     }
-}   
+}
 
 LogEntry* initLogBuffer(int log_size) {
     LogEntry* logBuffer = nullptr;
     if (psramFound()) {
         Serial.println("PSRAM detected, allocating log buffer...");
-        logBuffer = (LogEntry*)heap_caps_malloc(
-            log_size * sizeof(LogEntry),
-            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
-        );
+        logBuffer = (LogEntry*)heap_caps_malloc(log_size * sizeof(LogEntry), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
         if (logBuffer != nullptr) {
-            Serial.printf("✓ Allocated %d KB in PSRAM for %d log entries\n",
-                         (log_size * sizeof(LogEntry)) / 1024,
-                         log_size);
+            Serial.printf("✓ Allocated %d KB in PSRAM for %d log entries\n", (log_size * sizeof(LogEntry)) / 1024, log_size);
         }
     }
-    
+
     if (logBuffer == nullptr) {
         Serial.println("Allocating in internal RAM...");
         logBuffer = (LogEntry*)malloc(log_size * sizeof(LogEntry));
 
         if (logBuffer != nullptr) {
-            Serial.printf("✓ Allocated %d KB in internal RAM for %d log entries\n",
-                         (log_size * sizeof(LogEntry)) / 1024,
-                         log_size);
+            Serial.printf("✓ Allocated %d KB in internal RAM for %d log entries\n", (log_size * sizeof(LogEntry)) / 1024, log_size);
         }
     }
-    
+
     if (logBuffer == nullptr) {
         Serial.println("✗✗✗ FATAL: Could not allocate log buffer!");
-        while(1) delay(1000);
+        while (1)
+            delay(1000);
     }
-    
+
     for (int i = 0; i < log_size; i++) {
         logBuffer[i].timestamp = 0;
         memset(logBuffer[i].message, 0, sizeof(logBuffer[i].message));
@@ -615,16 +610,18 @@ LogEntry* initLogBuffer(int log_size) {
 }
 
 void addToLogBuffer(const char* message, LogEntry* logBuffer, volatile int& logBufferIndex, SemaphoreHandle_t logMutex, int log_size) {
-    if (message == NULL || strlen(message) == 0) return;
-    if (logMutex == NULL) return;
+    if (message == NULL || strlen(message) == 0)
+        return;
+    if (logMutex == NULL)
+        return;
 
     if (xSemaphoreTake(logMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         int idx = logBufferIndex;
         memset(&logBuffer[idx], 0, sizeof(LogEntry));
         logBuffer[idx].timestamp = time(NULL);
-        const size_t max_len = CHAR_LEN; 
+        const size_t max_len = CHAR_LEN;
         strncpy(logBuffer[idx].message, message, max_len - 1);
-        logBuffer[idx].message[max_len - 1] = '\0'; 
+        logBuffer[idx].message[max_len - 1] = '\0';
         logBufferIndex = (logBufferIndex + 1) % log_size;
         xSemaphoreGive(logMutex);
     }
