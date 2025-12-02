@@ -244,6 +244,13 @@ void setup() {
 
     configTime(TIME_OFFSET, 0, NTP_SERVER); // Setup as used to display time from stored values
 
+    // Configure and enable the Task Watchdog Timer for the loop task
+    // 60 second timeout - will reboot if loop hangs for this long
+    esp_task_wdt_init(60, true);  // 60 seconds, panic on timeout (triggers reboot)
+    esp_task_wdt_add(NULL);       // Add current task (loop task) to watchdog
+
+    logAndPublish("Watchdog timer enabled (60s timeout)");
+
     // Start tasks
     xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", 8192, NULL, 4, NULL, 0);
     xTaskCreatePinnedToCore(get_weather_t, "Weather", 8192, NULL, 3, NULL, 0);
@@ -258,6 +265,9 @@ void setup() {
 }
 
 void loop() {
+    // Feed the watchdog at the start of each loop iteration
+    esp_task_wdt_reset();
+
     char tempString[CHAR_LEN];
     char batteryIcon;
     lv_color_t batteryColour;
