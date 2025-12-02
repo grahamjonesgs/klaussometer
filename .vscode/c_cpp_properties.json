@@ -520,7 +520,6 @@
                 "ARDUINO_VARIANT=\"esp32s3\"",
                 "ARDUINO_BOARD=\"Espressif ESP32-S3-DevKitC-1-N8 (8 MB QD, No PSRAM)\"",
                 "ARDUINO_PARTITION_default_16MB",
-                "__PLATFORMIO_BUILD_DEBUG__",
                 ""
             ],
             "cStandard": "gnu99",

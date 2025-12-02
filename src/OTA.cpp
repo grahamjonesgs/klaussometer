@@ -114,104 +114,20 @@ void updateFirmware() {
     }
 }
 
-void getLogsJSON(LogEntry* logBuffer, volatile int& logBufferIndex, SemaphoreHandle_t logMutex, int log_size) {
-
-    
-    webServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
-    webServer.send(200, "application/json", "");
-    
-    webServer.sendContent("{\"logs\":[");
-    
-    if (logBuffer != nullptr && logMutex != nullptr) {
-        if (xSemaphoreTake(logMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-            // Build array of valid entries
-            struct LogWithIndex {
-                int index;
-                time_t timestamp;
-            };
-            
-            // Count valid entries
-            int count = 0;
-            for (int i = 0; i < log_size; i++) {
-                if (logBuffer[i].timestamp != 0) {
-                    count++;
-                }
-            }
-            
-            if (count > 0) {
-                LogWithIndex* entries = new LogWithIndex[count];
-                int validCount = 0;
-                
-                for (int i = 0; i < log_size; i++) {
-                    if (logBuffer[i].timestamp != 0) {
-                        entries[validCount].index = i;
-                        entries[validCount].timestamp = logBuffer[i].timestamp;
-                        validCount++;
-                    }
-                }
-                
-                // Sort by timestamp (bubble sort)
-                for (int i = 0; i < validCount - 1; i++) {
-                    for (int j = 0; j < validCount - i - 1; j++) {
-                        if (entries[j].timestamp > entries[j + 1].timestamp) {
-                            LogWithIndex temp = entries[j];
-                            entries[j] = entries[j + 1];
-                            entries[j + 1] = temp;
-                        }
-                    }
-                }
-                
-                // Send entries newest first, streaming in chunks
-                for (int i = validCount - 1; i >= 0; i--) {
-                    int idx = entries[i].index;
-                    bool timeWasSynced = (logBuffer[idx].timestamp >= TIME_SYNC_THRESHOLD);
-                    
-                    // Build JSON entry
-                    String jsonEntry = "";
-                    if (i < validCount - 1) jsonEntry += ",";
-                    
-                    jsonEntry += "{\"timestamp\":" + String(logBuffer[idx].timestamp) + 
-                                ",\"synced\":" + String(timeWasSynced ? "true" : "false") +
-                                ",\"message\":\"";
-                    
-                    // Escape message for JSON
-                    String message = String(logBuffer[idx].message);
-                    message.replace("\\", "\\\\");
-                    message.replace("\"", "\\\"");
-                    message.replace("\n", "\\n");
-                    message.replace("\r", "\\r");
-                    message.replace("\t", "\\t");
-                    
-                    jsonEntry += message + "\"}";
-                    
-                    webServer.sendContent(jsonEntry);
-                }
-                
-                delete[] entries;
-            }
-            
-            xSemaphoreGive(logMutex);
-        }
-    }
-    
-    webServer.sendContent("]}");
-    webServer.sendContent("");  // Signal end of chunked response
+void getLogsJSON(const char* logFilename) {
+    String jsonOutput;
+    getLogsFromSDCard(logFilename, jsonOutput);
+    webServer.send(200, "application/json", jsonOutput);
 }
 
 void setup_OTA_web() {
 
     webServer.on("/api/logs/normal", HTTP_GET, []() {
-        extern LogEntry* normalLogBuffer;
-        extern volatile int normalLogBufferIndex;
-        extern SemaphoreHandle_t normalLogMutex;
-        getLogsJSON(normalLogBuffer, normalLogBufferIndex, normalLogMutex, NORMAL_LOG_BUFFER_SIZE);
+        getLogsJSON(NORMAL_LOG_FILENAME);
     });
 
     webServer.on("/api/logs/error", HTTP_GET, []() {
-        extern LogEntry* errorLogBuffer;
-        extern volatile int errorLogBufferIndex;
-        extern SemaphoreHandle_t errorLogMutex;
-        getLogsJSON(errorLogBuffer, errorLogBufferIndex, errorLogMutex, ERROR_LOG_BUFFER_SIZE);
+        getLogsJSON(ERROR_LOG_FILENAME);
     });
 
     webServer.on("/logs", HTTP_GET, []() {

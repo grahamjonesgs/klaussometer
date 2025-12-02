@@ -148,9 +148,11 @@ static const char* SOLAR_DATA_FILENAME = "/solar_data.bin";
 static const char* WEATHER_DATA_FILENAME = "/weather_data.bin";
 static const char* UV_DATA_FILENAME = "/uv_data.bin";
 static const char* READINGS_DATA_FILENAME = "/readings_data.bin";
+static const char* NORMAL_LOG_FILENAME = "/normal_log.txt";
+static const char* ERROR_LOG_FILENAME = "/error_log.txt";
 
 // Log settings
-#define NORMAL_LOG_BUFFER_SIZE 500
-#define ERROR_LOG_BUFFER_SIZE 500
+#define MAX_LOG_FILE_SIZE (1024 * 1024)  // 1MB max per log file
+#define MAX_LOG_ENTRIES_TO_READ 500       // Max entries to read when displaying logs
 
 #endif // CONSTANTS_H

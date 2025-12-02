@@ -81,7 +81,10 @@ typedef struct {
     int duration_s; // Duration in seconds
 } StatusMessage;
 
-
+typedef struct {
+    char message[CHAR_LEN];
+    char filename[50];
+} SDLogMessage;
 
 struct LogEntry {
     char message[CHAR_LEN];
@@ -99,11 +102,10 @@ void touch_read(lv_indev_t* indev, lv_indev_data_t* data);
 void set_solar_values();
 void getBatteryStatus(float batteryValue, int readingIndex, char* iconCharacterPtr, lv_color_t* colorPtr);
 void displayStatusMessages_t(void* pvParameters);
+void sdcard_logger_t(void* pvParameters);
 void logAndPublish(const char* messageBuffer);
 void errorPublish(const char* messageBuffer);
 void invalidateOldReadings();
-LogEntry* initLogBuffer(int log_size);
-void addToLogBuffer(const char* message, LogEntry* logBuffer, volatile int& logBufferIndex, SemaphoreHandle_t logMutex, int log_size);
 
 // Connections
 void setup_wifi();
@@ -140,12 +142,14 @@ void updateFirmware();
 void checkForUpdates_t(void* pvParameters);
 String getUptime();
 int compareVersions(const String& v1, const String& v2);
-String getLogBufferHTML(LogEntry* logBuffer, volatile int& logBufferIndex, SemaphoreHandle_t logMutex, int log_size);
+void getLogsJSON(const char* logFilename);
 
 // SDCard
 uint8_t calculateChecksum(const void* data_ptr, size_t size);
 bool saveDataBlock(const char* filename, const void* data_ptr, size_t size);
 bool loadDataBlock(const char* filename, void* data_ptr, size_t expected_size);
+void addLogToSDCard(const char* message, const char* logFilename);
+void getLogsFromSDCard(const char* logFilename, String& jsonOutput);
 
 static const time_t TIME_SYNC_THRESHOLD = 1577836800;
 

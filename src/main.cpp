@@ -32,17 +32,12 @@ Readings readings[]{READINGS_ARRAY};
 Preferences storage;
 int numberOfReadings = sizeof(readings) / sizeof(readings[0]);
 QueueHandle_t statusMessageQueue;
+QueueHandle_t sdLogQueue;
 char log_topic[CHAR_LEN];
 char error_topic[CHAR_LEN];
 char chip_id[CHAR_LEN];
 String macAddress;
 unsigned long lastOTAUpdateCheck = 0;
-LogEntry* normalLogBuffer;
-volatile int normalLogBufferIndex;
-SemaphoreHandle_t normalLogMutex;
-LogEntry* errorLogBuffer;
-volatile int errorLogBufferIndex;
-SemaphoreHandle_t errorLogMutex;
 
 // Status messages
 char statusMessageValue[CHAR_LEN];
@@ -86,22 +81,20 @@ void setup() {
 
     // Setup queues and mutexes
     statusMessageQueue = xQueueCreate(100, sizeof(StatusMessage));
+    sdLogQueue = xQueueCreate(50, sizeof(SDLogMessage));  // Queue for SD card logging
     mqttMutex = xSemaphoreCreateMutex();
     httpMutex = xSemaphoreCreateMutex();
 
     // Check if the queue was created successfully
     if (statusMessageQueue == NULL) {
         // Handle error: The queue could not be created
-        logAndPublish("Error: Failed to create status message queue");
+        Serial.println("Error: Failed to create status message queue");
+    }
+    if (sdLogQueue == NULL) {
+        Serial.println("Error: Failed to create SD log queue");
     }
 
-    // Setup log buffers
-    normalLogBuffer = initLogBuffer(NORMAL_LOG_BUFFER_SIZE);
-    errorLogBuffer = initLogBuffer(ERROR_LOG_BUFFER_SIZE);
-    normalLogBufferIndex = 0;
-    normalLogMutex = xSemaphoreCreateMutex();
-    errorLogBufferIndex = 0;
-    errorLogMutex = xSemaphoreCreateMutex();
+    // SD card-based logging is used (no memory buffers needed)
 
     // Initialize the SD card
     SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0);
@@ -252,16 +245,19 @@ void setup() {
     logAndPublish("Watchdog timer enabled (60s timeout)");
 
     // Start tasks
-    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", 8192, NULL, 4, NULL, 0);
-    xTaskCreatePinnedToCore(get_weather_t, "Weather", 8192, NULL, 3, NULL, 0);
-    xTaskCreatePinnedToCore(get_uv_t, "Get UV", 8192, NULL, 3, NULL, 0);
-    xTaskCreatePinnedToCore(get_daily_solar_t, "Daily Solar", 8192, NULL, 3, NULL, 0);
-    xTaskCreatePinnedToCore(get_monthly_solar_t, "Monthly Solar", 8192, NULL, 3, NULL, 0);
-    xTaskCreatePinnedToCore(get_current_solar_t, "Current Solar", 8192, NULL, 3, NULL, 0);
-    xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", 8192, NULL, 0, NULL, 0);
-    xTaskCreatePinnedToCore(checkForUpdates_t, "Updates", 8192, NULL, 0, NULL, 0);
-    xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", 8192, NULL, 0, NULL, 0);
-    xTaskCreatePinnedToCore(get_solar_token_t, "Solar Token", 8192, NULL, 5, NULL, 1);
+    // Priority guide: Arduino loop() runs at priority 1 on core 1 (loopTask)
+    // Keep background tasks at low priority to avoid starving the display loop
+    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", 4096, NULL, 0, NULL, 1);      // Core 1, priority 0 (lowest)
+    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", 8192, NULL, 2, NULL, 1);  // Core 1, priority 2 (lower)
+    xTaskCreatePinnedToCore(get_weather_t, "Weather", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(get_uv_t, "Get UV", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(get_daily_solar_t, "Daily Solar", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(get_monthly_solar_t, "Monthly Solar", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(get_current_solar_t, "Current Solar", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(checkForUpdates_t, "Updates", 8192, NULL, 0, NULL, 1);
+    xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(get_solar_token_t, "Solar Token", 8192, NULL, 1, NULL, 1);
 }
 
 void loop() {
@@ -281,9 +277,10 @@ void loop() {
         lastTick = currentMillis;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(200));
-    lv_timer_handler(); // Run GUI
+    lv_timer_handler(); // Run GUI - do this BEFORE delays
     webServer.handleClient();
+
+    vTaskDelay(pdMS_TO_TICKS(5));  // Reduced from 200ms to 5ms for smoother updates
 
     static unsigned long lastRefresh = 0;
     if (millis() - lastRefresh > 100) {        // Every 100ms
@@ -537,10 +534,18 @@ void logAndPublish(const char* messageBuffer) {
 
     // Print to the serial console
     Serial.println(messageBuffer);
-    addToLogBuffer(messageBuffer, normalLogBuffer, normalLogBufferIndex, normalLogMutex, NORMAL_LOG_BUFFER_SIZE);
 
+    // Queue SD card write (non-blocking)
+    if (sdLogQueue != NULL) {
+        SDLogMessage logMsg;
+        snprintf(logMsg.message, CHAR_LEN, "%s", messageBuffer);
+        snprintf(logMsg.filename, sizeof(logMsg.filename), "%s", NORMAL_LOG_FILENAME);
+        xQueueSend(sdLogQueue, &logMsg, 0);  // Don't block if queue is full
+    }
+
+    // Try to send to MQTT without blocking - if mutex isn't available, skip it
     if (mqttClient.connected()) {
-        if (xSemaphoreTake(mqttMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) {  // Changed from 1000ms to 0ms (no wait)
             esp_task_wdt_reset();
             if (mqttClient.connected()) {
                 mqttClient.beginMessage(log_topic);
@@ -549,22 +554,31 @@ void logAndPublish(const char* messageBuffer) {
             }
             xSemaphoreGive(mqttMutex);
         }
+        // If we can't get the mutex immediately, just skip MQTT (log still goes to SD/Serial)
     }
 
     StatusMessage msg;
     snprintf(msg.text, CHAR_LEN, "%s", messageBuffer);
     msg.duration_s = STATUS_MESSAGE_TIME;
     xQueueSend(statusMessageQueue, &msg,
-               0); // Use 0 f queue is full
+               0); // Use 0 if queue is full
 }
 
 void errorPublish(const char* messageBuffer) {
 
     Serial.println(messageBuffer);
-    addToLogBuffer(messageBuffer, errorLogBuffer, errorLogBufferIndex, errorLogMutex, ERROR_LOG_BUFFER_SIZE);
 
+    // Queue SD card write (non-blocking)
+    if (sdLogQueue != NULL) {
+        SDLogMessage logMsg;
+        snprintf(logMsg.message, CHAR_LEN, "%s", messageBuffer);
+        snprintf(logMsg.filename, sizeof(logMsg.filename), "%s", ERROR_LOG_FILENAME);
+        xQueueSend(sdLogQueue, &logMsg, 0);  // Don't block if queue is full
+    }
+
+    // Try to send to MQTT without blocking - if mutex isn't available, skip it
     if (mqttClient.connected()) {
-        if (xSemaphoreTake(mqttMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) {  // Changed from 100ms to 0ms (no wait)
             esp_task_wdt_reset();
             if (mqttClient.connected()) {
                 mqttClient.beginMessage(error_topic, true);
@@ -573,56 +587,19 @@ void errorPublish(const char* messageBuffer) {
             }
             xSemaphoreGive(mqttMutex);
         }
+        // If we can't get the mutex immediately, just skip MQTT (log still goes to SD/Serial)
     }
 }
 
-LogEntry* initLogBuffer(int log_size) {
-    LogEntry* logBuffer = nullptr;
-    if (psramFound()) {
-        Serial.println("PSRAM detected, allocating log buffer...");
-        logBuffer = (LogEntry*)heap_caps_malloc(log_size * sizeof(LogEntry), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+// SD card logger task - runs on core 0 to avoid blocking the display loop
+void sdcard_logger_t(void* pvParameters) {
+    SDLogMessage logMsg;
 
-        if (logBuffer != nullptr) {
-            Serial.printf("✓ Allocated %d KB in PSRAM for %d log entries\n", (log_size * sizeof(LogEntry)) / 1024, log_size);
+    while (true) {
+        // Wait for log messages (blocks until available)
+        if (xQueueReceive(sdLogQueue, &logMsg, portMAX_DELAY) == pdTRUE) {
+            // Write to SD card (this may take time, but doesn't block main loop)
+            addLogToSDCard(logMsg.message, logMsg.filename);
         }
-    }
-
-    if (logBuffer == nullptr) {
-        Serial.println("Allocating in internal RAM...");
-        logBuffer = (LogEntry*)malloc(log_size * sizeof(LogEntry));
-
-        if (logBuffer != nullptr) {
-            Serial.printf("✓ Allocated %d KB in internal RAM for %d log entries\n", (log_size * sizeof(LogEntry)) / 1024, log_size);
-        }
-    }
-
-    if (logBuffer == nullptr) {
-        Serial.println("✗✗✗ FATAL: Could not allocate log buffer!");
-        while (1)
-            delay(1000);
-    }
-
-    for (int i = 0; i < log_size; i++) {
-        logBuffer[i].timestamp = 0;
-        memset(logBuffer[i].message, 0, sizeof(logBuffer[i].message));
-    }
-    return logBuffer;
-}
-
-void addToLogBuffer(const char* message, LogEntry* logBuffer, volatile int& logBufferIndex, SemaphoreHandle_t logMutex, int log_size) {
-    if (message == NULL || strlen(message) == 0)
-        return;
-    if (logMutex == NULL)
-        return;
-
-    if (xSemaphoreTake(logMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        int idx = logBufferIndex;
-        memset(&logBuffer[idx], 0, sizeof(LogEntry));
-        logBuffer[idx].timestamp = time(NULL);
-        const size_t max_len = CHAR_LEN;
-        strncpy(logBuffer[idx].message, message, max_len - 1);
-        logBuffer[idx].message[max_len - 1] = '\0';
-        logBufferIndex = (logBufferIndex + 1) % log_size;
-        xSemaphoreGive(logMutex);
     }
 }
