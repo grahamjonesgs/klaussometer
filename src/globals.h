@@ -18,6 +18,7 @@
 #include <cctype>
 #include <cstring>
 #include <esp_task_wdt.h>
+#include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <SD_MMC.h>

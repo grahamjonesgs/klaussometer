@@ -73,6 +73,23 @@ static lv_obj_t** batteryLabels[ROOM_COUNT] = BATTERY_LABELS;
 static lv_obj_t** directionLabels[ROOM_COUNT] = DIRECTION_LABELS;
 static lv_obj_t** humidityLabels[ROOM_COUNT] = HUMIDITY_LABELS;
 
+// Shutdown handler to log reboot to SD card
+void shutdown_handler(void) {
+    // Write directly to SD card (can't use queue as system is shutting down)
+    File logFile = SD_MMC.open(ERROR_LOG_FILENAME, FILE_APPEND);
+    if (logFile) {
+        time_t now = time(NULL);
+        char logLine[CHAR_LEN + 50];
+        snprintf(logLine, sizeof(logLine), "%ld|SYSTEM REBOOT - Watchdog or manual reboot triggered\n", now);
+        logFile.print(logLine);
+        logFile.close();
+    }
+
+    // Print to serial as well
+    Serial.println("SYSTEM REBOOT - Logging to SD card");
+    Serial.flush();
+}
+
 void setup() {
     Serial.begin(115200);
     // delay one second to enabling monitoring
@@ -236,6 +253,9 @@ void setup() {
     storage.end();
 
     configTime(TIME_OFFSET, 0, NTP_SERVER); // Setup as used to display time from stored values
+
+    // Register shutdown handler to log reboots (including watchdog timeouts)
+    esp_register_shutdown_handler(shutdown_handler);
 
     // Configure and enable the Task Watchdog Timer for the loop task
     // 60 second timeout - will reboot if loop hangs for this long
