@@ -192,7 +192,7 @@ void set_basic_text_color(lv_color_t color) {
     lv_obj_set_style_text_color(ui_TextRooms, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_TextForecastName, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_TextBattery, color, LV_PART_MAIN);
-    lv_obj_set_style_text_color(ui_TextSolar, color, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_TextSolar, color, LV_PART_MAIN                                                 );
     lv_obj_set_style_text_color(ui_TextUsing, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_TextUV, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_FCConditions, color, LV_PART_MAIN);
@@ -212,6 +212,7 @@ void set_basic_text_color(lv_color_t color) {
     lv_obj_set_style_text_color(ui_Direction3, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_Direction4, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_Direction5, color, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_Version, color, LV_PART_MAIN); 
 }
 
 void format_integer_with_commas(long long num, char* out, size_t outSize) {

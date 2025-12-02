@@ -80,13 +80,12 @@ void get_weather_t(void* pvParameters) {
                 if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(API_SEMAPHORE_WAIT_SEC * 1000)) == pdTRUE) {
                     snprintf(url_buffer, URL_BUFFER_SIZE,
                              "https://api.open-meteo.com/v1/"
-                             "forecast?latitude=%s&longitude=%s&daily="
-                             "temperature_2m_"
-                             "max,temperature_2m_min,sunrise,sunset,uv_index_max&models="
-                             "ukmo_uk_"
-                             "deterministic_2km,ncep_gfs013&current=temperature_2m,is_day,"
-                             "weather_code,wind_speed_10m,wind_direction_10m&timezone=auto&"
-                             "forecast_days=1",
+                             "forecast?latitude=%s&longitude=%s"
+                             "&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max"
+                           //  "&models=ukmo_uk_deterministic_2km,ncep_gfs013"
+                             "&current=temperature_2m,is_day,weather_code,wind_speed_10m,wind_direction_10m"
+                             "&timezone=auto"
+                             "&forecast_days=1",
                              LATITUDE, LONGITUDE);
                     http.begin(url_buffer);
                     int httpCode = http.GET();

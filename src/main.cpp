@@ -414,8 +414,7 @@ void loop() {
 void invalidateOldReadings() {
     if (time(NULL) > TIME_SYNC_THRESHOLD) {
         for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
-            if ((time(NULL) > readings[i].lastMessageTime + (MAX_NO_MESSAGE_SEC))) {
-                Serial.printf("Invalidating reading %d\n", i);
+            if ((time(NULL) > readings[i].lastMessageTime + (MAX_NO_MESSAGE_SEC)) && (readings[i].changeChar != CHAR_NO_MESSAGE)) {
                 readings[i].changeChar = CHAR_NO_MESSAGE;
                 snprintf(readings[i].output, 10, NO_READING);
                 readings[i].currentValue = 0.0;
@@ -449,7 +448,7 @@ void pin_init() {
     ledcSetup(PWMChannel, PWMFreq, PWMResolution);
     ledcAttachPin(TFT_BL, PWMChannel);
 
-    /*ledcAttachChannel(TFT_BL, PWMFreq, PWMResolution, PWMChannel); */
+    /*ledcAttachChannel(TFT_BL, PWMFreq, PWMResolution, PWMChannel);*/
 
     ledcWrite(PWMChannel, NIGHTTIME_DUTY); // Start dim
 
@@ -510,7 +509,6 @@ void getBatteryStatus(float batteryValue, int readingIndex, char* iconCharacterP
     }
 }
 
-
 void displayStatusMessages_t(void* pvParameters) {
     StatusMessage receivedMsg;
 
@@ -531,22 +529,18 @@ void logAndPublish(const char* messageBuffer) {
     Serial.println(messageBuffer);
     addToLogBuffer(messageBuffer, normalLogBuffer, normalLogBufferIndex, normalLogMutex, NORMAL_LOG_BUFFER_SIZE);
 
-    // Check if the MQTT client is connected and publish the message
     if (mqttClient.connected()) {
         if (xSemaphoreTake(mqttMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-            // We have successfully acquired the lock
             esp_task_wdt_reset();
             if (mqttClient.connected()) {
                 mqttClient.beginMessage(log_topic);
                 mqttClient.print(messageBuffer);
                 mqttClient.endMessage();
             }
-            // Give the mutex back to allow other tasks to use the client
             xSemaphoreGive(mqttMutex);
         }
     }
 
-    // Also send the message to the UI status queue for on-screen display.
     StatusMessage msg;
     snprintf(msg.text, CHAR_LEN, "%s", messageBuffer);
     msg.duration_s = STATUS_MESSAGE_TIME;
@@ -556,21 +550,17 @@ void logAndPublish(const char* messageBuffer) {
 
 void errorPublish(const char* messageBuffer) {
 
-    // Print to the serial console
     Serial.println(messageBuffer);
-    // addToLogBuffer(messageBuffer, errorLogBuffer, errorLogBufferIndex, errorLogMutex, ERROR_LOG_BUFFER_SIZE);
+    addToLogBuffer(messageBuffer, errorLogBuffer, errorLogBufferIndex, errorLogMutex, ERROR_LOG_BUFFER_SIZE);
 
-    // Check if the MQTT client is connected and publish the message
     if (mqttClient.connected()) {
         if (xSemaphoreTake(mqttMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            // We have successfully acquired the lock
             esp_task_wdt_reset();
             if (mqttClient.connected()) {
                 mqttClient.beginMessage(error_topic, true);
                 mqttClient.print(messageBuffer);
                 mqttClient.endMessage();
             }
-            // Give the mutex back to allow other tasks to use the client
             xSemaphoreGive(mqttMutex);
         }
     }
