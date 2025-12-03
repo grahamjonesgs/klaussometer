@@ -2,6 +2,10 @@
 extern Solar solar;
 extern SemaphoreHandle_t mqttMutex;
 
+// Cache line counts for faster log reading
+static int normalLogLineCount = -1;  // -1 means not yet initialized
+static int errorLogLineCount = -1;
+
 uint8_t calculateChecksum(const void* data_ptr, size_t size) {
   uint8_t sum = 0;
   const uint8_t* bytePtr = (const uint8_t*)data_ptr;
@@ -122,6 +126,25 @@ void addLogToSDCard(const char* message, const char* logFilename) {
     return;
   }
 
+  // Determine which cache to use
+  int* lineCountPtr = (strcmp(logFilename, NORMAL_LOG_FILENAME) == 0) ? &normalLogLineCount : &errorLogLineCount;
+
+  // Initialize cache if needed (first time or after rotation)
+  if (*lineCountPtr == -1) {
+    if (SD_MMC.exists(logFilename)) {
+      File logFile = SD_MMC.open(logFilename, FILE_READ);
+      if (logFile) {
+        *lineCountPtr = 0;
+        while (logFile.available()) {
+          if (logFile.read() == '\n') (*lineCountPtr)++;
+        }
+        logFile.close();
+      }
+    } else {
+      *lineCountPtr = 0;
+    }
+  }
+
   // Check if file exists and get size
   bool rotate = false;
   if (SD_MMC.exists(logFilename)) {
@@ -141,12 +164,15 @@ void addLogToSDCard(const char* message, const char* logFilename) {
   if (rotate) {
     File oldFile = SD_MMC.open(logFilename, FILE_READ);
     if (oldFile) {
-      // Count total lines
-      int totalLines = 0;
-      while (oldFile.available()) {
-        if (oldFile.read() == '\n') totalLines++;
+      // Use cached count if available, otherwise count
+      int totalLines = *lineCountPtr;
+      if (totalLines <= 0) {
+        totalLines = 0;
+        while (oldFile.available()) {
+          if (oldFile.read() == '\n') totalLines++;
+        }
+        oldFile.seek(0);
       }
-      oldFile.seek(0);
 
       // Calculate how many lines to keep (75% of total, minimum 100)
       int linesToKeep = (totalLines * 3) / 4;  // 75% of entries
@@ -173,6 +199,9 @@ void addLogToSDCard(const char* message, const char* logFilename) {
       // Replace old file with temp file
       SD_MMC.remove(logFilename);
       SD_MMC.rename("/temp_log.txt", logFilename);
+
+      // Update cached line count after rotation
+      *lineCountPtr = linesToKeep;
     }
   }
 
@@ -184,6 +213,9 @@ void addLogToSDCard(const char* message, const char* logFilename) {
     snprintf(logLine, sizeof(logLine), "%ld|%s\n", now, message);
     logFile.print(logLine);
     logFile.close();
+
+    // Increment cached line count
+    (*lineCountPtr)++;
   }
 }
 
@@ -201,7 +233,48 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
     return;
   }
 
-  // Read all lines into memory first so we can reverse them
+  // Use cached line count instead of scanning the entire file
+  int* lineCountPtr = (strcmp(logFilename, NORMAL_LOG_FILENAME) == 0) ? &normalLogLineCount : &errorLogLineCount;
+  int totalLines = *lineCountPtr;
+
+  // If cache is invalid, count lines (first time only)
+  if (totalLines <= 0) {
+    totalLines = 0;
+    while (logFile.available()) {
+      if (logFile.read() == '\n') totalLines++;
+    }
+    logFile.seek(0);
+    *lineCountPtr = totalLines;
+  }
+
+  // Calculate how many lines to skip to get the last MAX_LOG_ENTRIES_TO_READ lines
+  int linesToSkip = 0;
+  if (totalLines > MAX_LOG_ENTRIES_TO_READ) {
+    linesToSkip = totalLines - MAX_LOG_ENTRIES_TO_READ;
+  }
+
+  // Skip the older entries using buffered reading
+  if (linesToSkip > 0) {
+    const size_t BUFFER_SIZE = 512;
+    uint8_t buffer[BUFFER_SIZE];
+    int linesSkipped = 0;
+
+    while (logFile.available() && linesSkipped < linesToSkip) {
+      size_t bytesRead = logFile.read(buffer, BUFFER_SIZE);
+      for (size_t i = 0; i < bytesRead && linesSkipped < linesToSkip; i++) {
+        if (buffer[i] == '\n') {
+          linesSkipped++;
+          // If we've skipped enough, seek back to the position after this newline
+          if (linesSkipped == linesToSkip) {
+            logFile.seek(logFile.position() - bytesRead + i + 1);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Read the last N lines into memory
   struct LogLine {
     time_t timestamp;
     String message;
