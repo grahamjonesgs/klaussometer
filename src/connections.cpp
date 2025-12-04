@@ -32,7 +32,7 @@ void setup_wifi() {
     char messageBuffer[CHAR_LEN];
     snprintf(messageBuffer, CHAR_LEN, "Connected to WiFi SSID: %s", WiFi.SSID().c_str());
     logAndPublish(messageBuffer);
-    setup_OTA_web();
+    setup_web_server();
 }
 
 void mqtt_connect() {
@@ -60,7 +60,10 @@ void time_init() {
         return;
     }
     logAndPublish("Time synchronized successfully");
-    logAndPublish(asctime(&timeinfo));
+
+    char timeStr[64];
+    strftime(timeStr, sizeof(timeStr), "%a %b %d %H:%M:%S %Y", &timeinfo);
+    logAndPublish(timeStr);
 }
 
 void connectivity_manager_t(void* pvParameters) {

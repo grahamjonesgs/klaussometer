@@ -98,7 +98,7 @@ void setup() {
 
     // Setup queues and mutexes
     statusMessageQueue = xQueueCreate(100, sizeof(StatusMessage));
-    sdLogQueue = xQueueCreate(50, sizeof(SDLogMessage));  // Queue for SD card logging
+    sdLogQueue = xQueueCreate(50, sizeof(SDLogMessage)); // Queue for SD card logging
     mqttMutex = xSemaphoreCreateMutex();
     httpMutex = xSemaphoreCreateMutex();
 
@@ -187,8 +187,7 @@ void setup() {
     ui_init();
 
     // Set initial UI values
-    String versionText = "V " + String(FIRMWARE_VERSION);
-    lv_label_set_text(ui_Version, versionText.c_str());
+    lv_label_set_text(ui_Version, "");
 
     for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
         lv_label_set_text(*roomNames[i], readings[i].description);
@@ -259,16 +258,16 @@ void setup() {
 
     // Configure and enable the Task Watchdog Timer for the loop task
     // 60 second timeout - will reboot if loop hangs for this long
-    esp_task_wdt_init(60, true);  // 60 seconds, panic on timeout (triggers reboot)
-    esp_task_wdt_add(NULL);       // Add current task (loop task) to watchdog
+    esp_task_wdt_init(60, true); // 60 seconds, panic on timeout (triggers reboot)
+    esp_task_wdt_add(NULL);      // Add current task (loop task) to watchdog
 
     logAndPublish("Watchdog timer enabled (60s timeout)");
 
     // Start tasks
     // Priority guide: Arduino loop() runs at priority 1 on core 1 (loopTask)
     // Keep background tasks at low priority to avoid starving the display loop
-    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", 4096, NULL, 0, NULL, 1);      // Core 1, priority 0 (lowest)
-    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", 8192, NULL, 2, NULL, 1);  // Core 1, priority 2 (lower)
+    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", 4096, NULL, 0, NULL, 1);            // Core 1, priority 0 (lowest)
+    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", 8192, NULL, 2, NULL, 1); // Core 1, priority 2 (lower)
     xTaskCreatePinnedToCore(get_weather_t, "Weather", 8192, NULL, 1, NULL, 1);
     xTaskCreatePinnedToCore(get_uv_t, "Get UV", 8192, NULL, 1, NULL, 1);
     xTaskCreatePinnedToCore(get_daily_solar_t, "Daily Solar", 8192, NULL, 1, NULL, 1);
@@ -300,7 +299,7 @@ void loop() {
     lv_timer_handler(); // Run GUI - do this BEFORE delays
     webServer.handleClient();
 
-    vTaskDelay(pdMS_TO_TICKS(5));  // Reduced from 200ms to 5ms for smoother updates
+    vTaskDelay(pdMS_TO_TICKS(5)); // Reduced from 200ms to 5ms for smoother updates
 
     static unsigned long lastRefresh = 0;
     if (millis() - lastRefresh > 100) {        // Every 100ms
@@ -417,6 +416,14 @@ void loop() {
         lv_label_set_text(ui_Time, timeString);
     }
 
+    if (WiFi.status() == WL_CONNECTED) {
+        snprintf(tempString, CHAR_LEN, "IP: %s | Chip ID: %s | Firmware Version: V%s", WiFi.localIP().toString().c_str(), chip_id, FIRMWARE_VERSION);
+    } else {
+        snprintf(tempString, CHAR_LEN, "Chip ID: %s | Firmware Version: V%s", chip_id, FIRMWARE_VERSION);
+    }
+    lv_label_set_text(ui_Version, tempString);
+
+    // Adjust brightness and colors based on day/night
     if (!weather.isDay) {
         ledcWrite(PWMChannel, NIGHTTIME_DUTY);
         set_basic_text_color(lv_color_hex(COLOR_WHITE));
@@ -560,12 +567,12 @@ void logAndPublish(const char* messageBuffer) {
         SDLogMessage logMsg;
         snprintf(logMsg.message, CHAR_LEN, "%s", messageBuffer);
         snprintf(logMsg.filename, sizeof(logMsg.filename), "%s", NORMAL_LOG_FILENAME);
-        xQueueSend(sdLogQueue, &logMsg, 0);  // Don't block if queue is full
+        xQueueSend(sdLogQueue, &logMsg, 0); // Don't block if queue is full
     }
 
     // Try to send to MQTT without blocking - if mutex isn't available, skip it
     if (mqttClient.connected()) {
-        if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) {  // Changed from 1000ms to 0ms (no wait)
+        if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) { // Changed from 1000ms to 0ms (no wait)
             esp_task_wdt_reset();
             if (mqttClient.connected()) {
                 mqttClient.beginMessage(log_topic);
@@ -593,12 +600,12 @@ void errorPublish(const char* messageBuffer) {
         SDLogMessage logMsg;
         snprintf(logMsg.message, CHAR_LEN, "%s", messageBuffer);
         snprintf(logMsg.filename, sizeof(logMsg.filename), "%s", ERROR_LOG_FILENAME);
-        xQueueSend(sdLogQueue, &logMsg, 0);  // Don't block if queue is full
+        xQueueSend(sdLogQueue, &logMsg, 0); // Don't block if queue is full
     }
 
     // Try to send to MQTT without blocking - if mutex isn't available, skip it
     if (mqttClient.connected()) {
-        if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) {  // Changed from 100ms to 0ms (no wait)
+        if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) { // Changed from 100ms to 0ms (no wait)
             esp_task_wdt_reset();
             if (mqttClient.connected()) {
                 mqttClient.beginMessage(error_topic, true);

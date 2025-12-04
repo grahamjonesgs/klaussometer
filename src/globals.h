@@ -138,7 +138,7 @@ int readChunkedPayload(WiFiClient* stream, char* buffer, size_t buffer_size);
 int readFixedLengthPayload(WiFiClient* stream, char* buffer, size_t buffer_size, size_t content_length);
 
 // OAT
-void setup_OTA_web();
+void setup_web_server();
 void updateFirmware();
 void checkForUpdates_t(void* pvParameters);
 String getUptime();

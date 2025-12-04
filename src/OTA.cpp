@@ -6,6 +6,7 @@ extern String macAddress;
 extern unsigned long lastOTAUpdateCheck;
 extern HTTPClient http;
 extern SemaphoreHandle_t httpMutex;
+extern char chip_id[CHAR_LEN];
 
 void checkForUpdates_t(void* pvParameters) {
     char url[CHAR_LEN];
@@ -120,7 +121,7 @@ void getLogsJSON(const char* logFilename) {
     webServer.send(200, "application/json", jsonOutput);
 }
 
-void setup_OTA_web() {
+void setup_web_server() {
 
     webServer.on("/api/logs/normal", HTTP_GET, []() {
         getLogsJSON(NORMAL_LOG_FILENAME);
@@ -149,6 +150,9 @@ void setup_OTA_web() {
                          "</td></tr>"
                          "<tr><td><b>MAC Address:</b></td><td>" +
                          macAddress +
+                         "</td></tr>"
+                         "<tr><td><b>Chip ID:</b></td><td>" +
+                         String(chip_id) +
                          "</td></tr>"
                          "<tr><td><b>IP Address:</b></td><td>" +
                          WiFi.localIP().toString() +
