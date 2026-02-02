@@ -7,12 +7,18 @@ extern int numberOfReadings;
 
 // Get mqtt messages
 void receive_mqtt_messages_t(void* pvParams) {
+    // Subscribe this task to the watchdog
+    esp_task_wdt_add(NULL);
+
     int messageSize = 0;
     char topicBuffer[CHAR_LEN];
     char recMessage[CHAR_LEN]; // Remove = {0} here
     int index;
 
     while (true) {
+        // Reset watchdog at the start of each loop iteration
+        esp_task_wdt_reset();
+
         // Reconnect if necessary
         if (!mqttClient.connected()) {
             vTaskDelay(pdMS_TO_TICKS(1000));
@@ -27,7 +33,19 @@ void receive_mqtt_messages_t(void* pvParams) {
                 memset(recMessage, 0, sizeof(recMessage));
 
                 int topicLength = mqttClient.messageTopic().length();
+                if (topicLength >= CHAR_LEN) {
+                    xSemaphoreGive(mqttMutex);
+                    logAndPublish("MQTT topic exceeds buffer size");
+                    continue;
+                }
                 mqttClient.messageTopic().toCharArray(topicBuffer, topicLength + 1);
+
+                // Check message size before reading
+                if (messageSize >= CHAR_LEN) {
+                    xSemaphoreGive(mqttMutex);
+                    logAndPublish("MQTT message exceeds buffer size");
+                    continue;
+                }
 
                 // Read exactly messageSize bytes
                 int bytesRead = mqttClient.read((unsigned char*)recMessage, messageSize);
@@ -37,12 +55,6 @@ void receive_mqtt_messages_t(void* pvParams) {
                     char log_msg[CHAR_LEN];
                     snprintf(log_msg, CHAR_LEN, "MQTT read mismatch: expected %d, got %d", messageSize, bytesRead);
                     logAndPublish(log_msg);
-                    continue;
-                }
-
-                if (messageSize >= CHAR_LEN) {
-                    logAndPublish("MQTT message exceeds buffer size");
-                    xSemaphoreGive(mqttMutex);
                     continue;
                 }
 
@@ -67,13 +79,9 @@ void receive_mqtt_messages_t(void* pvParams) {
                     }
                 }
 
-                if (!messageProcessed) {
-                    char log_msg[CHAR_LEN];
-                    snprintf(log_msg, CHAR_LEN, "Unhandled MQTT topic: %s, message: %s", topicBuffer, recMessage);
-                    logAndPublish(log_msg);
+                if (messageProcessed) {
+                    saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings);
                 }
-
-                saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings);
             } else {
                 // No message
                 xSemaphoreGive(mqttMutex);
@@ -89,7 +97,39 @@ void update_readings(char* recMessage, int index, int dataType) {
     const char* log_message_suffix;
     const char* format_string;
 
-    readings[index].currentValue = atof(recMessage);
+    // Validate numeric input before conversion
+    char* endptr;
+    float parsedValue = strtof(recMessage, &endptr);
+
+    // Check if conversion failed (no digits consumed) or value is out of reasonable range
+    if (endptr == recMessage || *endptr != '\0') {
+        char log_msg[CHAR_LEN];
+        snprintf(log_msg, CHAR_LEN, "Invalid numeric value received: '%s' for %s", recMessage, readings[index].description);
+        logAndPublish(log_msg);
+        return;
+    }
+
+    // Sanity check for reasonable sensor values
+    if (dataType == DATA_TEMPERATURE && (parsedValue < -50.0f || parsedValue > 100.0f)) {
+        char log_msg[CHAR_LEN];
+        snprintf(log_msg, CHAR_LEN, "Temperature out of range: %.1f for %s", parsedValue, readings[index].description);
+        logAndPublish(log_msg);
+        return;
+    }
+    if (dataType == DATA_HUMIDITY && (parsedValue < 0.0f || parsedValue > 100.0f)) {
+        char log_msg[CHAR_LEN];
+        snprintf(log_msg, CHAR_LEN, "Humidity out of range: %.1f for %s", parsedValue, readings[index].description);
+        logAndPublish(log_msg);
+        return;
+    }
+    if (dataType == DATA_BATTERY && (parsedValue < 0.0f || parsedValue > 5.0f)) {
+        char log_msg[CHAR_LEN];
+        snprintf(log_msg, CHAR_LEN, "Battery voltage out of range: %.2f for %s", parsedValue, readings[index].description);
+        logAndPublish(log_msg);
+        return;
+    }
+
+    readings[index].currentValue = parsedValue;
 
     // Set format string and log suffix based on data type
     switch (dataType) {
@@ -111,9 +151,9 @@ void update_readings(char* recMessage, int index, int dataType) {
     }
 
     if (dataType == DATA_HUMIDITY) {
-        snprintf(readings[index].output, 10, format_string, readings[index].currentValue, "%");
+        snprintf(readings[index].output, sizeof(readings[index].output), format_string, readings[index].currentValue, "%");
     } else {
-        snprintf(readings[index].output, 10, format_string, readings[index].currentValue);
+        snprintf(readings[index].output, sizeof(readings[index].output), format_string, readings[index].currentValue);
     }
 
     if (readings[index].readingIndex == 0) {

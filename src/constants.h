@@ -42,10 +42,22 @@ static const char CHAR_BATTERY_OK = ';';       // Based on battery2 font
 static const char CHAR_BATTERY_BAD = ',';      // Based on battery2 font
 static const char CHAR_BATTERY_CRITICAL = '>'; // Based on battery2 font
 
-// Define boundaries for battery health
-static const float BATTERY_OK = 3.75;
-static const float BATTERY_BAD = 3.6;
-static const float BATTERY_CRITICAL = 3.5;
+// Old Define boundaries for battery health
+//static const float BATTERY_OK = 3.75;
+//static const float BATTERY_BAD = 3.6;
+//static const float BATTERY_CRITICAL = 3.5;
+
+
+// Option 1: Recommended adjustment
+static const float BATTERY_OK = 3.70;       // Was 3.75
+static const float BATTERY_BAD = 3.55;      // Was 3.6  
+static const float BATTERY_CRITICAL = 3.40; // Was 3.5
+
+// Option 2: Conservative
+//static const float BATTERY_OK = 3.72;
+//static const float BATTERY_BAD = 3.58;
+//static const float BATTERY_CRITICAL = 3.45;
+
 
 // Data type definition for array
 static const int DATA_TEMPERATURE = 0;
@@ -64,7 +76,8 @@ static const int SOLAR_MONTHLY_UPDATE_INTERVAL_SEC = 300; // Interval between so
 static const int SOLAR_DAILY_UPDATE_INTERVAL_SEC = 300;   // Interval between solar daily updates
 static const int SOLAR_TOKEN_WAIT_SEC = 10;               // Time to wait for solar token to be available
 static const int API_SEMAPHORE_WAIT_SEC = 10;             // Time to wait for http semaphore
-static const int API_FAIL_DELAY_SEC = 30;                 // Delay is API call fails
+static const int API_FAIL_DELAY_SEC = 30;                 // Initial delay when API call fails
+static const int API_MAX_BACKOFF_SEC = 300;               // Maximum backoff delay (5 minutes)
 static const int API_LOOP_DELAY_SEC = 10;                 // Time delay at end of API loops
 static const int STATUS_MESSAGE_TIME = 1;                 // Seconds an status message can be displayed
 static const int MAX_SOLAR_TIME_STATUS_HOURS = 24;        // Max time in hours for charge / discharge that a message will be displayed for
@@ -154,5 +167,10 @@ static const char* ERROR_LOG_FILENAME = "/error_log.txt";
 // Log settings
 #define MAX_LOG_FILE_SIZE (1024 * 1024)  // 1MB max per log file
 #define MAX_LOG_ENTRIES_TO_READ 500       // Max entries to read when displaying logs
+
+// FreeRTOS task stack sizes (in bytes)
+static const int TASK_STACK_SMALL = 4096;   // For simple tasks like SD logger
+static const int TASK_STACK_MEDIUM = 8192;  // For most tasks (MQTT, connectivity, etc.)
+static const int TASK_STACK_LARGE = 16384;  // For memory-intensive tasks if needed
 
 #endif // CONSTANTS_H

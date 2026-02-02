@@ -104,11 +104,20 @@ void setup() {
 
     // Check if the queue was created successfully
     if (statusMessageQueue == NULL) {
-        // Handle error: The queue could not be created
         Serial.println("Error: Failed to create status message queue");
     }
     if (sdLogQueue == NULL) {
         Serial.println("Error: Failed to create SD log queue");
+    }
+    if (mqttMutex == NULL) {
+        Serial.println("Error: Failed to create MQTT mutex! Restarting...");
+        delay(1000);
+        esp_restart();
+    }
+    if (httpMutex == NULL) {
+        Serial.println("Error: Failed to create HTTP mutex! Restarting...");
+        delay(1000);
+        esp_restart();
     }
 
     // SD card-based logging is used (no memory buffers needed)
@@ -142,9 +151,6 @@ void setup() {
         }
     }
 
-    pin_init();
-    // touch_init();
-
     // Add unique topics for MQTT logging
     macAddress = WiFi.macAddress();
     snprintf(log_topic, CHAR_LEN, "klaussometer/%s/log", chip_id);
@@ -169,18 +175,17 @@ void setup() {
     }
 
     if (!disp_draw_buf) {
-        Serial.println("ERROR: Display buffer allocation FAILED!");
-        while (1) {
-            delay(1000);
-        }
+        Serial.println("ERROR: Display buffer allocation FAILED! Restarting...");
+        delay(1000);
+        esp_restart();
     }
 
     // Create LVGL display
     disp = lv_display_create(screenWidth, screenHeight);
     if (!disp) {
-        while (1) {
-            delay(1000);
-        }
+        Serial.println("ERROR: LVGL display creation FAILED! Restarting...");
+        delay(1000);
+        esp_restart();
     }
     lv_display_set_flush_cb(disp, my_disp_flush);
     lv_display_set_buffers(disp, disp_draw_buf, NULL, bufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
@@ -266,17 +271,17 @@ void setup() {
     // Start tasks
     // Priority guide: Arduino loop() runs at priority 1 on core 1 (loopTask)
     // Keep background tasks at low priority to avoid starving the display loop
-    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", 4096, NULL, 0, NULL, 1);            // Core 1, priority 0 (lowest)
-    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", 8192, NULL, 2, NULL, 1); // Core 1, priority 2 (lower)
-    xTaskCreatePinnedToCore(get_weather_t, "Weather", 8192, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_uv_t, "Get UV", 8192, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_daily_solar_t, "Daily Solar", 8192, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_monthly_solar_t, "Monthly Solar", 8192, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_current_solar_t, "Current Solar", 8192, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", 8192, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(checkForUpdates_t, "Updates", 8192, NULL, 0, NULL, 1);
-    xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", 8192, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_solar_token_t, "Solar Token", 8192, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, NULL, 0, NULL, 1);            // Core 1, priority 0 (lowest)
+    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_MEDIUM, NULL, 2, NULL, 1); // Core 1, priority 2 (lower)
+    xTaskCreatePinnedToCore(get_weather_t, "Weather", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(get_uv_t, "Get UV", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(get_daily_solar_t, "Daily Solar", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(get_monthly_solar_t, "Monthly Solar", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(get_current_solar_t, "Current Solar", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(checkForUpdates_t, "Updates", TASK_STACK_MEDIUM, NULL, 0, NULL, 1);
+    xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(get_solar_token_t, "Solar Token", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
 }
 
 void loop() {
@@ -284,7 +289,7 @@ void loop() {
     esp_task_wdt_reset();
 
     char tempString[CHAR_LEN];
-    char batteryIcon;
+    char batteryIcon = CHAR_BLANK;
     lv_color_t batteryColour;
 
     static unsigned long lastTick = 0;
@@ -300,13 +305,6 @@ void loop() {
     webServer.handleClient();
 
     vTaskDelay(pdMS_TO_TICKS(5)); // Reduced from 200ms to 5ms for smoother updates
-
-    static unsigned long lastRefresh = 0;
-    if (millis() - lastRefresh > 100) {        // Every 100ms
-        lv_obj_invalidate(lv_screen_active()); // Mark screen as needing redraw
-        lastRefresh = millis();
-    }
-
     // Update values
     for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
         lv_arc_set_value(*tempArcs[i], readings[i].currentValue);
@@ -339,7 +337,7 @@ void loop() {
         if (weather.isDay) {
             snprintf(tempString, CHAR_LEN, "Updated %s", uv.time_string);
         } else {
-            snprintf(tempString, CHAR_LEN, "");
+            tempString[0] = '\0';
         }
         lv_label_set_text(ui_UVUpdateTime, tempString);
         snprintf(tempString, CHAR_LEN, "%i", uv.index);
@@ -423,19 +421,23 @@ void loop() {
     }
     lv_label_set_text(ui_Version, tempString);
 
-    // Adjust brightness and colors based on day/night
-    if (!weather.isDay) {
-        ledcWrite(PWMChannel, NIGHTTIME_DUTY);
-        set_basic_text_color(lv_color_hex(COLOR_WHITE));
-        lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
-        lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-        lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-    } else {
-        ledcWrite(PWMChannel, DAYTIME_DUTY);
-        set_basic_text_color(lv_color_hex(COLOR_BLACK));
-        lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-        lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
-        lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
+    // Adjust brightness and colors based on day/night (only when state changes)
+    static bool lastIsDay = false;
+    if (weather.isDay != lastIsDay) {
+        lastIsDay = weather.isDay;
+        if (!weather.isDay) {
+            ledcWrite(PWMChannel, NIGHTTIME_DUTY);
+            set_basic_text_color(lv_color_hex(COLOR_WHITE));
+            lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
+            lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
+            lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
+        } else {
+            ledcWrite(PWMChannel, DAYTIME_DUTY);
+            set_basic_text_color(lv_color_hex(COLOR_BLACK));
+            lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
+            lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
+            lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
+        }
     }
 
     // Update status message
@@ -450,7 +452,7 @@ void invalidateOldReadings() {
         for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
             if ((time(NULL) > readings[i].lastMessageTime + (MAX_NO_MESSAGE_SEC)) && (readings[i].changeChar != CHAR_NO_MESSAGE)) {
                 readings[i].changeChar = CHAR_NO_MESSAGE;
-                snprintf(readings[i].output, 10, NO_READING);
+                snprintf(readings[i].output, sizeof(readings[i].output), NO_READING);
                 readings[i].currentValue = 0.0;
             }
         }
@@ -552,7 +554,7 @@ void displayStatusMessages_t(void* pvParameters) {
             // Wait for the specified duration before clearing the message.
             vTaskDelay(pdMS_TO_TICKS(receivedMsg.duration_s * 1000));
             // Clear the label after the duration has passed.
-            snprintf(statusMessageValue, CHAR_LEN, "");
+            statusMessageValue[0] = '\0';
         }
     }
 }
@@ -571,18 +573,16 @@ void logAndPublish(const char* messageBuffer) {
     }
 
     // Try to send to MQTT without blocking - if mutex isn't available, skip it
-    if (mqttClient.connected()) {
-        if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) { // Changed from 1000ms to 0ms (no wait)
-            esp_task_wdt_reset();
-            if (mqttClient.connected()) {
-                mqttClient.beginMessage(log_topic);
-                mqttClient.print(messageBuffer);
-                mqttClient.endMessage();
-            }
-            xSemaphoreGive(mqttMutex);
+    if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) {
+        esp_task_wdt_reset();
+        if (mqttClient.connected()) {
+            mqttClient.beginMessage(log_topic);
+            mqttClient.print(messageBuffer);
+            mqttClient.endMessage();
         }
-        // If we can't get the mutex immediately, just skip MQTT (log still goes to SD/Serial)
+        xSemaphoreGive(mqttMutex);
     }
+    // If we can't get the mutex immediately, just skip MQTT (log still goes to SD/Serial)
 
     StatusMessage msg;
     snprintf(msg.text, CHAR_LEN, "%s", messageBuffer);
@@ -604,21 +604,19 @@ void errorPublish(const char* messageBuffer) {
     }
 
     // Try to send to MQTT without blocking - if mutex isn't available, skip it
-    if (mqttClient.connected()) {
-        if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) { // Changed from 100ms to 0ms (no wait)
-            esp_task_wdt_reset();
-            if (mqttClient.connected()) {
-                mqttClient.beginMessage(error_topic, true);
-                mqttClient.print(messageBuffer);
-                mqttClient.endMessage();
-            }
-            xSemaphoreGive(mqttMutex);
+    if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) {
+        esp_task_wdt_reset();
+        if (mqttClient.connected()) {
+            mqttClient.beginMessage(error_topic, true);
+            mqttClient.print(messageBuffer);
+            mqttClient.endMessage();
         }
-        // If we can't get the mutex immediately, just skip MQTT (log still goes to SD/Serial)
+        xSemaphoreGive(mqttMutex);
     }
+    // If we can't get the mutex immediately, just skip MQTT (log still goes to SD/Serial)
 }
 
-// SD card logger task - runs on core 0 to avoid blocking the display loop
+// SD card logger task - runs at lowest priority to avoid blocking other tasks
 void sdcard_logger_t(void* pvParameters) {
     SDLogMessage logMsg;
 

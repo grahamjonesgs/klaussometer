@@ -11,6 +11,23 @@ extern HTTPClient http;
 #define SOLAR_TOKEN_LENGTH 2048
 char solar_token[SOLAR_TOKEN_LENGTH] = {0};
 
+// Exponential backoff state for each API
+static int uvFailCount = 0;
+static int weatherFailCount = 0;
+static int solarCurrentFailCount = 0;
+static int solarDailyFailCount = 0;
+static int solarMonthlyFailCount = 0;
+
+// Helper function to calculate backoff delay with exponential increase
+static int getBackoffDelay(int failCount) {
+    // Exponential backoff: base_delay * 2^(failCount-1), capped at max
+    int delay = API_FAIL_DELAY_SEC;
+    for (int i = 1; i < failCount && delay < API_MAX_BACKOFF_SEC; i++) {
+        delay *= 2;
+    }
+    return (delay > API_MAX_BACKOFF_SEC) ? API_MAX_BACKOFF_SEC : delay;
+}
+
 // The semaphore to protect the HTTPClient object
 extern SemaphoreHandle_t httpMutex;
 
@@ -23,7 +40,9 @@ char post_buffer[POST_BUFFER_SIZE] = {0};
 
 // Get UV from weatherbit.io
 void get_uv_t(void* pvParameters) {
+    esp_task_wdt_add(NULL);
     while (true) {
+        esp_task_wdt_reset();
         if (weather.isDay) {
             if (time(NULL) - uv.updateTime > UV_UPDATE_INTERVAL_SEC) {
                 if (WiFi.status() == WL_CONNECTED) {
@@ -42,6 +61,7 @@ void get_uv_t(void* pvParameters) {
                                 logAndPublish("UV updated");
                                 strftime(uv.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
                                 saveDataBlock(UV_DATA_FILENAME, &uv, sizeof(uv));
+                                uvFailCount = 0; // Reset backoff on success
                             } else {
                                 logAndPublish("UV update failed: Payload read error");
                                 uv.updateTime = time(NULL); // Prevents constant calls if the API is down and testing for parsing
@@ -54,8 +74,10 @@ void get_uv_t(void* pvParameters) {
                             errorPublish(log_message);
                             http.end();
                             xSemaphoreGive(httpMutex);
-                            logAndPublish("UV updated failed");
-                            vTaskDelay(pdMS_TO_TICKS(API_FAIL_DELAY_SEC * 1000)); // Stop calling too often for errors
+                            logAndPublish("UV update failed");
+                            uvFailCount++;
+                            int backoffDelay = getBackoffDelay(uvFailCount);
+                            vTaskDelay(pdMS_TO_TICKS(backoffDelay * 1000));
                         }
                     }
                 }
@@ -74,7 +96,9 @@ void get_uv_t(void* pvParameters) {
 }
 
 void get_weather_t(void* pvParameters) {
+    esp_task_wdt_add(NULL);
     while (true) {
+        esp_task_wdt_reset();
         if (time(NULL) - weather.updateTime > WEATHER_UPDATE_INTERVAL_SEC) {
             if (WiFi.status() == WL_CONNECTED) {
                 if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(API_SEMAPHORE_WAIT_SEC * 1000)) == pdTRUE) {
@@ -115,20 +139,22 @@ void get_weather_t(void* pvParameters) {
                             strftime(weather.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
                             logAndPublish("Weather updated");
                             saveDataBlock(WEATHER_DATA_FILENAME, &weather, sizeof(weather));
+                            weatherFailCount = 0; // Reset backoff on success
                         } else {
                             logAndPublish("Weather update failed: Payload read error");
                         }
                         http.end();
                         xSemaphoreGive(httpMutex);
-                        logAndPublish("Weather updated");
                     } else {
                         char log_message[CHAR_LEN];
                         snprintf(log_message, CHAR_LEN, "[HTTP] GET current weather failed, error: %d", httpCode);
                         errorPublish(log_message);
-                        logAndPublish("Weather updated failed");
+                        logAndPublish("Weather update failed");
                         http.end();
                         xSemaphoreGive(httpMutex);
-                        vTaskDelay(pdMS_TO_TICKS(API_FAIL_DELAY_SEC * 1000)); // Stop calling too often for errors
+                        weatherFailCount++;
+                        int backoffDelay = getBackoffDelay(weatherFailCount);
+                        vTaskDelay(pdMS_TO_TICKS(backoffDelay * 1000));
                     }
                 }
             }
@@ -237,7 +263,9 @@ const char* wmoToText(int code, bool isDay) {
 }
 
 void get_solar_token_t(void* pvParameters) {
+    esp_task_wdt_add(NULL);
     while (true) {
+        esp_task_wdt_reset();
         // Check if the token is valid (not empty) or if it has expired
         if (strlen(solar_token) == 0) {
             if (WiFi.status() == WL_CONNECTED) {
@@ -282,8 +310,9 @@ void get_solar_token_t(void* pvParameters) {
 
 // Get current solar values from Solarman
 void get_current_solar_t(void* pvParameters) {
-
+    esp_task_wdt_add(NULL);
     while (true) {
+        esp_task_wdt_reset();
         if (time(NULL) - solar.currentUpdateTime > SOLAR_CURRENT_UPDATE_INTERVAL_SEC) {
             // First, check if the token is available
             if (strlen(solar_token) == 0) {
@@ -336,7 +365,7 @@ void get_current_solar_t(void* pvParameters) {
                                     solar.minmax_reset = true;
                                     storage.begin("KO");
                                     storage.remove("solarmin");
-                                    storage.remove("solarmmax");
+                                    storage.remove("solarmax");
                                     storage.putFloat("solarmin", solar.today_battery_min);
                                     storage.putFloat("solarmax", solar.today_battery_max);
                                     storage.end();
@@ -363,6 +392,7 @@ void get_current_solar_t(void* pvParameters) {
                                 }
                                 logAndPublish("Solar status updated");
                                 saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
+                                solarCurrentFailCount = 0; // Reset backoff on success
                             } else {
                                 const char* msg = root["msg"];
                                 if (msg && strcmp(msg, "auth invalid token") == 0) {
@@ -381,7 +411,9 @@ void get_current_solar_t(void* pvParameters) {
                         char log_message[CHAR_LEN];
                         snprintf(log_message, CHAR_LEN, "[HTTP] GET solar status failed, error: %d", httpCode);
                         errorPublish(log_message);
-                        vTaskDelay(pdMS_TO_TICKS(API_FAIL_DELAY_SEC * 1000)); // Stop calling too often for errors
+                        solarCurrentFailCount++;
+                        int backoffDelay = getBackoffDelay(solarCurrentFailCount);
+                        vTaskDelay(pdMS_TO_TICKS(backoffDelay * 1000));
                     }
                     http.end();
                     xSemaphoreGive(httpMutex);
@@ -394,12 +426,14 @@ void get_current_solar_t(void* pvParameters) {
 
 // Get current solar values from Solarman
 void get_daily_solar_t(void* pvParameters) {
+    esp_task_wdt_add(NULL);
     char currentDate[CHAR_LEN];
     char currentYearMonth[CHAR_LEN];
     char previousMonthYearMonth[CHAR_LEN];
 
     // Define a buffer for the JSON payload
     while (true) {
+        esp_task_wdt_reset();
         if ((time(NULL) - solar.dailyUpdateTime > SOLAR_DAILY_UPDATE_INTERVAL_SEC)) {
             // First, check if the token is available
             if (strlen(solar_token) == 0) {
@@ -451,6 +485,7 @@ void get_daily_solar_t(void* pvParameters) {
                                 logAndPublish("Solar today's buy value updated");
                                 solar.dailyUpdateTime = time(NULL);
                                 saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
+                                solarDailyFailCount = 0; // Reset backoff on success
                             } else {
                                 logAndPublish("Solar today's buy value update failed: No success");
                             }
@@ -466,7 +501,9 @@ void get_daily_solar_t(void* pvParameters) {
                         logAndPublish("Getting solar today buy value failed");
                         http.end();
                         xSemaphoreGive(httpMutex);
-                        vTaskDelay(pdMS_TO_TICKS(API_FAIL_DELAY_SEC * 1000)); // Stop calling too often for errors
+                        solarDailyFailCount++;
+                        int backoffDelay = getBackoffDelay(solarDailyFailCount);
+                        vTaskDelay(pdMS_TO_TICKS(backoffDelay * 1000));
                     }
                 }
             }
@@ -477,12 +514,14 @@ void get_daily_solar_t(void* pvParameters) {
 
 // Get current solar values from Solarman
 void get_monthly_solar_t(void* pvParameters) {
+    esp_task_wdt_add(NULL);
     char currentDate[CHAR_LEN];
     char currentYearMonth[CHAR_LEN];
     char previousMonthYearMonth[CHAR_LEN];
 
     // Get station status
     while (true) {
+        esp_task_wdt_reset();
         if ((time(NULL) - solar.monthlyUpdateTime > SOLAR_MONTHLY_UPDATE_INTERVAL_SEC)) {
             if (strlen(solar_token) == 0) {
                 vTaskDelay(pdMS_TO_TICKS(SOLAR_TOKEN_WAIT_SEC * 1000));
@@ -533,6 +572,7 @@ void get_monthly_solar_t(void* pvParameters) {
                                 solar.monthlyUpdateTime = time(NULL);
                                 logAndPublish("Solar month's buy value updated");
                                 saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
+                                solarMonthlyFailCount = 0; // Reset backoff on success
                             }
                         } else {
                             logAndPublish("Solar month's buy value update failed: Payload read error");
@@ -547,7 +587,9 @@ void get_monthly_solar_t(void* pvParameters) {
                         logAndPublish("Getting solar month buy value failed");
                         http.end();
                         xSemaphoreGive(httpMutex);
-                        vTaskDelay(pdMS_TO_TICKS(API_FAIL_DELAY_SEC * 1000)); // Stop calling too often for errors
+                        solarMonthlyFailCount++;
+                        int backoffDelay = getBackoffDelay(solarMonthlyFailCount);
+                        vTaskDelay(pdMS_TO_TICKS(backoffDelay * 1000));
                     }
                 }
             }

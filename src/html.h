@@ -191,7 +191,7 @@ const char* logs_html = R"=====(
   <style>
     body {
       background-color: #f0f2f5;
-      font-family: 'Courier New', monospace;
+      font-family: Arial, sans-serif;
       margin: 0;
       padding: 20px;
       color: #333;
@@ -244,6 +244,7 @@ const char* logs_html = R"=====(
       overflow-y: auto;
       font-size: 12px;
       line-height: 1.6;
+      font-family: 'Courier New', monospace;
     }
     .log-entry {
       margin-bottom: 5px;

@@ -1,6 +1,5 @@
 #include "globals.h"
 extern Solar solar;
-extern SemaphoreHandle_t mqttMutex;
 
 // Cache line counts for faster log reading
 static int normalLogLineCount = -1;  // -1 means not yet initialized
@@ -186,11 +185,14 @@ void addLogToSDCard(const char* message, const char* logFilename) {
         while (oldFile.available() && oldFile.read() != '\n');
       }
 
-      // Write remaining lines to temp file
+      // Write remaining lines to temp file using buffered copy
       File tempFile = SD_MMC.open("/temp_log.txt", FILE_WRITE);
       if (tempFile) {
+        const size_t COPY_BUFFER_SIZE = 512;
+        uint8_t copyBuffer[COPY_BUFFER_SIZE];
         while (oldFile.available()) {
-          tempFile.write(oldFile.read());
+          size_t bytesRead = oldFile.read(copyBuffer, COPY_BUFFER_SIZE);
+          tempFile.write(copyBuffer, bytesRead);
         }
         tempFile.close();
       }
@@ -219,17 +221,36 @@ void addLogToSDCard(const char* message, const char* logFilename) {
   }
 }
 
+// Estimate max JSON size: ~350 bytes per entry (timestamp, synced, message up to 255 chars with escaping)
+#define JSON_BUFFER_SIZE (MAX_LOG_ENTRIES_TO_READ * 400 + 32)
+
 void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
-  jsonOutput = "{\"logs\":[";
+  // Pre-allocate the output buffer to avoid repeated reallocations
+  char* jsonBuffer = (char*)heap_caps_malloc(JSON_BUFFER_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (jsonBuffer == nullptr) {
+    // Fall back to internal RAM if PSRAM not available
+    jsonBuffer = (char*)malloc(JSON_BUFFER_SIZE);
+  }
+  if (jsonBuffer == nullptr) {
+    jsonOutput = "{\"logs\":[],\"error\":\"Memory allocation failed\"}";
+    return;
+  }
+
+  size_t bufferPos = 0;
+  bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "{\"logs\":[");
 
   if (!SD_MMC.exists(logFilename)) {
-    jsonOutput += "]}";
+    bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "]}");
+    jsonOutput = jsonBuffer;
+    free(jsonBuffer);
     return;
   }
 
   File logFile = SD_MMC.open(logFilename, FILE_READ);
   if (!logFile) {
-    jsonOutput += "]}";
+    bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "]}");
+    jsonOutput = jsonBuffer;
+    free(jsonBuffer);
     return;
   }
 
@@ -274,52 +295,101 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
     }
   }
 
-  // Read the last N lines into memory
+  // Read the last N lines into memory using fixed-size buffers
   struct LogLine {
     time_t timestamp;
-    String message;
+    char message[CHAR_LEN];
   };
 
-  LogLine* lines = new LogLine[MAX_LOG_ENTRIES_TO_READ];
+  LogLine* lines = (LogLine*)heap_caps_malloc(sizeof(LogLine) * MAX_LOG_ENTRIES_TO_READ, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (lines == nullptr) {
+    lines = (LogLine*)malloc(sizeof(LogLine) * MAX_LOG_ENTRIES_TO_READ);
+  }
+  if (lines == nullptr) {
+    logFile.close();
+    bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "],\"error\":\"Line buffer allocation failed\"}");
+    jsonOutput = jsonBuffer;
+    free(jsonBuffer);
+    return;
+  }
   int lineCount = 0;
 
+  // Read lines using a fixed buffer instead of String
+  char lineBuffer[CHAR_LEN + 32];
   while (logFile.available() && lineCount < MAX_LOG_ENTRIES_TO_READ) {
-    String line = logFile.readStringUntil('\n');
-    line.trim();
+    int lineLen = 0;
+    while (logFile.available() && lineLen < (int)(sizeof(lineBuffer) - 1)) {
+      char c = logFile.read();
+      if (c == '\n') break;
+      if (c != '\r') {
+        lineBuffer[lineLen++] = c;
+      }
+    }
+    lineBuffer[lineLen] = '\0';
 
-    if (line.length() > 0) {
+    if (lineLen > 0) {
       // Parse timestamp|message format
-      int pipePos = line.indexOf('|');
-      if (pipePos > 0) {
-        lines[lineCount].timestamp = line.substring(0, pipePos).toInt();
-        lines[lineCount].message = line.substring(pipePos + 1);
+      char* pipePos = strchr(lineBuffer, '|');
+      if (pipePos != nullptr) {
+        *pipePos = '\0';
+        lines[lineCount].timestamp = atol(lineBuffer);
+        strncpy(lines[lineCount].message, pipePos + 1, CHAR_LEN - 1);
+        lines[lineCount].message[CHAR_LEN - 1] = '\0';
         lineCount++;
       }
     }
   }
   logFile.close();
 
-  // Output in reverse order (newest first)
+  // Output in reverse order (newest first) using snprintf
+  bool firstEntry = true;
   for (int i = lineCount - 1; i >= 0; i--) {
     bool timeWasSynced = (lines[i].timestamp >= TIME_SYNC_THRESHOLD);
 
-    if (i < lineCount - 1) jsonOutput += ",";
+    // Escape message for JSON into a temporary buffer
+    char escapedMsg[CHAR_LEN * 2];
+    size_t escPos = 0;
+    for (size_t j = 0; lines[i].message[j] != '\0' && escPos < sizeof(escapedMsg) - 2; j++) {
+      char c = lines[i].message[j];
+      if (c == '\\' || c == '"') {
+        escapedMsg[escPos++] = '\\';
+        escapedMsg[escPos++] = c;
+      } else if (c == '\n') {
+        escapedMsg[escPos++] = '\\';
+        escapedMsg[escPos++] = 'n';
+      } else if (c == '\r') {
+        escapedMsg[escPos++] = '\\';
+        escapedMsg[escPos++] = 'r';
+      } else if (c == '\t') {
+        escapedMsg[escPos++] = '\\';
+        escapedMsg[escPos++] = 't';
+      } else {
+        escapedMsg[escPos++] = c;
+      }
+    }
+    escapedMsg[escPos] = '\0';
 
-    jsonOutput += "{\"timestamp\":" + String(lines[i].timestamp) +
-                  ",\"synced\":" + String(timeWasSynced ? "true" : "false") +
-                  ",\"message\":\"";
+    // Check buffer space before writing
+    size_t entrySize = 100 + strlen(escapedMsg); // Approximate size needed
+    if (bufferPos + entrySize >= JSON_BUFFER_SIZE - 10) {
+      break; // Stop if we're running out of buffer space
+    }
 
-    // Escape message for JSON
-    String message = lines[i].message;
-    message.replace("\\", "\\\\");
-    message.replace("\"", "\\\"");
-    message.replace("\n", "\\n");
-    message.replace("\r", "\\r");
-    message.replace("\t", "\\t");
+    if (!firstEntry) {
+      bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, ",");
+    }
+    firstEntry = false;
 
-    jsonOutput += message + "\"}";
+    bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos,
+                          "{\"timestamp\":%ld,\"synced\":%s,\"message\":\"%s\"}",
+                          (long)lines[i].timestamp,
+                          timeWasSynced ? "true" : "false",
+                          escapedMsg);
   }
 
-  delete[] lines;
-  jsonOutput += "]}";
+  free(lines);
+  bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "]}");
+
+  jsonOutput = jsonBuffer;
+  free(jsonBuffer);
 }

@@ -6,12 +6,12 @@ extern int numberOfReadings;
 extern struct tm timeinfo;
 
 void setup_wifi() {
-    int counter = 1;
+    int counter = 0;
     WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     WiFi.persistent(false);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     WiFi.setAutoReconnect(true);
-    WiFi.setTxPower(WIFI_POWER_2dBm);
+    WiFi.setTxPower(WIFI_POWER_8_5dBm); // Increased from 2dBm for better range/reliability
 
     while (WiFi.status() != WL_CONNECTED) {
         counter++;
@@ -26,11 +26,8 @@ void setup_wifi() {
         // WiFi.reconnect();
         vTaskDelay(pdMS_TO_TICKS(WIFI_RETRY_DELAY_SEC * 1000)); // Wait before retrying
     }
-    IPAddress ip = WiFi.localIP();
-    char ipStr[16];
-    snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
     char messageBuffer[CHAR_LEN];
-    snprintf(messageBuffer, CHAR_LEN, "Connected to WiFi SSID: %s", WiFi.SSID().c_str());
+    snprintf(messageBuffer, CHAR_LEN, "Connected to WiFi SSID: %s, IP: %s", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
     logAndPublish(messageBuffer);
     setup_web_server();
 }
@@ -54,7 +51,6 @@ void mqtt_connect() {
 }
 
 void time_init() {
-    struct tm timeinfo;
     if (!getLocalTime(&timeinfo)) {
         logAndPublish("Failed to obtain time");
         return;
@@ -67,13 +63,19 @@ void time_init() {
 }
 
 void connectivity_manager_t(void* pvParameters) {
-    bool wasDisconnected;
+    // Subscribe this task to the watchdog
+    esp_task_wdt_add(NULL);
+
+    bool wasDisconnected = false;
     while (true) {
+        // Reset watchdog at the start of each loop iteration
+        esp_task_wdt_reset();
+
         wasDisconnected = false;
         if (WiFi.status() != WL_CONNECTED) {
             wasDisconnected = true;
             logAndPublish("WiFi is reconnecting");
-            setup_wifi(); 
+            setup_wifi();
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
         if (wasDisconnected) {

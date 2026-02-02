@@ -40,7 +40,7 @@ void set_solar_values() {
             struct tm ts_end;
             time_t end_time = solar.currentUpdateTime + remain_minutes_round * 60; // find time of estimated end of battery charge
             char time_buf_end[CHAR_LEN];
-            ts_end = *localtime(&end_time);
+            localtime_r(&end_time, &ts_end);
             strftime(time_buf_end, sizeof(time_buf_end), "%H:%M:%S", &ts_end);
 
             if ((floor(remain_hours) == 1) && (remain_minutes > 0)) {
@@ -49,8 +49,7 @@ void set_solar_values() {
                 if ((remain_minutes_round > 0) && (remain_hours < MAX_SOLAR_TIME_STATUS_HOURS)) {
                     snprintf(tempString, CHAR_LEN, "%2.0f hours %i mins\n remaining\n Until %s", remain_hours, remain_minutes_round % 60, time_buf_end);
                 } else {
-                    snprintf(tempString, CHAR_LEN,
-                             ""); // Don't print for too long time
+                    tempString[0] = '\0'; // Don't print for too long time
                 }
             }
             lv_label_set_text(ui_ChargingTime, tempString);
@@ -74,13 +73,12 @@ void set_solar_values() {
                     if ((remain_minutes_round > 0) && (remain_hours < MAX_SOLAR_TIME_STATUS_HOURS)) {
                         snprintf(tempString, CHAR_LEN, "%2.0f hours %i mins to\n fully charged", remain_hours, remain_minutes_round % 60);
                     } else {
-                        snprintf(tempString, CHAR_LEN,
-                                 ""); // Don't print for too long time
+                        tempString[0] = '\0'; // Don't print for too long time
                     }
                 }
 
                 if (remain_minutes == 0) {
-                    snprintf(tempString, CHAR_LEN, "");
+                    tempString[0] = '\0';
                 }
 
                 lv_label_set_text(ui_ChargingTime, tempString);
@@ -93,9 +91,9 @@ void set_solar_values() {
                 lv_label_set_text(ui_ChargingLabel, "");
                 lv_label_set_text(ui_ChargingTime, "");
                 lv_obj_set_style_arc_color(ui_BatteryArc, lv_color_hex(0x2095F6),
-                                           LV_PART_INDICATOR | LV_STATE_DEFAULT); // Set arc to red
+                                           LV_PART_INDICATOR | LV_STATE_DEFAULT); // Set arc to blue (idle)
                 lv_obj_set_style_bg_color(ui_BatteryArc, lv_color_hex(0x2095F6),
-                                          LV_PART_KNOB | LV_STATE_DEFAULT); // Set arc to red
+                                          LV_PART_KNOB | LV_STATE_DEFAULT); // Set arc to blue (idle)
             }
             lv_obj_set_style_arc_color(ui_SolarArc, lv_color_hex(COLOR_GREEN),
                                        LV_PART_INDICATOR | LV_STATE_DEFAULT); // Set arc to green
@@ -109,7 +107,7 @@ void set_solar_values() {
         // Set solar update times
         struct tm ts;
         char time_buf[CHAR_LEN];
-        ts = *localtime(&solar.currentUpdateTime);
+        localtime_r(&solar.currentUpdateTime, &ts);
         strftime(time_buf, sizeof(time_buf), "%H:%M:%S", &ts);
         snprintf(tempString, CHAR_LEN, "Values as of %s\nReceived at %s", solar.time, time_buf);
         lv_label_set_text(ui_AsofTimeLabel, tempString);
@@ -192,7 +190,7 @@ void set_basic_text_color(lv_color_t color) {
     lv_obj_set_style_text_color(ui_TextRooms, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_TextForecastName, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_TextBattery, color, LV_PART_MAIN);
-    lv_obj_set_style_text_color(ui_TextSolar, color, LV_PART_MAIN                                                 );
+    lv_obj_set_style_text_color(ui_TextSolar, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_TextUsing, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_TextUV, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_FCConditions, color, LV_PART_MAIN);
