@@ -19,6 +19,7 @@
         {"Bedroom", "bedroom/battery/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY, 0, 0},                    \
         {"Outside", "outside/battery/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY, 0, 0}
 
+#define ROOM_COUNT 5
 #define ROOM_NAME_LABELS {&ui_RoomName1, &ui_RoomName2, &ui_RoomName3, &ui_RoomName4, &ui_RoomName5}
 #define TEMP_ARC_LABELS {&ui_TempArc1, &ui_TempArc2, &ui_TempArc3, &ui_TempArc4, &ui_TempArc5}
 #define TEMP_LABELS {&ui_TempLabel1, &ui_TempLabel2, &ui_TempLabel3, &ui_TempLabel4, &ui_TempLabel5}
@@ -104,6 +105,12 @@ static const int COLOR_YELLOW = 0xF7EA48;
 static const int COLOR_GREEN = 0x205602;
 static const int COLOR_BLACK = 0x000000;
 static const int COLOR_WHITE = 0xFFFFFF;
+
+// Night mode arc colors
+static const int COLOR_ARC_TRACK_NIGHT = 0x404040;  // Dark gray track for night
+static const int COLOR_ARC_TRACK_DAY = 0xE0E0E0;    // Light gray track for day
+static const int ARC_OPACITY_NIGHT = 180;            // Dimmer indicator at night
+static const int ARC_OPACITY_DAY = 255;              // Full opacity during day
 
 // Define LCD panel constants
 static const int LCD_DE_PIN = 40;

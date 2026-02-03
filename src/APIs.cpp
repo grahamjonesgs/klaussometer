@@ -28,6 +28,18 @@ static int getBackoffDelay(int failCount) {
     return (delay > API_MAX_BACKOFF_SEC) ? API_MAX_BACKOFF_SEC : delay;
 }
 
+// Watchdog-safe delay: feeds watchdog every 30 seconds during long delays
+static void vTaskDelayWithWatchdog(int delaySeconds) {
+    const int WDT_FEED_INTERVAL_SEC = 30;
+    int remainingSec = delaySeconds;
+    while (remainingSec > 0) {
+        int sleepSec = (remainingSec > WDT_FEED_INTERVAL_SEC) ? WDT_FEED_INTERVAL_SEC : remainingSec;
+        vTaskDelay(pdMS_TO_TICKS(sleepSec * 1000));
+        esp_task_wdt_reset();
+        remainingSec -= sleepSec;
+    }
+}
+
 // The semaphore to protect the HTTPClient object
 extern SemaphoreHandle_t httpMutex;
 
@@ -77,7 +89,7 @@ void get_uv_t(void* pvParameters) {
                             logAndPublish("UV update failed");
                             uvFailCount++;
                             int backoffDelay = getBackoffDelay(uvFailCount);
-                            vTaskDelay(pdMS_TO_TICKS(backoffDelay * 1000));
+                            vTaskDelayWithWatchdog(backoffDelay);
                         }
                     }
                 }
@@ -154,7 +166,7 @@ void get_weather_t(void* pvParameters) {
                         xSemaphoreGive(httpMutex);
                         weatherFailCount++;
                         int backoffDelay = getBackoffDelay(weatherFailCount);
-                        vTaskDelay(pdMS_TO_TICKS(backoffDelay * 1000));
+                        vTaskDelayWithWatchdog(backoffDelay);
                     }
                 }
             }
@@ -413,7 +425,7 @@ void get_current_solar_t(void* pvParameters) {
                         errorPublish(log_message);
                         solarCurrentFailCount++;
                         int backoffDelay = getBackoffDelay(solarCurrentFailCount);
-                        vTaskDelay(pdMS_TO_TICKS(backoffDelay * 1000));
+                        vTaskDelayWithWatchdog(backoffDelay);
                     }
                     http.end();
                     xSemaphoreGive(httpMutex);
@@ -503,7 +515,7 @@ void get_daily_solar_t(void* pvParameters) {
                         xSemaphoreGive(httpMutex);
                         solarDailyFailCount++;
                         int backoffDelay = getBackoffDelay(solarDailyFailCount);
-                        vTaskDelay(pdMS_TO_TICKS(backoffDelay * 1000));
+                        vTaskDelayWithWatchdog(backoffDelay);
                     }
                 }
             }
@@ -589,7 +601,7 @@ void get_monthly_solar_t(void* pvParameters) {
                         xSemaphoreGive(httpMutex);
                         solarMonthlyFailCount++;
                         int backoffDelay = getBackoffDelay(solarMonthlyFailCount);
-                        vTaskDelay(pdMS_TO_TICKS(backoffDelay * 1000));
+                        vTaskDelayWithWatchdog(backoffDelay);
                     }
                 }
             }

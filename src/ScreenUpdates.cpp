@@ -210,7 +210,38 @@ void set_basic_text_color(lv_color_t color) {
     lv_obj_set_style_text_color(ui_Direction3, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_Direction4, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_Direction5, color, LV_PART_MAIN);
-    lv_obj_set_style_text_color(ui_Version, color, LV_PART_MAIN); 
+    lv_obj_set_style_text_color(ui_Version, color, LV_PART_MAIN);
+}
+
+// Sets arc colors for day/night mode
+void set_arc_night_mode(bool isNight) {
+    uint32_t trackColor = isNight ? COLOR_ARC_TRACK_NIGHT : COLOR_ARC_TRACK_DAY;
+    lv_opa_t indicatorOpa = isNight ? ARC_OPACITY_NIGHT : ARC_OPACITY_DAY;
+
+    // Temperature arcs (rooms) - use the same macro as main.cpp
+    lv_obj_t** tempArcs[ROOM_COUNT] = TEMP_ARC_LABELS;
+    for (int i = 0; i < ROOM_COUNT; i++) {
+        lv_obj_set_style_arc_color(*tempArcs[i], lv_color_hex(trackColor), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_arc_opa(*tempArcs[i], indicatorOpa, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+    }
+
+    // Forecast temp arc
+    lv_obj_set_style_arc_color(ui_TempArcFC, lv_color_hex(trackColor), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_opa(ui_TempArcFC, indicatorOpa, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+
+    // Battery, Solar, Using arcs
+    lv_obj_set_style_arc_color(ui_BatteryArc, lv_color_hex(trackColor), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_opa(ui_BatteryArc, indicatorOpa, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+
+    lv_obj_set_style_arc_color(ui_SolarArc, lv_color_hex(trackColor), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_opa(ui_SolarArc, indicatorOpa, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+
+    lv_obj_set_style_arc_color(ui_UsingArc, lv_color_hex(trackColor), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_opa(ui_UsingArc, indicatorOpa, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+
+    // UV arc
+    lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(trackColor), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_arc_opa(ui_UVArc, indicatorOpa, LV_PART_INDICATOR | LV_STATE_DEFAULT);
 }
 
 void format_integer_with_commas(long long num, char* out, size_t outSize) {

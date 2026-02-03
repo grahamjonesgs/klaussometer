@@ -16,14 +16,14 @@ void setup_wifi() {
     while (WiFi.status() != WL_CONNECTED) {
         counter++;
         if (counter > WIFI_RETRIES) {
-            logAndPublish("Restarting due to WiFi connection errors");
-            ESP.restart();
+            // Don't restart - let connectivity_manager keep retrying
+            logAndPublish("WiFi connection failed, will retry later");
+            WiFi.disconnect(true);
+            return;
         }
         char messageBuffer[CHAR_LEN];
         snprintf(messageBuffer, CHAR_LEN, "Attempting to connect to WiFi %d/%d", counter, WIFI_RETRIES);
         logAndPublish(messageBuffer);
-        // WiFi.disconnect();
-        // WiFi.reconnect();
         vTaskDelay(pdMS_TO_TICKS(WIFI_RETRY_DELAY_SEC * 1000)); // Wait before retrying
     }
     char messageBuffer[CHAR_LEN];

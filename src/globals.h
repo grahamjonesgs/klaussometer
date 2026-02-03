@@ -123,6 +123,7 @@ char* toLowercase(const char* source, char* buffer, size_t bufferSize);
 int uv_color(float UV);
 void format_integer_with_commas(long long num, char* out, size_t outSize);
 void set_basic_text_color(lv_color_t color);
+void set_arc_night_mode(bool isNight);
 
 // APIs
 void get_uv_t(void* pvParameters);

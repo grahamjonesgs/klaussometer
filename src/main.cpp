@@ -65,7 +65,6 @@ static lv_display_t* disp = NULL;
 static lv_color_t* disp_draw_buf;
 
 // Arrays of UI objects
-#define ROOM_COUNT 5
 static lv_obj_t** roomNames[ROOM_COUNT] = ROOM_NAME_LABELS;
 static lv_obj_t** tempArcs[ROOM_COUNT] = TEMP_ARC_LABELS;
 static lv_obj_t** tempLabels[ROOM_COUNT] = TEMP_LABELS;
@@ -95,6 +94,22 @@ void setup() {
     // delay one second to enabling monitoring
     snprintf(chip_id, CHAR_LEN, "%04llx", ESP.getEfuseMac() & 0xffff);
     Serial.printf("Starting Klaussometer 4.0 Display %s\n", chip_id);
+
+    // Log reset reason to help diagnose watchdog issues
+    esp_reset_reason_t reason = esp_reset_reason();
+    const char* reasonStr;
+    switch (reason) {
+        case ESP_RST_POWERON: reasonStr = "Power-on"; break;
+        case ESP_RST_SW: reasonStr = "Software reset"; break;
+        case ESP_RST_PANIC: reasonStr = "Panic (likely watchdog)"; break;
+        case ESP_RST_INT_WDT: reasonStr = "Interrupt watchdog"; break;
+        case ESP_RST_TASK_WDT: reasonStr = "Task watchdog"; break;
+        case ESP_RST_WDT: reasonStr = "Other watchdog"; break;
+        case ESP_RST_BROWNOUT: reasonStr = "Brownout"; break;
+        case ESP_RST_DEEPSLEEP: reasonStr = "Deep sleep wake"; break;
+        default: reasonStr = "Unknown"; break;
+    }
+    Serial.printf("Reset reason: %s (%d)\n", reasonStr, reason);
 
     // Setup queues and mutexes
     statusMessageQueue = xQueueCreate(100, sizeof(StatusMessage));
@@ -128,6 +143,16 @@ void setup() {
         logAndPublish("SD Card initialization failed!");
     } else {
         logAndPublish("SD Card initialized");
+
+        // Log reset reason to SD card for persistent diagnostics
+        File errorLog = SD_MMC.open(ERROR_LOG_FILENAME, FILE_APPEND);
+        if (errorLog) {
+            char logLine[CHAR_LEN + 50];
+            snprintf(logLine, sizeof(logLine), "%ld|BOOT - Reset reason: %s (%d)\n", time(NULL), reasonStr, reason);
+            errorLog.print(logLine);
+            errorLog.close();
+        }
+
         if (loadDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar))) {
             logAndPublish("Solar state restored OK");
         } else {
@@ -235,7 +260,10 @@ void setup() {
     lv_obj_set_style_text_color(ui_WeatherStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_SolarStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
 
-    // Set to night settings at first
+    // Set to night settings at first (until we determine if it's daytime)
+    ledcWrite(PWMChannel, NIGHTTIME_DUTY);
+    set_basic_text_color(lv_color_hex(COLOR_WHITE));
+    set_arc_night_mode(true);
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
@@ -428,12 +456,14 @@ void loop() {
         if (!weather.isDay) {
             ledcWrite(PWMChannel, NIGHTTIME_DUTY);
             set_basic_text_color(lv_color_hex(COLOR_WHITE));
+            set_arc_night_mode(true);
             lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
             lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
             lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
         } else {
             ledcWrite(PWMChannel, DAYTIME_DUTY);
             set_basic_text_color(lv_color_hex(COLOR_BLACK));
+            set_arc_night_mode(false);
             lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
             lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
             lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
