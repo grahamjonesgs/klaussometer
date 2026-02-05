@@ -7,6 +7,7 @@ SET(SOURCES ui_Screen1.c
     fonts/ui_font_Battery2.c
     fonts/ui_font_Epicycles.c
     fonts/ui_font_Monserrat_Bold_18.c
-    fonts/ui_font_Monserrat_bold_32.c)
+    fonts/ui_font_Monserrat_bold_32.c
+    fonts/ui_font_Phosphor48.c)
 
 add_library(ui ${SOURCES})

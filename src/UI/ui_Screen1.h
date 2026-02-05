@@ -81,6 +81,8 @@ extern lv_obj_t *ui_BatteryLabel2;
 extern lv_obj_t *ui_BatteryLabel4;
 extern lv_obj_t *ui_BatteryLabel3;
 extern lv_obj_t *ui_Version;
+extern lv_obj_t *ui_Label1;
+extern lv_obj_t *ui_WiFiIcon;
 // CUSTOM VARIABLES
 
 #ifdef __cplusplus

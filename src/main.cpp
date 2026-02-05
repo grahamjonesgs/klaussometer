@@ -294,8 +294,6 @@ void setup() {
     esp_task_wdt_init(60, true); // 60 seconds, panic on timeout (triggers reboot)
     esp_task_wdt_add(NULL);      // Add current task (loop task) to watchdog
 
-    logAndPublish("Watchdog timer enabled (60s timeout)");
-
     // Start tasks
     // Priority guide: Arduino loop() runs at priority 1 on core 1 (loopTask)
     // Keep background tasks at low priority to avoid starving the display loop
@@ -424,8 +422,24 @@ void loop() {
 
     if (WiFi.status() == WL_CONNECTED) {
         lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
+        int rssi = WiFi.RSSI();
+        if (rssi > -50) {
+            lv_label_set_text(ui_WiFiIcon, WIFI_HIGH);
+            lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_BLACK), LV_PART_MAIN);
+        } else if (rssi > -60) {
+            lv_label_set_text(ui_WiFiIcon, WIFI_MEDIUM);
+            lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_BLACK), LV_PART_MAIN);
+        } else if (rssi > -70) {
+            lv_label_set_text(ui_WiFiIcon, WIFI_LOW);
+            lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_BLACK), LV_PART_MAIN);
+        } else {
+            lv_label_set_text(ui_WiFiIcon, WIFI_NONE);
+            lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_BLACK), LV_PART_MAIN);
+        }
     } else {
         lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
+        lv_label_set_text(ui_WiFiIcon, WIFI_X);
+        lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_RED), LV_PART_MAIN);
     }
 
     if (mqttClient.connected()) {

@@ -157,6 +157,9 @@ void setup_web_server() {
                          "<tr><td><b>IP Address:</b></td><td>" +
                          WiFi.localIP().toString() +
                          "</td></tr>"
+                         "<tr><td><b>WiFi Signal:</b></td><td>" +
+                         String(WiFi.RSSI()) + " dBm" +
+                         "</td></tr>"
                          "<tr><td><b>Uptime:</b></td><td>" +
                          getUptime() +
                          "</td></tr>"

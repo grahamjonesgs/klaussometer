@@ -40,6 +40,7 @@ LV_FONT_DECLARE( ui_font_Battery2);
 LV_FONT_DECLARE( ui_font_Epicycles);
 LV_FONT_DECLARE( ui_font_Monserrat_Bold_18);
 LV_FONT_DECLARE( ui_font_Monserrat_bold_32);
+LV_FONT_DECLARE( ui_font_Phosphor48);
 
 // UI INIT
 void ui_init(void);

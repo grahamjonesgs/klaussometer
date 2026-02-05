@@ -1,0 +1,16 @@
+{
+  "codename": "Phosphor48",
+  "ttf_path": "/assets/Phosphor.ttf",
+  "bin_path": "/assets/ui_font_Phosphor48.bin",
+  "c_path": "/assets/ui_font_Phosphor48.c",
+  "cfg_path": "/assets/ui_font_Phosphor48.fcfg",
+  "size": 48,
+  "bpp": 1,
+  "letters": 0,
+  "ranges": [
+    "0xE4EA-0xE4F4"
+  ],
+  "symbols": "",
+  "customparams": "--no-compress --no-prefilter",
+  "uploaded": false
+}

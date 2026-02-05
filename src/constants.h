@@ -43,22 +43,18 @@ static const char CHAR_BATTERY_OK = ';';       // Based on battery2 font
 static const char CHAR_BATTERY_BAD = ',';      // Based on battery2 font
 static const char CHAR_BATTERY_CRITICAL = '>'; // Based on battery2 font
 
-// Old Define boundaries for battery health
-//static const float BATTERY_OK = 3.75;
-//static const float BATTERY_BAD = 3.6;
-//static const float BATTERY_CRITICAL = 3.5;
+// Phosphor WiFi icons
+static const char* WIFI_HIGH          = "\xEE\x93\xAA";  // U+E4EA
+static const char* WIFI_MEDIUM        = "\xEE\x93\xAE";  // U+E4EE
+static const char* WIFI_LOW           = "\xEE\x93\xAC";  // U+E4EC
+static const char* WIFI_NONE          = "\xEE\x93\xB0";  // U+E4F0
+static const char* WIFI_SLASH         = "\xEE\x93\xB2";  // U+E4F2
+static const char* WIFI_X             = "\xEE\x93\xB4";  // U+E4F4
 
-
-// Option 1: Recommended adjustment
-static const float BATTERY_OK = 3.70;       // Was 3.75
-static const float BATTERY_BAD = 3.55;      // Was 3.6  
-static const float BATTERY_CRITICAL = 3.40; // Was 3.5
-
-// Option 2: Conservative
-//static const float BATTERY_OK = 3.72;
-//static const float BATTERY_BAD = 3.58;
-//static const float BATTERY_CRITICAL = 3.45;
-
+// Battery limits
+static const float BATTERY_OK = 3.70;       // The point where the battery is considered to be in good condition and can provide power for a reasonable amount of time
+static const float BATTERY_BAD = 3.55;      // The point where the battery is considered to be in bad condition and may not provide power for long
+static const float BATTERY_CRITICAL = 3.40; // The point where the battery is considered to be in critical condition and may not provide power for more than a short time
 
 // Data type definition for array
 static const int DATA_TEMPERATURE = 0;
