@@ -112,15 +112,36 @@ void set_solar_values() {
         snprintf(tempString, CHAR_LEN, "Values as of %s\nReceived at %s", solar.time, time_buf);
         lv_label_set_text(ui_AsofTimeLabel, tempString);
 
-        // Set grid bought amounts
-        if (solar.today_buy != 0.0 || solar.month_buy != 0.0) {
+        // Set grid bought amounts and self-sufficiency
+        if (solar.today_use > 0.0 || solar.month_use > 0.0) {
             char boughtTodayBuf[32];
             char boughtMonthBuf[32];
 
             format_integer_with_commas((long long)floor(solar.today_buy * ELECTRICITY_PRICE), boughtTodayBuf, sizeof(boughtTodayBuf));
             format_integer_with_commas((long long)floor(solar.month_buy * ELECTRICITY_PRICE), boughtMonthBuf, sizeof(boughtMonthBuf));
-            snprintf(tempString, CHAR_LEN, "Bought\nToday %.1fkWh - R%s\nThis month %.1fkWh - R%s", solar.today_buy, boughtTodayBuf, solar.month_buy, boughtMonthBuf);
-            lv_label_set_text(ui_GridBought, tempString);
+
+            // Calculate self-sufficiency percentages
+            int todaySelfSufficiency = (solar.today_use > 0.0) ? (int)(((solar.today_use - solar.today_buy) / solar.today_use) * 100) : 0;
+            int monthSelfSufficiency = (solar.month_use > 0.0) ? (int)(((solar.month_use - solar.month_buy) / solar.month_use) * 100) : 0;
+            int todayGridPercentage = 100 - todaySelfSufficiency;
+            int monthGridPercentage = 100 - monthSelfSufficiency;
+            todayGridPercentage = todayGridPercentage > 100 ? 100 : todayGridPercentage; // Cap at 100%
+            monthGridPercentage = monthGridPercentage > 100 ? 100 : monthGridPercentage; // Cap at 100%
+            todayGridPercentage = todayGridPercentage < 0 ? 0 : todayGridPercentage;     // Floor at 0%
+            monthGridPercentage = monthGridPercentage < 0 ? 0 : monthGridPercentage;     // Floor at 0%
+
+            snprintf(tempString, CHAR_LEN, "%.1f", solar.today_buy);
+            lv_label_set_text(ui_GridTodayEnergy, tempString);
+            snprintf(tempString, CHAR_LEN, "%.1f", solar.month_buy);
+            lv_label_set_text(ui_GridMonthEnergy, tempString);
+            snprintf(tempString, CHAR_LEN, "R%s", boughtTodayBuf);
+            lv_label_set_text(ui_GridTodayCost, tempString);
+            snprintf(tempString, CHAR_LEN, "R%s", boughtMonthBuf);
+            lv_label_set_text(ui_GridMonthCost, tempString);
+            snprintf(tempString, CHAR_LEN, "%d%%", todayGridPercentage);
+            lv_label_set_text(ui_GridTodayPercentage, tempString);
+            snprintf(tempString, CHAR_LEN, "%d%%", monthGridPercentage);
+            lv_label_set_text(ui_GridMonthPercentage, tempString);
         }
     }
 }
@@ -203,6 +224,15 @@ void set_basic_text_color(lv_color_t color) {
     lv_obj_set_style_text_color(ui_TextKlaussometer, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_SolarMinMax, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_GridBought, color, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_GridTodayEnergy, color, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_GridMonthEnergy, color, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_GridTodayCost, color, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_GridMonthCost, color, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_GridTodayPercentage, color, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_GridMonthPercentage, color, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_GridTitlekWh, color, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_GridTitleCost, color, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_GridTitlePercentage, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_FCMin, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_FCMax, color, LV_PART_MAIN);
     lv_obj_set_style_text_color(ui_Direction1, color, LV_PART_MAIN);

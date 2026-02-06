@@ -492,14 +492,15 @@ void get_daily_solar_t(void* pvParameters) {
                             deserializeJson(root, payload_buffer);
                             bool rec_success = root["success"];
                             if (rec_success == true) {
-                                float today_buy = root["stationDataItems"][0]["buyValue"];
-                                solar.today_buy = today_buy;
-                                logAndPublish("Solar today's buy value updated");
+                                solar.today_buy = root["stationDataItems"][0]["buyValue"];
+                                solar.today_use = root["stationDataItems"][0]["useValue"];
+                                solar.today_generation = root["stationDataItems"][0]["generationValue"];
+                                logAndPublish("Solar today's values updated");
                                 solar.dailyUpdateTime = time(NULL);
                                 saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
                                 solarDailyFailCount = 0; // Reset backoff on success
                             } else {
-                                logAndPublish("Solar today's buy value update failed: No success");
+                                logAndPublish("Solar today's values update failed: No success");
                             }
                         } else {
                             logAndPublish("Solar today's buy value update failed: Payload read error");
@@ -578,11 +579,11 @@ void get_monthly_solar_t(void* pvParameters) {
                             deserializeJson(root, payload_buffer);
                             bool rec_success = root["success"];
                             if (rec_success == true) {
-                                float month_buy = root["stationDataItems"][0]["buyValue"];
-
-                                solar.month_buy = month_buy;
+                                solar.month_buy = root["stationDataItems"][0]["buyValue"];
+                                solar.month_use = root["stationDataItems"][0]["useValue"];
+                                solar.month_generation = root["stationDataItems"][0]["generationValue"];
                                 solar.monthlyUpdateTime = time(NULL);
-                                logAndPublish("Solar month's buy value updated");
+                                logAndPublish("Solar month's values updated");
                                 saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
                                 solarMonthlyFailCount = 0; // Reset backoff on success
                             }

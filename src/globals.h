@@ -69,7 +69,11 @@ typedef struct __attribute__((packed)) {
     float today_battery_max;
     bool minmax_reset;
     float today_buy;
+    float today_use;
+    float today_generation;
     float month_buy;
+    float month_use;
+    float month_generation;
 } Solar;
 
 typedef struct __attribute__((packed)) {

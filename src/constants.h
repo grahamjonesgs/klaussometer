@@ -51,6 +51,11 @@ static const char* WIFI_NONE          = "\xEE\x93\xB0";  // U+E4F0
 static const char* WIFI_SLASH         = "\xEE\x93\xB2";  // U+E4F2
 static const char* WIFI_X             = "\xEE\x93\xB4";  // U+E4F4
 
+// WiFi signal strength thresholds (RSSI in dBm)
+static const int WIFI_RSSI_HIGH   = -50;  // Excellent signal
+static const int WIFI_RSSI_MEDIUM = -60;  // Good signal
+static const int WIFI_RSSI_LOW    = -70;  // Fair signal, below this is weak
+
 // Battery limits
 static const float BATTERY_OK = 3.70;       // The point where the battery is considered to be in good condition and can provide power for a reasonable amount of time
 static const float BATTERY_BAD = 3.55;      // The point where the battery is considered to be in bad condition and may not provide power for long

@@ -99,15 +99,33 @@ void setup() {
     esp_reset_reason_t reason = esp_reset_reason();
     const char* reasonStr;
     switch (reason) {
-        case ESP_RST_POWERON: reasonStr = "Power-on"; break;
-        case ESP_RST_SW: reasonStr = "Software reset"; break;
-        case ESP_RST_PANIC: reasonStr = "Panic (likely watchdog)"; break;
-        case ESP_RST_INT_WDT: reasonStr = "Interrupt watchdog"; break;
-        case ESP_RST_TASK_WDT: reasonStr = "Task watchdog"; break;
-        case ESP_RST_WDT: reasonStr = "Other watchdog"; break;
-        case ESP_RST_BROWNOUT: reasonStr = "Brownout"; break;
-        case ESP_RST_DEEPSLEEP: reasonStr = "Deep sleep wake"; break;
-        default: reasonStr = "Unknown"; break;
+    case ESP_RST_POWERON:
+        reasonStr = "Power-on";
+        break;
+    case ESP_RST_SW:
+        reasonStr = "Software reset";
+        break;
+    case ESP_RST_PANIC:
+        reasonStr = "Panic (likely watchdog)";
+        break;
+    case ESP_RST_INT_WDT:
+        reasonStr = "Interrupt watchdog";
+        break;
+    case ESP_RST_TASK_WDT:
+        reasonStr = "Task watchdog";
+        break;
+    case ESP_RST_WDT:
+        reasonStr = "Other watchdog";
+        break;
+    case ESP_RST_BROWNOUT:
+        reasonStr = "Brownout";
+        break;
+    case ESP_RST_DEEPSLEEP:
+        reasonStr = "Deep sleep wake";
+        break;
+    default:
+        reasonStr = "Unknown";
+        break;
     }
     Serial.printf("Reset reason: %s (%d)\n", reasonStr, reason);
 
@@ -268,7 +286,13 @@ void setup() {
     lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
 
-    lv_label_set_text(ui_GridBought, "Bought\nToday - Pending\nThis Month - Pending");
+    lv_label_set_text(ui_GridBought, "\nToday:\nThis month:");
+    lv_label_set_text(ui_GridTodayEnergy, "Pending");
+    lv_label_set_text(ui_GridMonthEnergy, "Pending");
+    lv_label_set_text(ui_GridTodayCost, "");
+    lv_label_set_text(ui_GridMonthCost, "");
+    lv_label_set_text(ui_GridTodayPercentage, "");
+    lv_label_set_text(ui_GridMonthPercentage, "");
 
     lv_timer_handler();
 
@@ -297,7 +321,7 @@ void setup() {
     // Start tasks
     // Priority guide: Arduino loop() runs at priority 1 on core 1 (loopTask)
     // Keep background tasks at low priority to avoid starving the display loop
-    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, NULL, 0, NULL, 1);            // Core 1, priority 0 (lowest)
+    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, NULL, 0, NULL, 1);             // Core 1, priority 0 (lowest)
     xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_MEDIUM, NULL, 2, NULL, 1); // Core 1, priority 2 (lower)
     xTaskCreatePinnedToCore(get_weather_t, "Weather", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
     xTaskCreatePinnedToCore(get_uv_t, "Get UV", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
@@ -422,20 +446,18 @@ void loop() {
 
     if (WiFi.status() == WL_CONNECTED) {
         lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
+        lv_color_t wifiIconColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
         int rssi = WiFi.RSSI();
-        if (rssi > -50) {
+        if (rssi > WIFI_RSSI_HIGH) {
             lv_label_set_text(ui_WiFiIcon, WIFI_HIGH);
-            lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_BLACK), LV_PART_MAIN);
-        } else if (rssi > -60) {
+        } else if (rssi > WIFI_RSSI_MEDIUM) {
             lv_label_set_text(ui_WiFiIcon, WIFI_MEDIUM);
-            lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_BLACK), LV_PART_MAIN);
-        } else if (rssi > -70) {
+        } else if (rssi > WIFI_RSSI_LOW) {
             lv_label_set_text(ui_WiFiIcon, WIFI_LOW);
-            lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_BLACK), LV_PART_MAIN);
         } else {
             lv_label_set_text(ui_WiFiIcon, WIFI_NONE);
-            lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_BLACK), LV_PART_MAIN);
         }
+        lv_obj_set_style_text_color(ui_WiFiIcon, wifiIconColor, LV_PART_MAIN);
     } else {
         lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
         lv_label_set_text(ui_WiFiIcon, WIFI_X);
