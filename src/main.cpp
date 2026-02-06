@@ -19,6 +19,7 @@ WiFiClient espClient;
 MqttClient mqttClient(espClient);
 WebServer webServer(80);
 HTTPClient http;
+static const int HTTP_TIMEOUT_MS = 10000; // 10 second timeout for API calls
 SemaphoreHandle_t mqttMutex;
 SemaphoreHandle_t httpMutex;
 
@@ -309,6 +310,7 @@ void setup() {
     storage.end();
 
     configTime(TIME_OFFSET, 0, NTP_SERVER); // Setup as used to display time from stored values
+    http.setTimeout(HTTP_TIMEOUT_MS); // Set read timeout for all API calls
 
     // Register shutdown handler to log reboots (including watchdog timeouts)
     esp_register_shutdown_handler(shutdown_handler);
