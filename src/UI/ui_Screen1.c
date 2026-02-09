@@ -5,7 +5,7 @@
 
 #include "ui.h"
 
-lv_obj_t *ui_Screen1 = NULL;lv_obj_t *ui_Container1 = NULL;lv_obj_t *ui_Container2 = NULL;lv_obj_t *ui_TempArc1 = NULL;lv_obj_t *ui_TempArc2 = NULL;lv_obj_t *ui_TempArc3 = NULL;lv_obj_t *ui_TempArc4 = NULL;lv_obj_t *ui_TempLabel1 = NULL;lv_obj_t *ui_TempLabel2 = NULL;lv_obj_t *ui_TempLabel3 = NULL;lv_obj_t *ui_TempLabel4 = NULL;lv_obj_t *ui_RoomName1 = NULL;lv_obj_t *ui_RoomName2 = NULL;lv_obj_t *ui_RoomName3 = NULL;lv_obj_t *ui_RoomName4 = NULL;lv_obj_t *ui_StatusMessage = NULL;lv_obj_t *ui_HumidLabel1 = NULL;lv_obj_t *ui_HumidLabel3 = NULL;lv_obj_t *ui_HumidLabel4 = NULL;lv_obj_t *ui_HumidLabel2 = NULL;lv_obj_t *ui_Time = NULL;lv_obj_t *ui_TextRooms = NULL;lv_obj_t *ui_TempArcFC = NULL;lv_obj_t *ui_TempLabelFC = NULL;lv_obj_t *ui_TextForecastName = NULL;lv_obj_t *ui_FCConditions = NULL;lv_obj_t *ui_FCWindSpeed = NULL;lv_obj_t *ui_FCUpdateTime = NULL;lv_obj_t *ui_BatteryArc = NULL;lv_obj_t *ui_BatteryLabel = NULL;lv_obj_t *ui_TextBattery = NULL;lv_obj_t *ui_SolarArc = NULL;lv_obj_t *ui_SolarLabel = NULL;lv_obj_t *ui_TextSolar = NULL;lv_obj_t *ui_UsingArc = NULL;lv_obj_t *ui_TextUsing = NULL;lv_obj_t *ui_UsingLabel = NULL;lv_obj_t *ui_ChargingLabel = NULL;lv_obj_t *ui_AsofTimeLabel = NULL;lv_obj_t *ui_ChargingTime = NULL;lv_obj_t *ui_TextKlaussometer = NULL;lv_obj_t *ui_WiFiStatus = NULL;lv_obj_t *ui_ServerStatus = NULL;lv_obj_t *ui_WeatherStatus = NULL;lv_obj_t *ui_SolarStatus = NULL;lv_obj_t *ui_SolarMinMax = NULL;lv_obj_t *ui_GridBought = NULL;lv_obj_t *ui_TempArc5 = NULL;lv_obj_t *ui_TempLabel5 = NULL;lv_obj_t *ui_RoomName5 = NULL;lv_obj_t *ui_FCMin = NULL;lv_obj_t *ui_FCMax = NULL;lv_obj_t *ui_HumidLabel5 = NULL;lv_obj_t *ui_Direction1 = NULL;lv_obj_t *ui_Direction2 = NULL;lv_obj_t *ui_Direction3 = NULL;lv_obj_t *ui_Direction4 = NULL;lv_obj_t *ui_Direction5 = NULL;lv_obj_t *ui_UVArc = NULL;lv_obj_t *ui_UVLabel = NULL;lv_obj_t *ui_TextUV = NULL;lv_obj_t *ui_BatteryLabel5 = NULL;lv_obj_t *ui_UVUpdateTime = NULL;lv_obj_t *ui_BatteryLabel1 = NULL;lv_obj_t *ui_BatteryLabel2 = NULL;lv_obj_t *ui_BatteryLabel4 = NULL;lv_obj_t *ui_BatteryLabel3 = NULL;lv_obj_t *ui_Version = NULL;lv_obj_t *ui_WiFiIcon = NULL;lv_obj_t *ui_GridTodayEnergy = NULL;lv_obj_t *ui_GridTodayCost = NULL;lv_obj_t *ui_GridTodayPercentage = NULL;lv_obj_t *ui_GridMonthEnergy = NULL;lv_obj_t *ui_GridMonthCost = NULL;lv_obj_t *ui_GridMonthPercentage = NULL;lv_obj_t *ui_GridTitlekWh = NULL;lv_obj_t *ui_GridTitleCost = NULL;lv_obj_t *ui_GridTitlePercentage = NULL;
+lv_obj_t *ui_Screen1 = NULL;lv_obj_t *ui_Container1 = NULL;lv_obj_t *ui_Container2 = NULL;lv_obj_t *ui_TempArc1 = NULL;lv_obj_t *ui_TempArc2 = NULL;lv_obj_t *ui_TempArc3 = NULL;lv_obj_t *ui_TempArc4 = NULL;lv_obj_t *ui_TempLabel1 = NULL;lv_obj_t *ui_TempLabel2 = NULL;lv_obj_t *ui_TempLabel3 = NULL;lv_obj_t *ui_TempLabel4 = NULL;lv_obj_t *ui_RoomName1 = NULL;lv_obj_t *ui_RoomName2 = NULL;lv_obj_t *ui_RoomName3 = NULL;lv_obj_t *ui_RoomName4 = NULL;lv_obj_t *ui_StatusMessage = NULL;lv_obj_t *ui_HumidLabel1 = NULL;lv_obj_t *ui_HumidLabel3 = NULL;lv_obj_t *ui_HumidLabel4 = NULL;lv_obj_t *ui_HumidLabel2 = NULL;lv_obj_t *ui_Time = NULL;lv_obj_t *ui_TextRooms = NULL;lv_obj_t *ui_TempArcFC = NULL;lv_obj_t *ui_TempLabelFC = NULL;lv_obj_t *ui_TextForecastName = NULL;lv_obj_t *ui_FCConditions = NULL;lv_obj_t *ui_FCWindSpeed = NULL;lv_obj_t *ui_FCUpdateTime = NULL;lv_obj_t *ui_BatteryArc = NULL;lv_obj_t *ui_BatteryLabel = NULL;lv_obj_t *ui_TextBattery = NULL;lv_obj_t *ui_SolarArc = NULL;lv_obj_t *ui_SolarLabel = NULL;lv_obj_t *ui_TextSolar = NULL;lv_obj_t *ui_UsingArc = NULL;lv_obj_t *ui_TextUsing = NULL;lv_obj_t *ui_UsingLabel = NULL;lv_obj_t *ui_ChargingLabel = NULL;lv_obj_t *ui_AsofTimeLabel = NULL;lv_obj_t *ui_ChargingTime = NULL;lv_obj_t *ui_TextKlaussometer = NULL;lv_obj_t *ui_WiFiStatus = NULL;lv_obj_t *ui_ServerStatus = NULL;lv_obj_t *ui_WeatherStatus = NULL;lv_obj_t *ui_SolarStatus = NULL;lv_obj_t *ui_SolarMinMax = NULL;lv_obj_t *ui_GridBought = NULL;lv_obj_t *ui_TempArc5 = NULL;lv_obj_t *ui_TempLabel5 = NULL;lv_obj_t *ui_RoomName5 = NULL;lv_obj_t *ui_FCMin = NULL;lv_obj_t *ui_FCMax = NULL;lv_obj_t *ui_HumidLabel5 = NULL;lv_obj_t *ui_Direction1 = NULL;lv_obj_t *ui_Direction2 = NULL;lv_obj_t *ui_Direction3 = NULL;lv_obj_t *ui_Direction4 = NULL;lv_obj_t *ui_Direction5 = NULL;lv_obj_t *ui_UVArc = NULL;lv_obj_t *ui_UVLabel = NULL;lv_obj_t *ui_TextUV = NULL;lv_obj_t *ui_BatteryLabel5 = NULL;lv_obj_t *ui_UVUpdateTime = NULL;lv_obj_t *ui_BatteryLabel1 = NULL;lv_obj_t *ui_BatteryLabel2 = NULL;lv_obj_t *ui_BatteryLabel4 = NULL;lv_obj_t *ui_BatteryLabel3 = NULL;lv_obj_t *ui_Version = NULL;lv_obj_t *ui_WiFiIcon = NULL;lv_obj_t *ui_GridTodayEnergy = NULL;lv_obj_t *ui_GridTodayCost = NULL;lv_obj_t *ui_GridTodayPercentage = NULL;lv_obj_t *ui_GridMonthEnergy = NULL;lv_obj_t *ui_GridMonthCost = NULL;lv_obj_t *ui_GridMonthPercentage = NULL;lv_obj_t *ui_GridTitlekWh = NULL;lv_obj_t *ui_GridTitleCost = NULL;lv_obj_t *ui_GridTitlePercentage = NULL;lv_obj_t *ui_FCAQI = NULL;lv_obj_t *ui_FCAQIUpdateTime = NULL;
 // event funtions
 
 // build funtions
@@ -250,7 +250,7 @@ ui_FCConditions = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_FCConditions, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_FCConditions, LV_SIZE_CONTENT);   /// 1
 lv_obj_set_x( ui_FCConditions, 3 );
-lv_obj_set_y( ui_FCConditions, -245 );
+lv_obj_set_y( ui_FCConditions, -265 );
 lv_obj_set_align( ui_FCConditions, LV_ALIGN_CENTER );
 lv_label_set_text(ui_FCConditions,"Weather Conditions");
 
@@ -258,7 +258,7 @@ ui_FCWindSpeed = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_FCWindSpeed, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_FCWindSpeed, LV_SIZE_CONTENT);   /// 1
 lv_obj_set_x( ui_FCWindSpeed, 3 );
-lv_obj_set_y( ui_FCWindSpeed, -225 );
+lv_obj_set_y( ui_FCWindSpeed, -245 );
 lv_obj_set_align( ui_FCWindSpeed, LV_ALIGN_CENTER );
 lv_label_set_text(ui_FCWindSpeed,"23 kmh");
 
@@ -766,6 +766,22 @@ lv_label_set_text(ui_GridTitlePercentage,"Grid %");
 lv_obj_set_style_text_align(ui_GridTitlePercentage, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_text_font(ui_GridTitlePercentage, &ui_font_Montserrat_Bold_16, LV_PART_MAIN| LV_STATE_DEFAULT);
 
+ui_FCAQI = lv_label_create(ui_Screen1);
+lv_obj_set_width( ui_FCAQI, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_FCAQI, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_x( ui_FCAQI, 3 );
+lv_obj_set_y( ui_FCAQI, -225 );
+lv_obj_set_align( ui_FCAQI, LV_ALIGN_CENTER );
+lv_label_set_text(ui_FCAQI,"21: Poor");
+
+ui_FCAQIUpdateTime = lv_label_create(ui_Screen1);
+lv_obj_set_width( ui_FCAQIUpdateTime, LV_SIZE_CONTENT);  /// 1
+lv_obj_set_height( ui_FCAQIUpdateTime, LV_SIZE_CONTENT);   /// 1
+lv_obj_set_x( ui_FCAQIUpdateTime, 4 );
+lv_obj_set_y( ui_FCAQIUpdateTime, -5 );
+lv_obj_set_align( ui_FCAQIUpdateTime, LV_ALIGN_CENTER );
+lv_label_set_text(ui_FCAQIUpdateTime,"AQI Update time");
+
 }
 
 void ui_Screen1_screen_destroy(void)
@@ -851,5 +867,7 @@ ui_GridMonthPercentage= NULL;
 ui_GridTitlekWh= NULL;
 ui_GridTitleCost= NULL;
 ui_GridTitlePercentage= NULL;
+ui_FCAQI= NULL;
+ui_FCAQIUpdateTime= NULL;
 
 }

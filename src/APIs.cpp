@@ -4,6 +4,7 @@
 extern Weather weather;
 extern UV uv;
 extern Solar solar;
+extern AirQuality airQuality;
 extern Preferences storage;
 extern struct tm timeinfo;
 
@@ -17,6 +18,7 @@ static int weatherFailCount = 0;
 static int solarCurrentFailCount = 0;
 static int solarDailyFailCount = 0;
 static int solarMonthlyFailCount = 0;
+static int airQualityFailCount = 0;
 
 // Helper function to calculate backoff delay with exponential increase
 static int getBackoffDelay(int failCount) {
@@ -172,6 +174,60 @@ void get_weather_t(void* pvParameters) {
             }
         }
         vTaskDelay(pdMS_TO_TICKS(API_LOOP_DELAY_SEC * 1000)); // Check every 10 seconds if an update is needed
+    }
+}
+
+void get_air_quality_t(void* pvParameters) {
+    esp_task_wdt_add(NULL);
+    while (true) {
+        esp_task_wdt_reset();
+        if (time(NULL) - airQuality.updateTime > AIR_QUALITY_UPDATE_INTERVAL_SEC) {
+            if (WiFi.status() == WL_CONNECTED) {
+                if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(API_SEMAPHORE_WAIT_SEC * 1000)) == pdTRUE) {
+                    snprintf(url_buffer, URL_BUFFER_SIZE,
+                             "https://air-quality-api.open-meteo.com/v1/"
+                             "air-quality?latitude=%s&longitude=%s"
+                             "&current=pm10,pm2_5,ozone,european_aqi"
+                             "&timezone=auto",
+                             LATITUDE, LONGITUDE);
+                    http.begin(url_buffer);
+                    int httpCode = http.GET();
+                    if (httpCode == HTTP_CODE_OK) {
+                        int payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+                        if (payload_len > 0) {
+                            JsonDocument root;
+                            deserializeJson(root, payload_buffer);
+
+                            airQuality.pm10 = root["current"]["pm10"];
+                            airQuality.pm2_5 = root["current"]["pm2_5"];
+                            airQuality.ozone = root["current"]["ozone"];
+                            airQuality.european_aqi = root["current"]["european_aqi"];
+
+                            airQuality.updateTime = time(NULL);
+                            strftime(airQuality.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
+                            logAndPublish("Air quality updated");
+                            saveDataBlock(AIR_QUALITY_DATA_FILENAME, &airQuality, sizeof(airQuality));
+                            airQualityFailCount = 0;
+                        } else {
+                            logAndPublish("Air quality update failed: Payload read error");
+                        }
+                        http.end();
+                        xSemaphoreGive(httpMutex);
+                    } else {
+                        char log_message[CHAR_LEN];
+                        snprintf(log_message, CHAR_LEN, "[HTTP] GET air quality failed, error code is %d", httpCode);
+                        errorPublish(log_message);
+                        http.end();
+                        xSemaphoreGive(httpMutex);
+                        logAndPublish("Air quality update failed");
+                        airQualityFailCount++;
+                        int backoffDelay = getBackoffDelay(airQualityFailCount);
+                        vTaskDelayWithWatchdog(backoffDelay);
+                    }
+                }
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(API_LOOP_DELAY_SEC * 1000));
     }
 }
 

@@ -76,6 +76,7 @@ static const int UV_UPDATE_INTERVAL_SEC = 3600;           // Interval between UV
 static const int SOLAR_CURRENT_UPDATE_INTERVAL_SEC = 60;  // Interval between solar updates
 static const int SOLAR_MONTHLY_UPDATE_INTERVAL_SEC = 300; // Interval between solar current updates
 static const int SOLAR_DAILY_UPDATE_INTERVAL_SEC = 300;   // Interval between solar daily updates
+static const int AIR_QUALITY_UPDATE_INTERVAL_SEC = 1800;   // Interval between air quality updates (30 min)
 static const int SOLAR_TOKEN_WAIT_SEC = 10;               // Time to wait for solar token to be available
 static const int API_SEMAPHORE_WAIT_SEC = 10;             // Time to wait for http semaphore
 static const int API_FAIL_DELAY_SEC = 30;                 // Initial delay when API call fails
@@ -169,6 +170,7 @@ static const char* SOLAR_DATA_FILENAME = "/solar_data.bin";
 static const char* WEATHER_DATA_FILENAME = "/weather_data.bin";
 static const char* UV_DATA_FILENAME = "/uv_data.bin";
 static const char* READINGS_DATA_FILENAME = "/readings_data.bin";
+static const char* AIR_QUALITY_DATA_FILENAME = "/air_quality_data.bin";
 static const char* NORMAL_LOG_FILENAME = "/normal_log.txt";
 static const char* ERROR_LOG_FILENAME = "/error_log.txt";
 

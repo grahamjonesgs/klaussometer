@@ -91,6 +91,8 @@ extern lv_obj_t *ui_GridMonthPercentage;
 extern lv_obj_t *ui_GridTitlekWh;
 extern lv_obj_t *ui_GridTitleCost;
 extern lv_obj_t *ui_GridTitlePercentage;
+extern lv_obj_t *ui_FCAQI;
+extern lv_obj_t *ui_FCAQIUpdateTime;
 // CUSTOM VARIABLES
 
 #ifdef __cplusplus

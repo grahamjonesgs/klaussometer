@@ -56,6 +56,15 @@ typedef struct __attribute__((packed)) {
 } UV;
 
 typedef struct __attribute__((packed)) {
+    float pm10;
+    float pm2_5;
+    float ozone;
+    int european_aqi;
+    time_t updateTime;
+    char time_string[CHAR_LEN];
+} AirQuality;
+
+typedef struct __attribute__((packed)) {
     time_t currentUpdateTime;
     time_t dailyUpdateTime;
     time_t monthlyUpdateTime;
@@ -136,6 +145,7 @@ void get_solar_token_t(void* pvParameters);
 void get_current_solar_t(void* pvParameters);
 void get_daily_solar_t(void* pvParameters);
 void get_monthly_solar_t(void* pvParameters);
+void get_air_quality_t(void* pvParameters);
 const char* degreesToDirection(double degrees);
 const char* wmoToText(int code, bool isDay);
 int readPayload(WiFiClient* stream, char* buffer, size_t buffer_size);

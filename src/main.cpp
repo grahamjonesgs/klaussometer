@@ -29,6 +29,7 @@ struct tm timeinfo;
 Weather weather = {0.0, 0.0, 0.0, 0.0, false, 0, "", "", "--:--:--"};
 UV uv = {0, 0, "--:--:--"};
 Solar solar = {0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, "--:--:--", 100, 0, false, 0.0, 0.0};
+AirQuality airQuality = {0.0, 0.0, 0.0, 0, 0, "--:--:--"};
 Readings readings[]{READINGS_ARRAY};
 Preferences storage;
 int numberOfReadings = sizeof(readings) / sizeof(readings[0]);
@@ -193,6 +194,11 @@ void setup() {
         } else {
             logAndPublish("Readings state restore failed");
         }
+        if (loadDataBlock(AIR_QUALITY_DATA_FILENAME, &airQuality, sizeof(airQuality))) {
+            logAndPublish("Air quality state restored OK");
+        } else {
+            logAndPublish("Air quality state restore failed");
+        }
     }
 
     // Add unique topics for MQTT logging
@@ -250,6 +256,8 @@ void setup() {
 
     lv_label_set_text(ui_FCConditions, "");
     lv_label_set_text(ui_FCWindSpeed, "");
+    lv_label_set_text(ui_FCAQI, "");
+    lv_label_set_text(ui_FCAQIUpdateTime, "");
     lv_label_set_text(ui_FCUpdateTime, "");
     lv_label_set_text(ui_FCMin, "");
     lv_label_set_text(ui_FCMax, "");
@@ -334,6 +342,7 @@ void setup() {
     xTaskCreatePinnedToCore(checkForUpdates_t, "Updates", TASK_STACK_MEDIUM, NULL, 0, NULL, 1);
     xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
     xTaskCreatePinnedToCore(get_solar_token_t, "Solar Token", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(get_air_quality_t, "Air Quality", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
 }
 
 void loop() {
@@ -409,6 +418,17 @@ void loop() {
         lv_label_set_text(ui_FCUpdateTime, tempString);
         snprintf(tempString, CHAR_LEN, "Wind %2.0f km/h %s", weather.windSpeed, weather.windDir);
         lv_label_set_text(ui_FCWindSpeed, tempString);
+        if (airQuality.updateTime > 0) {
+            const char* aqiRating = airQuality.european_aqi <= 20 ? "Good" :
+                                    airQuality.european_aqi <= 40 ? "Fair" :
+                                    airQuality.european_aqi <= 60 ? "Moderate" :
+                                    airQuality.european_aqi <= 80 ? "Poor" :
+                                    airQuality.european_aqi <= 100 ? "Very Poor" : "Hazardous";
+            snprintf(tempString, CHAR_LEN, "AQI: %d %s", airQuality.european_aqi, aqiRating);
+            lv_label_set_text(ui_FCAQI, tempString);
+            snprintf(tempString, CHAR_LEN, "AQI Updated %s", airQuality.time_string);
+            lv_label_set_text(ui_FCAQIUpdateTime, tempString);
+        }
 
         lv_arc_set_value(ui_TempArcFC, weather.temperature);
 
