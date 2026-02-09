@@ -139,23 +139,17 @@ void set_basic_text_color(lv_color_t color);
 void set_arc_night_mode(bool isNight);
 
 // APIs
-void get_uv_t(void* pvParameters);
-void get_weather_t(void* pvParameters);
-void get_solar_token_t(void* pvParameters);
-void get_current_solar_t(void* pvParameters);
-void get_daily_solar_t(void* pvParameters);
-void get_monthly_solar_t(void* pvParameters);
-void get_air_quality_t(void* pvParameters);
+void api_manager_t(void* pvParameters);
 const char* degreesToDirection(double degrees);
 const char* wmoToText(int code, bool isDay);
-int readPayload(WiFiClient* stream, char* buffer, size_t buffer_size);
 int readChunkedPayload(WiFiClient* stream, char* buffer, size_t buffer_size);
 int readFixedLengthPayload(WiFiClient* stream, char* buffer, size_t buffer_size, size_t content_length);
 
-// OAT
+// OTA
+extern unsigned long lastOTAUpdateCheck;
 void setup_web_server();
 void updateFirmware();
-void checkForUpdates_t(void* pvParameters);
+void checkForUpdates();
 String getUptime();
 int compareVersions(const String& v1, const String& v2);
 void getLogsJSON(const char* logFilename);

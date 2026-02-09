@@ -21,7 +21,6 @@ WebServer webServer(80);
 HTTPClient http;
 static const int HTTP_TIMEOUT_MS = 10000; // 10 second timeout for API calls
 SemaphoreHandle_t mqttMutex;
-SemaphoreHandle_t httpMutex;
 
 // Global variables
 struct tm timeinfo;
@@ -135,7 +134,6 @@ void setup() {
     statusMessageQueue = xQueueCreate(100, sizeof(StatusMessage));
     sdLogQueue = xQueueCreate(50, sizeof(SDLogMessage)); // Queue for SD card logging
     mqttMutex = xSemaphoreCreateMutex();
-    httpMutex = xSemaphoreCreateMutex();
 
     // Check if the queue was created successfully
     if (statusMessageQueue == NULL) {
@@ -146,11 +144,6 @@ void setup() {
     }
     if (mqttMutex == NULL) {
         Serial.println("Error: Failed to create MQTT mutex! Restarting...");
-        delay(1000);
-        esp_restart();
-    }
-    if (httpMutex == NULL) {
-        Serial.println("Error: Failed to create HTTP mutex! Restarting...");
         delay(1000);
         esp_restart();
     }
@@ -333,16 +326,9 @@ void setup() {
     // Keep background tasks at low priority to avoid starving the display loop
     xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, NULL, 0, NULL, 1);             // Core 1, priority 0 (lowest)
     xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_MEDIUM, NULL, 2, NULL, 1); // Core 1, priority 2 (lower)
-    xTaskCreatePinnedToCore(get_weather_t, "Weather", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_uv_t, "Get UV", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_daily_solar_t, "Daily Solar", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_monthly_solar_t, "Monthly Solar", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_current_solar_t, "Current Solar", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
     xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(checkForUpdates_t, "Updates", TASK_STACK_MEDIUM, NULL, 0, NULL, 1);
     xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_solar_token_t, "Solar Token", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_air_quality_t, "Air Quality", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(api_manager_t, "API Manager", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);           // Replaces 7 API tasks + OTA check
 }
 
 void loop() {
