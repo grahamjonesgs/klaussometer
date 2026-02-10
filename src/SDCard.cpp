@@ -1,5 +1,6 @@
 #include "globals.h"
 extern Solar solar;
+extern SemaphoreHandle_t sdMutex;
 
 // Cache line counts for faster log reading
 static int normalLogLineCount = -1;  // -1 means not yet initialized
@@ -15,6 +16,10 @@ uint8_t calculateChecksum(const void* data_ptr, size_t size) {
 }
 
 bool saveDataBlock(const char* filename, const void* data_ptr, size_t size) {
+  if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    return false;
+  }
+
   DataHeader header;
   header.size = size;
   header.checksum = calculateChecksum(data_ptr, size);
@@ -31,6 +36,7 @@ bool saveDataBlock(const char* filename, const void* data_ptr, size_t size) {
     } else {
         logAndPublish("SD Card initialized");
     }
+    xSemaphoreGive(sdMutex);
     return false;
   }
 
@@ -41,11 +47,13 @@ bool saveDataBlock(const char* filename, const void* data_ptr, size_t size) {
     snprintf(log_message, sizeof(log_message), "Failed to write header to %s", filename);
     logAndPublish(log_message);
     dataFile.close();
+    xSemaphoreGive(sdMutex);
     return false;
   }
-  
+
   size_t bytesWritten = dataFile.write((const uint8_t*)data_ptr, size);
   dataFile.close();
+  xSemaphoreGive(sdMutex);
 
   if (bytesWritten == size) {
     return true;
@@ -58,10 +66,15 @@ bool saveDataBlock(const char* filename, const void* data_ptr, size_t size) {
 }
 
 bool loadDataBlock(const char* filename, void* data_ptr, size_t expected_size) {
+  if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    return false;
+  }
+
   if (!SD_MMC.exists(filename)) {
     char log_message[CHAR_LEN];
     snprintf(log_message, sizeof(log_message), "File %s does not exist", filename);
     logAndPublish(log_message);
+    xSemaphoreGive(sdMutex);
     return false;
   }
 
@@ -70,6 +83,7 @@ bool loadDataBlock(const char* filename, void* data_ptr, size_t expected_size) {
     char log_message[CHAR_LEN];
     snprintf(log_message, sizeof(log_message), "Error opening file %s for reading", filename);
     logAndPublish(log_message);
+    xSemaphoreGive(sdMutex);
     return false;
   }
 
@@ -82,26 +96,29 @@ bool loadDataBlock(const char* filename, void* data_ptr, size_t expected_size) {
     snprintf(log_message, sizeof(log_message), "Failed to read header from %s. Expected %zu bytes", filename, sizeof(DataHeader));
     logAndPublish(log_message);
     dataFile.close();
+    xSemaphoreGive(sdMutex);
     return false;
   }
 
   // 2. Verify file size consistency
   if (header.size != expected_size) {
     char log_message[CHAR_LEN];
-    snprintf(log_message, sizeof(log_message), "Data size mismatch in %s. File header says %zu bytes, but struct expects %zu bytes", 
+    snprintf(log_message, sizeof(log_message), "Data size mismatch in %s. File header says %zu bytes, but struct expects %zu bytes",
              filename, header.size, expected_size);
     logAndPublish(log_message);
     dataFile.close();
+    xSemaphoreGive(sdMutex);
     return false;
   }
-  
+
   // 3. Read the raw data block directly into the target memory
   size_t bytesRead = dataFile.readBytes((char*)data_ptr, expected_size);
   dataFile.close();
+  xSemaphoreGive(sdMutex);
 
   if (bytesRead != expected_size) {
     char log_message[CHAR_LEN];
-    snprintf(log_message, sizeof(log_message), "Failed to read all data from %s. Read %zu of %zu bytes", 
+    snprintf(log_message, sizeof(log_message), "Failed to read all data from %s. Read %zu of %zu bytes",
              filename, bytesRead, expected_size);
     logAndPublish(log_message);
     return false;
@@ -109,10 +126,10 @@ bool loadDataBlock(const char* filename, void* data_ptr, size_t expected_size) {
 
   // 4. Verify integrity
   uint8_t calculated = calculateChecksum(data_ptr, expected_size);
-  
+
   if (header.checksum != calculated) {
     char log_message[CHAR_LEN];
-    snprintf(log_message, sizeof(log_message), "Checksum failed for %s! Loaded: %02X, Calculated: %02X", 
+    snprintf(log_message, sizeof(log_message), "Checksum failed for %s! Loaded: %02X, Calculated: %02X",
              filename, header.checksum, calculated);
     logAndPublish(log_message);
     return false;
@@ -122,6 +139,10 @@ bool loadDataBlock(const char* filename, void* data_ptr, size_t expected_size) {
 
 void addLogToSDCard(const char* message, const char* logFilename) {
   if (message == NULL || strlen(message) == 0) {
+    return;
+  }
+
+  if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
     return;
   }
 
@@ -219,6 +240,7 @@ void addLogToSDCard(const char* message, const char* logFilename) {
     // Increment cached line count
     (*lineCountPtr)++;
   }
+  xSemaphoreGive(sdMutex);
 }
 
 // Estimate max JSON size: ~350 bytes per entry (timestamp, synced, message up to 255 chars with escaping)
@@ -239,7 +261,15 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
   size_t bufferPos = 0;
   bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "{\"logs\":[");
 
+  if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "]}");
+    jsonOutput = jsonBuffer;
+    free(jsonBuffer);
+    return;
+  }
+
   if (!SD_MMC.exists(logFilename)) {
+    xSemaphoreGive(sdMutex);
     bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "]}");
     jsonOutput = jsonBuffer;
     free(jsonBuffer);
@@ -248,6 +278,7 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
 
   File logFile = SD_MMC.open(logFilename, FILE_READ);
   if (!logFile) {
+    xSemaphoreGive(sdMutex);
     bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "]}");
     jsonOutput = jsonBuffer;
     free(jsonBuffer);
@@ -307,6 +338,7 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
   }
   if (lines == nullptr) {
     logFile.close();
+    xSemaphoreGive(sdMutex);
     bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "],\"error\":\"Line buffer allocation failed\"}");
     jsonOutput = jsonBuffer;
     free(jsonBuffer);
@@ -340,6 +372,7 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
     }
   }
   logFile.close();
+  xSemaphoreGive(sdMutex);
 
   // Output in reverse order (newest first) using snprintf
   bool firstEntry = true;

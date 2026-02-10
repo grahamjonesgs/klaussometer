@@ -21,6 +21,7 @@ WebServer webServer(80);
 HTTPClient http;
 static const int HTTP_TIMEOUT_MS = 10000; // 10 second timeout for API calls
 SemaphoreHandle_t mqttMutex;
+SemaphoreHandle_t sdMutex;
 
 // Global variables
 struct tm timeinfo;
@@ -136,6 +137,7 @@ void setup() {
     statusMessageQueue = xQueueCreate(20, sizeof(StatusMessage));
     sdLogQueue = xQueueCreate(20, sizeof(SDLogMessage)); // Queue for SD card logging
     mqttMutex = xSemaphoreCreateMutex();
+    sdMutex = xSemaphoreCreateMutex();
 
     // Check if the queue was created successfully
     if (statusMessageQueue == NULL) {
@@ -146,6 +148,11 @@ void setup() {
     }
     if (mqttMutex == NULL) {
         Serial.println("Error: Failed to create MQTT mutex! Restarting...");
+        delay(1000);
+        esp_restart();
+    }
+    if (sdMutex == NULL) {
+        Serial.println("Error: Failed to create SD mutex! Restarting...");
         delay(1000);
         esp_restart();
     }

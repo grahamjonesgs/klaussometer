@@ -83,6 +83,8 @@ typedef struct __attribute__((packed)) {
     float month_buy;
     float month_use;
     float month_generation;
+    char token[2048];
+    time_t tokenTime;
 } Solar;
 
 typedef struct __attribute__((packed)) {
