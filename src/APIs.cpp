@@ -354,6 +354,7 @@ static bool fetch_current_solar() {
     if (WiFi.status() != WL_CONNECTED) return true;
 
     snprintf(url_buffer, URL_BUFFER_SIZE, "https://%s/station/v1.0/realTime?language=en", SOLAR_URL);
+    http.setReuse(true); // Keep the connection open for potential token refresh and daily data fetches
     http.begin(url_buffer);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", solar.token);
@@ -445,12 +446,14 @@ static bool fetch_current_solar() {
             logAndPublish("Solar status update failed: Payload read error");
         }
         http.end();
+        http.setReuse(false); // Disable keep-alive after this request to avoid issues with token refresh and subsequent calls
         return true;
     } else {
         char log_message[CHAR_LEN];
         snprintf(log_message, CHAR_LEN, "[HTTP] GET solar status failed, error: %d", httpCode);
         errorPublish(log_message);
         http.end();
+        http.setReuse(false); // Disable keep-alive after this request to avoid issues with token refresh and subsequent calls
         return false;
     }
 }
@@ -468,6 +471,7 @@ static bool fetch_daily_solar() {
 
     // Get the today buy amount (timetype 2)
     snprintf(url_buffer, URL_BUFFER_SIZE, "https://%s/station/v1.0/history?language=en", SOLAR_URL);
+    http.setReuse(true); // Keep the connection open for potential token refresh and daily data fetches
     http.begin(url_buffer);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", solar.token);
@@ -501,6 +505,7 @@ static bool fetch_daily_solar() {
             logAndPublish("Solar today's buy value update failed: Payload read error");
         }
         http.end();
+        http.setReuse(false); // Disable keep-alive after this request to avoid issues with token refresh and subsequent calls
         return true;
     } else {
         char log_message[CHAR_LEN];
@@ -508,6 +513,7 @@ static bool fetch_daily_solar() {
         errorPublish(log_message);
         logAndPublish("Getting solar today buy value failed");
         http.end();
+        http.setReuse(false); // Disable keep-alive after this request to avoid issues with token refresh and subsequent calls
         return false;
     }
 }
@@ -525,6 +531,7 @@ static bool fetch_monthly_solar() {
 
     // Get month buy value timeType 3
     snprintf(url_buffer, URL_BUFFER_SIZE, "https://%s/station/v1.0/history?language=en", SOLAR_URL);
+    http.setReuse(true); // Keep the connection open for potential token refresh and daily data fetches
     http.begin(url_buffer);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", solar.token);
@@ -557,6 +564,7 @@ static bool fetch_monthly_solar() {
         }
 
         http.end();
+        http.setReuse(false); // Disable keep-alive after this request to avoid issues with token refresh and subsequent calls
         return true;
     } else {
         char log_message[CHAR_LEN];
@@ -564,6 +572,7 @@ static bool fetch_monthly_solar() {
         errorPublish(log_message);
         logAndPublish("Getting solar month buy value failed");
         http.end();
+        http.setReuse(false); // Disable keep-alive after this request to avoid issues with token refresh and subsequent calls
         return false;
     }
 }
