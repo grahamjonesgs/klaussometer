@@ -112,7 +112,13 @@ static bool fetch_weather() {
     http.begin(url_buffer);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
-        int payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+        int content_length = http.getSize();
+        int payload_len;
+        if (content_length > 0) {
+            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
+        } else {
+            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+        }
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);
@@ -164,7 +170,13 @@ static bool fetch_air_quality() {
     http.begin(url_buffer);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
-        int payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+        int content_length = http.getSize();
+        int payload_len;
+        if (content_length > 0) {
+            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
+        } else {
+            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+        }
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);
@@ -306,7 +318,13 @@ static void fetch_solar_token() {
              SOLAR_PASSHASH);
     int httpCode_token = http.POST(post_buffer);
     if (httpCode_token == HTTP_CODE_OK) {
-        int payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+        int content_length = http.getSize();
+        int payload_len;
+        if (content_length > 0) {
+            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
+        } else {
+            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+        }
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);
@@ -342,7 +360,12 @@ static bool fetch_current_solar() {
 
     if (httpCode == HTTP_CODE_OK) {
         int content_length = http.getSize();
-        int payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
+        int payload_len;
+        if (content_length > 0) {
+            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
+        } else {
+            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+        }
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);
@@ -450,7 +473,12 @@ static bool fetch_daily_solar() {
     int httpCode = http.POST(post_buffer);
     if (httpCode == HTTP_CODE_OK) {
         int content_length = http.getSize();
-        int payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
+        int payload_len;
+        if (content_length > 0) {
+            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
+        } else {
+            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+        }
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);
@@ -502,7 +530,12 @@ static bool fetch_monthly_solar() {
     int httpCode = http.POST(post_buffer);
     if (httpCode == HTTP_CODE_OK) {
         int content_length = http.getSize();
-        int payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
+        int payload_len;
+        if (content_length > 0) {
+            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
+        } else {
+            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+        }
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);

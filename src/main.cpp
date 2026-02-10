@@ -321,7 +321,7 @@ void setup() {
 
     // Configure and enable the Task Watchdog Timer for the loop task
     // 60 second timeout - will reboot if loop hangs for this long
-    esp_task_wdt_init(60, true); // 60 seconds, panic on timeout (triggers reboot)
+    esp_task_wdt_init(60, true);
     esp_task_wdt_add(NULL);      // Add current task (loop task) to watchdog
 
     // Start tasks
@@ -557,12 +557,8 @@ void pin_init() {
     pinMode(TFT_BL, OUTPUT);
     // pinMode(TOUCH_RST, OUTPUT);
 
-    //(Replaced with ledcAttachChannel in ESP 3.0)
     ledcSetup(PWMChannel, PWMFreq, PWMResolution);
     ledcAttachPin(TFT_BL, PWMChannel);
-
-    /*ledcAttachChannel(TFT_BL, PWMFreq, PWMResolution, PWMChannel);*/
-
     ledcWrite(PWMChannel, NIGHTTIME_DUTY); // Start dim
 
     /*vTaskDelay(pdMS_TO_TICKS(100));
