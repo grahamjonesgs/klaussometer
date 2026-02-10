@@ -386,6 +386,9 @@ const char* logs_html = R"=====(
         return;
       }
 
+      // Sort newest first by timestamp
+      logs.sort((a, b) => b.timestamp - a.timestamp);
+
       let html = '';
       logs.forEach(log => {
         const cssClass = log.synced ? 'log-entry' : 'log-entry unsynced';

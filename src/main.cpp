@@ -132,8 +132,8 @@ void setup() {
     Serial.printf("Reset reason: %s (%d)\n", reasonStr, reason);
 
     // Setup queues and mutexes
-    statusMessageQueue = xQueueCreate(100, sizeof(StatusMessage));
-    sdLogQueue = xQueueCreate(50, sizeof(SDLogMessage)); // Queue for SD card logging
+    statusMessageQueue = xQueueCreate(20, sizeof(StatusMessage));
+    sdLogQueue = xQueueCreate(20, sizeof(SDLogMessage)); // Queue for SD card logging
     mqttMutex = xSemaphoreCreateMutex();
     httpMutex = xSemaphoreCreateMutex();
 
@@ -332,17 +332,17 @@ void setup() {
     // Priority guide: Arduino loop() runs at priority 1 on core 1 (loopTask)
     // Keep background tasks at low priority to avoid starving the display loop
     xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, NULL, 0, NULL, 1);             // Core 1, priority 0 (lowest)
-    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_MEDIUM, NULL, 2, NULL, 1); // Core 1, priority 2 (lower)
-    xTaskCreatePinnedToCore(get_weather_t, "Weather", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_uv_t, "Get UV", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_daily_solar_t, "Daily Solar", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_monthly_solar_t, "Monthly Solar", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_current_solar_t, "Current Solar", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(checkForUpdates_t, "Updates", TASK_STACK_MEDIUM, NULL, 0, NULL, 1);
-    xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_solar_token_t, "Solar Token", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(get_air_quality_t, "Air Quality", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_SMALL, NULL, 2, NULL, 1);  // Core 1, priority 2 (lower)
+    xTaskCreatePinnedToCore(get_weather_t, "Weather", TASK_STACK_SMALL, NULL, 1, NULL, 1);                 // HTTP only
+    xTaskCreatePinnedToCore(get_uv_t, "Get UV", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);                 // HTTPS - needs more stack
+    xTaskCreatePinnedToCore(get_daily_solar_t, "Daily Solar", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);    // HTTPS
+    xTaskCreatePinnedToCore(get_monthly_solar_t, "Monthly Solar", TASK_STACK_MEDIUM, NULL, 1, NULL, 1); // HTTPS
+    xTaskCreatePinnedToCore(get_current_solar_t, "Current Solar", TASK_STACK_MEDIUM, NULL, 1, NULL, 1); // HTTPS
+    xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_SMALL, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(checkForUpdates_t, "Updates", TASK_STACK_MEDIUM, NULL, 0, NULL, 1);      // HTTPS
+    xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_SMALL, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(get_solar_token_t, "Solar Token", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);  // HTTPS
+    xTaskCreatePinnedToCore(get_air_quality_t, "Air Quality", TASK_STACK_SMALL, NULL, 1, NULL, 1);         // HTTP only
 }
 
 void loop() {

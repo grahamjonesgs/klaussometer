@@ -48,7 +48,7 @@ extern SemaphoreHandle_t httpMutex;
 const size_t JSON_PAYLOAD_SIZE = 4096;
 char payload_buffer[JSON_PAYLOAD_SIZE] = {0};
 const size_t URL_BUFFER_SIZE = 512;
-char url_buffer[URL_BUFFER_SIZE]  = {0};
+char url_buffer[URL_BUFFER_SIZE] = {0};
 const size_t POST_BUFFER_SIZE = 512;
 char post_buffer[POST_BUFFER_SIZE] = {0};
 
@@ -65,10 +65,10 @@ void get_uv_t(void* pvParameters) {
                         http.begin(url_buffer);
                         int httpCode = http.GET();
                         if (httpCode == HTTP_CODE_OK) {
-                            String payload = http.getString();
-                            if (payload.length() > 0) {
+                            int payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+                            if (payload_len > 0) {
                                 JsonDocument root;
-                                deserializeJson(root, payload);
+                                deserializeJson(root, payload_buffer);
                                 float UV = root["data"][0]["uv"];
                                 uv.index = UV;
                                 uv.updateTime = time(NULL);
@@ -117,10 +117,10 @@ void get_weather_t(void* pvParameters) {
             if (WiFi.status() == WL_CONNECTED) {
                 if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(API_SEMAPHORE_WAIT_SEC * 1000)) == pdTRUE) {
                     snprintf(url_buffer, URL_BUFFER_SIZE,
-                             "https://api.open-meteo.com/v1/"
+                             "http://api.open-meteo.com/v1/"
                              "forecast?latitude=%s&longitude=%s"
                              "&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max"
-                           //  "&models=ukmo_uk_deterministic_2km,ncep_gfs013"
+                             //  "&models=ukmo_uk_deterministic_2km,ncep_gfs013"
                              "&current=temperature_2m,is_day,weather_code,wind_speed_10m,wind_direction_10m"
                              "&timezone=auto"
                              "&forecast_days=1",
@@ -185,7 +185,7 @@ void get_air_quality_t(void* pvParameters) {
             if (WiFi.status() == WL_CONNECTED) {
                 if (xSemaphoreTake(httpMutex, pdMS_TO_TICKS(API_SEMAPHORE_WAIT_SEC * 1000)) == pdTRUE) {
                     snprintf(url_buffer, URL_BUFFER_SIZE,
-                             "https://air-quality-api.open-meteo.com/v1/"
+                             "http://air-quality-api.open-meteo.com/v1/"
                              "air-quality?latitude=%s&longitude=%s"
                              "&current=pm10,pm2_5,ozone,european_aqi"
                              "&timezone=auto",
@@ -205,7 +205,10 @@ void get_air_quality_t(void* pvParameters) {
 
                             airQuality.updateTime = time(NULL);
                             strftime(airQuality.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
-                            logAndPublish("Air quality updated");
+                            char log_message[CHAR_LEN];
+                            snprintf(log_message, CHAR_LEN, "Air quality updated. PM10: %.2f, PM2.5: %.2f, Ozone: %.2f, AQI: %.2f", airQuality.pm10, airQuality.pm2_5,
+                                     airQuality.ozone, airQuality.european_aqi);
+                            logAndPublish(log_message);
                             saveDataBlock(AIR_QUALITY_DATA_FILENAME, &airQuality, sizeof(airQuality));
                             airQualityFailCount = 0;
                         } else {
@@ -415,7 +418,7 @@ void get_current_solar_t(void* pvParameters) {
                                 struct tm ts;
                                 char time_buf[CHAR_LEN];
 
-                                //rec_time += TIME_OFFSET;
+                                // rec_time += TIME_OFFSET;
                                 localtime_r(&rec_time, &ts);
                                 strftime(time_buf, sizeof(time_buf), "%H:%M:%S", &ts);
                                 solar.currentUpdateTime = time(NULL);
