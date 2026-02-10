@@ -131,8 +131,8 @@ void setup() {
     Serial.printf("Reset reason: %s (%d)\n", reasonStr, reason);
 
     // Setup queues and mutexes
-    statusMessageQueue = xQueueCreate(100, sizeof(StatusMessage));
-    sdLogQueue = xQueueCreate(50, sizeof(SDLogMessage)); // Queue for SD card logging
+    statusMessageQueue = xQueueCreate(20, sizeof(StatusMessage));
+    sdLogQueue = xQueueCreate(20, sizeof(SDLogMessage)); // Queue for SD card logging
     mqttMutex = xSemaphoreCreateMutex();
 
     // Check if the queue was created successfully
@@ -325,10 +325,10 @@ void setup() {
     // Priority guide: Arduino loop() runs at priority 1 on core 1 (loopTask)
     // Keep background tasks at low priority to avoid starving the display loop
     xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, NULL, 0, NULL, 1);             // Core 1, priority 0 (lowest)
-    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_MEDIUM, NULL, 2, NULL, 1); // Core 1, priority 2 (lower)
-    xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(api_manager_t, "API Manager", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);           // Replaces 7 API tasks + OTA check
+    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_SMALL, NULL, 2, NULL, 1);  // Core 1, priority 2
+    xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_SMALL, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_SMALL, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(api_manager_t, "API Manager", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);           // HTTPS - replaces 7 API tasks + OTA check
 }
 
 void loop() {

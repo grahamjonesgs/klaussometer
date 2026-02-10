@@ -147,6 +147,9 @@ void setup_web_server() {
                          "<tr><td><b>WiFi Signal:</b></td><td>" +
                          String(WiFi.RSSI()) + " dBm" +
                          "</td></tr>"
+                         "<tr><td><b>Free Heap:</b></td><td>" +
+                         String(ESP.getFreeHeap() / 1024) + " KB / " + String(ESP.getMinFreeHeap() / 1024) + " KB min" +
+                         "</td></tr>"
                          "<tr><td><b>Uptime:</b></td><td>" +
                          getUptime() +
                          "</td></tr>"
