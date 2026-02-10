@@ -65,7 +65,13 @@ static bool fetch_uv() {
     http.begin(url_buffer);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
-        int payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+        int content_length = http.getSize();
+        int payload_len;
+        if (content_length > 0) {
+            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
+        } else {
+            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+        }
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);
