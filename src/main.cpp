@@ -92,6 +92,8 @@ void shutdown_handler(void) {
 
 void setup() {
     Serial.begin(115200);
+    // Suppress cosmetic SSL teardown errors (connection reset during close_notify)
+    esp_log_level_set("ssl_client", ESP_LOG_WARN);
     // delay one second to enabling monitoring
     snprintf(chip_id, CHAR_LEN, "%04llx", ESP.getEfuseMac() & 0xffff);
     Serial.printf("Starting Klaussometer 4.0 Display %s\n", chip_id);
@@ -312,6 +314,7 @@ void setup() {
 
     configTime(TIME_OFFSET, 0, NTP_SERVER); // Setup as used to display time from stored values
     http.setTimeout(HTTP_TIMEOUT_MS); // Set read timeout for all API calls
+    http.setReuse(false);              // Disable keep-alive - single task calls different hosts/protocols
 
     // Register shutdown handler to log reboots (including watchdog timeouts)
     esp_register_shutdown_handler(shutdown_handler);

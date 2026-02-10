@@ -95,7 +95,7 @@ static bool fetch_weather() {
     if (WiFi.status() != WL_CONNECTED) return true;
 
     snprintf(url_buffer, URL_BUFFER_SIZE,
-             "http://api.open-meteo.com/v1/"
+             "https://api.open-meteo.com/v1/"
              "forecast?latitude=%s&longitude=%s"
              "&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max"
              //  "&models=ukmo_uk_deterministic_2km,ncep_gfs013"
@@ -150,7 +150,7 @@ static bool fetch_air_quality() {
     if (WiFi.status() != WL_CONNECTED) return true;
 
     snprintf(url_buffer, URL_BUFFER_SIZE,
-             "http://air-quality-api.open-meteo.com/v1/"
+             "https://air-quality-api.open-meteo.com/v1/"
              "air-quality?latitude=%s&longitude=%s"
              "&current=pm10,pm2_5,ozone,european_aqi"
              "&timezone=auto",
