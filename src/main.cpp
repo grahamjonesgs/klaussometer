@@ -213,7 +213,11 @@ void setup() {
 
     // Init Display Hardware
     gfx->begin();
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    gfx->fillScreen(RGB565_BLACK);
+#else
     gfx->fillScreen(BLACK);
+#endif
     lv_init();
     screenWidth = gfx->width();
     screenHeight = gfx->height();
@@ -290,7 +294,11 @@ void setup() {
     lv_obj_set_style_text_color(ui_SolarStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
 
     // Set to night settings at first (until we determine if it's daytime)
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcWrite(TFT_BL, NIGHTTIME_DUTY);
+#else
     ledcWrite(PWMChannel, NIGHTTIME_DUTY);
+#endif
     set_basic_text_color(lv_color_hex(COLOR_WHITE));
     set_arc_night_mode(true);
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
@@ -328,7 +336,16 @@ void setup() {
 
     // Configure and enable the Task Watchdog Timer for the loop task
     // 60 second timeout - will reboot if loop hangs for this long
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    esp_task_wdt_config_t wdt_config = {
+        .timeout_ms = 60000,
+        .idle_core_mask = 0,
+        .trigger_panic = true
+    };
+    esp_task_wdt_reconfigure(&wdt_config);
+#else
     esp_task_wdt_init(60, true);
+#endif
     esp_task_wdt_add(NULL);      // Add current task (loop task) to watchdog
 
     // Start tasks
@@ -508,14 +525,22 @@ void loop() {
     if (weather.isDay != lastIsDay) {
         lastIsDay = weather.isDay;
         if (!weather.isDay) {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+            ledcWrite(TFT_BL, NIGHTTIME_DUTY);
+#else
             ledcWrite(PWMChannel, NIGHTTIME_DUTY);
+#endif
             set_basic_text_color(lv_color_hex(COLOR_WHITE));
             set_arc_night_mode(true);
             lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
             lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
             lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
         } else {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+            ledcWrite(TFT_BL, DAYTIME_DUTY);
+#else
             ledcWrite(PWMChannel, DAYTIME_DUTY);
+#endif
             set_basic_text_color(lv_color_hex(COLOR_BLACK));
             set_arc_night_mode(false);
             lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
@@ -564,9 +589,14 @@ void pin_init() {
     pinMode(TFT_BL, OUTPUT);
     // pinMode(TOUCH_RST, OUTPUT);
 
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcAttachChannel(TFT_BL, PWMFreq, PWMResolution, PWMChannel);
+    ledcWrite(TFT_BL, NIGHTTIME_DUTY); // Start dim
+#else
     ledcSetup(PWMChannel, PWMFreq, PWMResolution);
     ledcAttachPin(TFT_BL, PWMChannel);
     ledcWrite(PWMChannel, NIGHTTIME_DUTY); // Start dim
+#endif
 
     /*vTaskDelay(pdMS_TO_TICKS(100));
     digitalWrite(TOUCH_RST, LOW);

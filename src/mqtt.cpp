@@ -5,6 +5,11 @@ extern SemaphoreHandle_t mqttMutex;
 extern Readings readings[];
 extern int numberOfReadings;
 
+// Track last logged value per reading (compared against to detect meaningful changes)
+// Using 20 as safe upper bound for number of readings (currently 15)
+static float lastLoggedValue[20] = {0};
+static bool hasLoggedBefore[20] = {false};
+
 // Get mqtt messages
 void receive_mqtt_messages_t(void* pvParams) {
     // Subscribe this task to the watchdog
@@ -129,6 +134,20 @@ void update_readings(char* recMessage, int index, int dataType) {
         return;
     }
 
+    // Check if value changed enough from last *logged* value to be worth logging
+    // This ensures gradual drift (e.g. 10 x 0.1°C) still triggers a log
+    bool valueChanged;
+    if (!hasLoggedBefore[index]) {
+        valueChanged = true;
+    } else {
+        switch (dataType) {
+        case DATA_TEMPERATURE: valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= 0.5f; break;
+        case DATA_HUMIDITY:    valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= 2.0f; break;
+        case DATA_BATTERY:     valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= 0.1f; break;
+        default:               valueChanged = true; break;
+        }
+    }
+
     readings[index].currentValue = parsedValue;
 
     // Set format string and log suffix based on data type
@@ -191,7 +210,11 @@ void update_readings(char* recMessage, int index, int dataType) {
     readings[index].readingIndex++;
     readings[index].lastMessageTime = time(NULL);
 
-    char log_message[CHAR_LEN];
-    snprintf(log_message, CHAR_LEN, "%s %s updated", readings[index].description, log_message_suffix);
-    logAndPublish(log_message);
+    if (valueChanged) {
+        char log_message[CHAR_LEN];
+        snprintf(log_message, CHAR_LEN, "%s %s updated: %.1f", readings[index].description, log_message_suffix, parsedValue);
+        logAndPublish(log_message);
+        lastLoggedValue[index] = parsedValue;
+        hasLoggedBefore[index] = true;
+    }
 }
