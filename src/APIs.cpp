@@ -54,6 +54,15 @@ char url_buffer[URL_BUFFER_SIZE] = {0};
 const size_t POST_BUFFER_SIZE = 512;
 char post_buffer[POST_BUFFER_SIZE] = {0};
 
+// Auto-detect Content-Length vs chunked transfer and read the payload
+static int readHttpPayload() {
+    int content_length = http.getSize();
+    if (content_length > 0) {
+        return readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
+    }
+    return readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
+}
+
 // Returns true on success or non-HTTP error (no backoff needed)
 // Returns false on HTTP error (backoff should be applied)
 static bool fetch_uv() {
@@ -63,13 +72,7 @@ static bool fetch_uv() {
     http.begin(url_buffer);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
-        int content_length = http.getSize();
-        int payload_len;
-        if (content_length > 0) {
-            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
-        } else {
-            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
-        }
+        int payload_len = readHttpPayload();
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);
@@ -110,13 +113,7 @@ static bool fetch_weather() {
     http.begin(url_buffer);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
-        int content_length = http.getSize();
-        int payload_len;
-        if (content_length > 0) {
-            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
-        } else {
-            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
-        }
+        int payload_len = readHttpPayload();
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);
@@ -168,13 +165,7 @@ static bool fetch_air_quality() {
     http.begin(url_buffer);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
-        int content_length = http.getSize();
-        int payload_len;
-        if (content_length > 0) {
-            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
-        } else {
-            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
-        }
+        int payload_len = readHttpPayload();
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);
@@ -187,7 +178,7 @@ static bool fetch_air_quality() {
             airQuality.updateTime = time(NULL);
             strftime(airQuality.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
             char log_message[CHAR_LEN];
-            snprintf(log_message, CHAR_LEN, "Air quality updated. PM10: %.2f, PM2.5: %.2f, Ozone: %.2f, AQI: %.2f", airQuality.pm10, airQuality.pm2_5,
+            snprintf(log_message, CHAR_LEN, "Air quality updated. PM10: %.2f, PM2.5: %.2f, Ozone: %.2f, AQI: %d", airQuality.pm10, airQuality.pm2_5,
                      airQuality.ozone, airQuality.european_aqi);
             logAndPublish(log_message);
             saveDataBlock(AIR_QUALITY_DATA_FILENAME, &airQuality, sizeof(airQuality));
@@ -316,13 +307,7 @@ static void fetch_solar_token() {
              SOLAR_PASSHASH);
     int httpCode_token = http.POST(post_buffer);
     if (httpCode_token == HTTP_CODE_OK) {
-        int content_length = http.getSize();
-        int payload_len;
-        if (content_length > 0) {
-            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
-        } else {
-            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
-        }
+        int payload_len = readHttpPayload();
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);
@@ -362,13 +347,7 @@ static bool fetch_current_solar() {
     int httpCode = http.POST(post_buffer);
 
     if (httpCode == HTTP_CODE_OK) {
-        int content_length = http.getSize();
-        int payload_len;
-        if (content_length > 0) {
-            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
-        } else {
-            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
-        }
+        int payload_len = readHttpPayload();
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);
@@ -480,13 +459,7 @@ static bool fetch_daily_solar() {
              currentDate, currentDate);
     int httpCode = http.POST(post_buffer);
     if (httpCode == HTTP_CODE_OK) {
-        int content_length = http.getSize();
-        int payload_len;
-        if (content_length > 0) {
-            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
-        } else {
-            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
-        }
+        int payload_len = readHttpPayload();
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);
@@ -540,13 +513,7 @@ static bool fetch_monthly_solar() {
              currentYearMonth, currentYearMonth);
     int httpCode = http.POST(post_buffer);
     if (httpCode == HTTP_CODE_OK) {
-        int content_length = http.getSize();
-        int payload_len;
-        if (content_length > 0) {
-            payload_len = readFixedLengthPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE, content_length);
-        } else {
-            payload_len = readChunkedPayload(http.getStreamPtr(), payload_buffer, JSON_PAYLOAD_SIZE);
-        }
+        int payload_len = readHttpPayload();
         if (payload_len > 0) {
             JsonDocument root;
             deserializeJson(root, payload_buffer);
