@@ -1,4 +1,5 @@
-#include <globals.h>
+#include "mqtt.h"
+#include "SDCard.h"
 
 extern MqttClient mqttClient;
 extern SemaphoreHandle_t mqttMutex;

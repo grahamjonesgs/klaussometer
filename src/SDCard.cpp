@@ -1,6 +1,7 @@
-#include "globals.h"
+#include "SDCard.h"
 extern Solar solar;
 extern SemaphoreHandle_t sdMutex;
+extern QueueHandle_t sdLogQueue;
 
 // Cache line counts for faster log reading
 static int normalLogLineCount = -1;  // -1 means not yet initialized
@@ -425,4 +426,14 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
 
   jsonOutput = jsonBuffer;
   free(jsonBuffer);
+}
+
+// SD card logger task - runs at lowest priority to avoid blocking other tasks
+void sdcard_logger_t(void* pvParameters) {
+    SDLogMessage logMsg;
+    while (true) {
+        if (xQueueReceive(sdLogQueue, &logMsg, portMAX_DELAY) == pdTRUE) {
+            addLogToSDCard(logMsg.message, logMsg.filename);
+        }
+    }
 }

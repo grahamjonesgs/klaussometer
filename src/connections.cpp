@@ -1,4 +1,5 @@
-#include "globals.h"
+#include "connections.h"
+#include "OTA.h"
 
 extern MqttClient mqttClient;
 extern Readings readings[];
@@ -53,7 +54,11 @@ void mqtt_connect() {
     }
     logAndPublish("Connected to the MQTT broker");
     for (int i = 0; i < numberOfReadings; i++) {
-        mqttClient.subscribe(readings[i].topic);
+        if (!mqttClient.subscribe(readings[i].topic)) {
+            char messageBuffer[CHAR_LEN];
+            snprintf(messageBuffer, CHAR_LEN, "MQTT subscribe failed for topic: %s", readings[i].topic);
+            errorPublish(messageBuffer);
+        }
     }
 }
 

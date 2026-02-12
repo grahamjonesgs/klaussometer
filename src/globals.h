@@ -22,7 +22,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <SD_MMC.h>
-#include <SPI.h> 
+#include <SPI.h>
+#include "logging.h"
 
 typedef struct __attribute__((packed)) {                // Array to hold the incoming measurement
     const char description[CHAR_LEN]; // Currently set to 50 chars long
@@ -107,61 +108,15 @@ struct LogEntry {
     time_t timestamp;
 };
 
-// main
+// main.cpp utility functions used across all modules
 void pin_init();
-void setup_wifi();
-void mqtt_connect();
 void touch_init();
 void my_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
-void receive_mqtt_messages_t(void* pvParams);
 void touch_read(lv_indev_t* indev, lv_indev_data_t* data);
-void set_solar_values();
 void getBatteryStatus(float batteryValue, int readingIndex, char* iconCharacterPtr, lv_color_t* colorPtr);
-void displayStatusMessages_t(void* pvParameters);
-void sdcard_logger_t(void* pvParameters);
-void logAndPublish(const char* messageBuffer);
-void errorPublish(const char* messageBuffer);
 void invalidateOldReadings();
 
-// Connections
-void setup_wifi();
-void mqtt_connect();
-void time_init();
-void connectivity_manager_t(void* pvParameters);
-
-// mqtt
-void update_temperature(char* recMessage, int index);
-void update_readings(char* recMessage, int index, int dataType);
-char* toLowercase(const char* source, char* buffer, size_t bufferSize);
-
-//  Screen updates
-int uv_color(float UV);
-void format_integer_with_commas(long long num, char* out, size_t outSize);
-void set_basic_text_color(lv_color_t color);
-void set_arc_night_mode(bool isNight);
-
-// APIs
-void api_manager_t(void* pvParameters);
-const char* degreesToDirection(double degrees);
-const char* wmoToText(int code, bool isDay);
-int readChunkedPayload(WiFiClient* stream, char* buffer, size_t buffer_size);
-int readFixedLengthPayload(WiFiClient* stream, char* buffer, size_t buffer_size, size_t content_length);
-
-// OTA
 extern unsigned long lastOTAUpdateCheck;
-void setup_web_server();
-void updateFirmware();
-void checkForUpdates();
-String getUptime();
-int compareVersions(const String& v1, const String& v2);
-void getLogsJSON(const char* logFilename);
-
-// SDCard
-uint8_t calculateChecksum(const void* data_ptr, size_t size);
-bool saveDataBlock(const char* filename, const void* data_ptr, size_t size);
-bool loadDataBlock(const char* filename, void* data_ptr, size_t expected_size);
-void addLogToSDCard(const char* message, const char* logFilename);
-void getLogsFromSDCard(const char* logFilename, String& jsonOutput);
 
 static const time_t TIME_SYNC_THRESHOLD = 1577836800;
 

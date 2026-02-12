@@ -1,10 +1,12 @@
 
-#include "globals.h"
+#include "ScreenUpdates.h"
 #include <cstdio>
 
 extern Readings readings[];
 extern Weather weather;
 extern Solar solar;
+extern QueueHandle_t statusMessageQueue;
+extern char statusMessageValue[];
 
 // Set solar values in GUI
 void set_solar_values() {
@@ -317,5 +319,16 @@ void format_integer_with_commas(long long num, char* out, size_t outSize) {
 
     if (is_negative) {
         out[0] = '-';
+    }
+}
+
+void displayStatusMessages_t(void* pvParameters) {
+    StatusMessage receivedMsg;
+    while (true) {
+        if (xQueueReceive(statusMessageQueue, &receivedMsg, portMAX_DELAY) == pdTRUE) {
+            snprintf(statusMessageValue, CHAR_LEN, "%s", receivedMsg.text);
+            vTaskDelay(pdMS_TO_TICKS(receivedMsg.duration_s * 1000));
+            statusMessageValue[0] = '\0';
+        }
     }
 }

@@ -1,0 +1,11 @@
+#ifndef MQTT_H
+#define MQTT_H
+
+#include "globals.h"
+
+void receive_mqtt_messages_t(void* pvParams);
+void update_temperature(char* recMessage, int index);
+void update_readings(char* recMessage, int index, int dataType);
+char* toLowercase(const char* source, char* buffer, size_t bufferSize);
+
+#endif // MQTT_H

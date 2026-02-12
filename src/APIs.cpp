@@ -1,5 +1,7 @@
 
-#include "globals.h"
+#include "APIs.h"
+#include "SDCard.h"
+#include "OTA.h"
 
 extern Weather weather;
 extern UV uv;

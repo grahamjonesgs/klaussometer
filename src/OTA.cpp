@@ -1,4 +1,5 @@
-#include "globals.h"
+#include "OTA.h"
+#include "SDCard.h"
 #include "html.h"
 
 extern WebServer webServer;

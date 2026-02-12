@@ -13,6 +13,12 @@ Arduino Core 0
 */
 
 #include "globals.h"
+#include "connections.h"
+#include "mqtt.h"
+#include "APIs.h"
+#include "ScreenUpdates.h"
+#include "OTA.h"
+#include "SDCard.h"
 
 // Create network objects
 WiFiClient espClient;
@@ -672,86 +678,3 @@ void getBatteryStatus(float batteryValue, int readingIndex, char* iconCharacterP
     }
 }
 
-void displayStatusMessages_t(void* pvParameters) {
-    StatusMessage receivedMsg;
-
-    while (true) {
-        if (xQueueReceive(statusMessageQueue, &receivedMsg, portMAX_DELAY) == pdTRUE) {
-            snprintf(statusMessageValue, CHAR_LEN, "%s", receivedMsg.text);
-            // Wait for the specified duration before clearing the message.
-            vTaskDelay(pdMS_TO_TICKS(receivedMsg.duration_s * 1000));
-            // Clear the label after the duration has passed.
-            statusMessageValue[0] = '\0';
-        }
-    }
-}
-
-void logAndPublish(const char* messageBuffer) {
-
-    // Print to the serial console
-    Serial.println(messageBuffer);
-
-    // Queue SD card write (non-blocking)
-    if (sdLogQueue != NULL) {
-        SDLogMessage logMsg;
-        snprintf(logMsg.message, CHAR_LEN, "%s", messageBuffer);
-        snprintf(logMsg.filename, sizeof(logMsg.filename), "%s", NORMAL_LOG_FILENAME);
-        xQueueSend(sdLogQueue, &logMsg, 0); // Don't block if queue is full
-    }
-
-    // Try to send to MQTT without blocking - if mutex isn't available, skip it
-    if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) {
-        esp_task_wdt_reset();
-        if (mqttClient.connected()) {
-            mqttClient.beginMessage(log_topic);
-            mqttClient.print(messageBuffer);
-            mqttClient.endMessage();
-        }
-        xSemaphoreGive(mqttMutex);
-    }
-    // If we can't get the mutex immediately, just skip MQTT (log still goes to SD/Serial)
-
-    StatusMessage msg;
-    snprintf(msg.text, CHAR_LEN, "%s", messageBuffer);
-    msg.duration_s = STATUS_MESSAGE_TIME;
-    xQueueSend(statusMessageQueue, &msg,
-               0); // Use 0 if queue is full
-}
-
-void errorPublish(const char* messageBuffer) {
-
-    Serial.println(messageBuffer);
-
-    // Queue SD card write (non-blocking)
-    if (sdLogQueue != NULL) {
-        SDLogMessage logMsg;
-        snprintf(logMsg.message, CHAR_LEN, "%s", messageBuffer);
-        snprintf(logMsg.filename, sizeof(logMsg.filename), "%s", ERROR_LOG_FILENAME);
-        xQueueSend(sdLogQueue, &logMsg, 0); // Don't block if queue is full
-    }
-
-    // Try to send to MQTT without blocking - if mutex isn't available, skip it
-    if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) {
-        esp_task_wdt_reset();
-        if (mqttClient.connected()) {
-            mqttClient.beginMessage(error_topic, true);
-            mqttClient.print(messageBuffer);
-            mqttClient.endMessage();
-        }
-        xSemaphoreGive(mqttMutex);
-    }
-    // If we can't get the mutex immediately, just skip MQTT (log still goes to SD/Serial)
-}
-
-// SD card logger task - runs at lowest priority to avoid blocking other tasks
-void sdcard_logger_t(void* pvParameters) {
-    SDLogMessage logMsg;
-
-    while (true) {
-        // Wait for log messages (blocks until available)
-        if (xQueueReceive(sdLogQueue, &logMsg, portMAX_DELAY) == pdTRUE) {
-            // Write to SD card (this may take time, but doesn't block main loop)
-            addLogToSDCard(logMsg.message, logMsg.filename);
-        }
-    }
-}
