@@ -148,44 +148,6 @@ void set_solar_values() {
     }
 }
 
-// Sets UV color based on value
-int uv_color(float UV) {
-    if (UV < 1) {
-        return 0x658D1B;
-    }
-    if (UV < 2) {
-        return 0x84BD00;
-    }
-    if (UV < 3) {
-        return 0x97D700;
-    }
-    if (UV < 4) {
-        return 0xF7EA48;
-    }
-    if (UV < 5) {
-        return 0xFCE300;
-    }
-    if (UV < 6) {
-        return 0xFFCD00;
-    }
-    if (UV < 7) {
-        return 0xECA154;
-    }
-    if (UV < 8) {
-        return 0xFF8200;
-    }
-    if (UV < 9) {
-        return 0xEF3340;
-    }
-    if (UV < 10) {
-        return 0xDA291C;
-    }
-    if (UV < 11) {
-        return 0xBF0D3E;
-    }
-    return 0x4B1E88;
-}
-
 // Sets all text field to defined color for day/night mode
 void set_basic_text_color(lv_color_t color) {
     lv_obj_set_style_text_color(ui_TempLabelFC, color, LV_PART_MAIN);
@@ -274,52 +236,6 @@ void set_arc_night_mode(bool isNight) {
     // UV arc
     lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(trackColor), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_arc_opa(ui_UVArc, indicatorOpa, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-}
-
-void format_integer_with_commas(long long num, char* out, size_t outSize) {
-    char buffer[32]; // temporary digits-only string
-    int len;
-
-    // Handle zero explicitly
-    if (num == 0) {
-        snprintf(out, outSize, "0");
-        return;
-    }
-
-    bool is_negative = (num < 0);
-    if (is_negative) {
-        num = -num;
-    }
-
-    // Convert to string without commas
-    snprintf(buffer, sizeof(buffer), "%lld", num);
-    len = strlen(buffer);
-
-    // How many commas?
-    int commas = (len - 1) / 3;
-    int total_len = len + commas + (is_negative ? 1 : 0);
-
-    // Bounds check
-    if ((size_t)total_len >= outSize) {
-        snprintf(out, outSize, "ERR"); // not enough space
-        return;
-    }
-
-    // Insert commas
-    out[total_len] = '\0';
-    int j = total_len - 1;
-    int digits = 0;
-    for (int i = len - 1; i >= 0; i--) {
-        out[j--] = buffer[i];
-        digits++;
-        if (digits % 3 == 0 && i > 0) {
-            out[j--] = ',';
-        }
-    }
-
-    if (is_negative) {
-        out[0] = '-';
-    }
 }
 
 void displayStatusMessages_t(void* pvParameters) {

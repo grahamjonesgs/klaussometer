@@ -8,7 +8,7 @@ A smart home environmental monitoring and solar power management hub built on th
 
 ## Overview
 
-The Klaussometer is a wall-mounted dashboard that consolidates real-time data from multiple sources onto a single touchscreen display:
+The Klaussometer is a dashboard that consolidates real-time data from multiple sources onto a single touchscreen display:
 
 - **Room monitoring** — Temperature, humidity, and wireless sensor battery levels across 5 rooms (Cave, Living Room, Playroom, Bedroom, Outside) via MQTT
 - **Solar power tracking** — Battery charge %, power output, grid import/export, estimated charge/discharge times, and cost tracking via the SolarEdge API

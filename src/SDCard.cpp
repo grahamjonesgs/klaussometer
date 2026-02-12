@@ -20,15 +20,6 @@ void sdcard_init() {
 static int normalLogLineCount = -1;  // -1 means not yet initialized
 static int errorLogLineCount = -1;
 
-uint8_t calculateChecksum(const void* data_ptr, size_t size) {
-  uint8_t sum = 0;
-  const uint8_t* bytePtr = (const uint8_t*)data_ptr;
-  for (size_t i = 0; i < size; ++i) {
-    sum ^= bytePtr[i];
-  }
-  return sum;
-}
-
 bool saveDataBlock(const char* filename, const void* data_ptr, size_t size) {
   if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
     return false;
