@@ -79,6 +79,7 @@ static bool fetch_uv() {
             float UV = root["data"][0]["uv"];
             uv.index = UV;
             uv.updateTime = time(NULL);
+            dirty_uv = true;
             logAndPublish("UV updated");
             strftime(uv.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
             saveDataBlock(UV_DATA_FILENAME, &uv, sizeof(uv));
@@ -135,6 +136,7 @@ static bool fetch_weather() {
             snprintf(weather.windDir, CHAR_LEN, "%s", degreesToDirection(weatherWindDir));
 
             weather.updateTime = time(NULL);
+            dirty_weather = true;
             strftime(weather.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
             logAndPublish("Weather updated");
             saveDataBlock(WEATHER_DATA_FILENAME, &weather, sizeof(weather));
@@ -176,6 +178,7 @@ static bool fetch_air_quality() {
             airQuality.european_aqi = root["current"]["european_aqi"];
 
             airQuality.updateTime = time(NULL);
+            dirty_weather = true;
             strftime(airQuality.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
             char log_message[CHAR_LEN];
             snprintf(log_message, CHAR_LEN, "Air quality updated. PM10: %.2f, PM2.5: %.2f, Ozone: %.2f, AQI: %d", airQuality.pm10, airQuality.pm2_5,
@@ -406,6 +409,7 @@ static bool fetch_current_solar() {
                     storage.putFloat("solarmax", solar.today_battery_max);
                     storage.end();
                 }
+                dirty_solar = true;
                 logAndPublish("Solar status updated");
                 saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
             } else {
@@ -468,6 +472,7 @@ static bool fetch_daily_solar() {
                 solar.today_buy = root["stationDataItems"][0]["buyValue"];
                 solar.today_use = root["stationDataItems"][0]["useValue"];
                 solar.today_generation = root["stationDataItems"][0]["generationValue"];
+                dirty_solar = true;
                 logAndPublish("Solar today's values updated");
                 solar.dailyUpdateTime = time(NULL);
                 saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
@@ -523,6 +528,7 @@ static bool fetch_monthly_solar() {
                 solar.month_use = root["stationDataItems"][0]["useValue"];
                 solar.month_generation = root["stationDataItems"][0]["generationValue"];
                 solar.monthlyUpdateTime = time(NULL);
+                dirty_solar = true;
                 logAndPublish("Solar month's values updated");
                 saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
             }
@@ -564,6 +570,7 @@ void api_manager_t(void* pvParameters) {
             if (weather.updateTime > 0) {
                 uv.updateTime = time(NULL);
             }
+            dirty_uv = true;
             strftime(uv.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
             saveDataBlock(UV_DATA_FILENAME, &uv, sizeof(uv));
         } else if (canRetry(uvBackoff) && (now - uv.updateTime > UV_UPDATE_INTERVAL_SEC)) {

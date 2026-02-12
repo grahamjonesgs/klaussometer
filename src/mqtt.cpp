@@ -209,6 +209,7 @@ void update_readings(char* recMessage, int index, int dataType) {
     readings[index].lastValue[readings[index].readingIndex] = readings[index].currentValue;
     readings[index].readingIndex++;
     readings[index].lastMessageTime = time(NULL);
+    dirty_rooms = true;
 
     if (valueChanged) {
         char log_message[CHAR_LEN];

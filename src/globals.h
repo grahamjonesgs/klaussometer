@@ -165,4 +165,10 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput);
 
 static const time_t TIME_SYNC_THRESHOLD = 1577836800;
 
+// Dirty flags for display update groups (set by data producers, cleared by loop)
+extern volatile bool dirty_rooms;
+extern volatile bool dirty_solar;
+extern volatile bool dirty_weather;
+extern volatile bool dirty_uv;
+
 #endif // GLOBALS_H
