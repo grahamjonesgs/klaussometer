@@ -9,7 +9,9 @@ unsigned long lastOTAUpdateCheck = 0;
 extern HTTPClient http;
 extern char chip_id[CHAR_LEN];
 
-// Called from api_manager_t - no longer a standalone task
+// Fetches the version file from the OTA server and compares it to FIRMWARE_VERSION.
+// If the server has a newer version, calls updateFirmware() immediately.
+// Called periodically from api_manager_t (not a standalone task).
 void checkForUpdates() {
     if (WiFi.status() != WL_CONNECTED) return;
 
@@ -39,6 +41,9 @@ void checkForUpdates() {
     }
 }
 
+// Downloads the firmware binary from the OTA server and flashes it via the ESP Update library.
+// Logs progress every 10% and resets the watchdog during the download loop.
+// Restarts the device on success.
 void updateFirmware() {
     char binUrl[CHAR_LEN];
     snprintf(binUrl, CHAR_LEN, "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_BIN_PATH);
@@ -110,6 +115,9 @@ void getLogsJSON(const char* logFilename) {
     webServer.send(200, "application/json", jsonOutput);
 }
 
+// Registers all HTTP endpoints and starts the web server.
+// Endpoints: / (board info), /logs (log viewer), /api/logs/normal|error (JSON),
+//            /reboot (POST), /update GET (OTA upload page), /update POST (firmware upload).
 void setup_web_server() {
 
     webServer.on("/api/logs/normal", HTTP_GET, []() {
@@ -199,6 +207,8 @@ void setup_web_server() {
     webServer.begin();
 }
 
+// Returns a human-readable uptime string, e.g. "3 days, 04:22:15".
+// Based on millis() which rolls over after ~49 days, but that's fine for this device.
 String getUptime() {
     unsigned long uptime_ms = millis();
     unsigned long seconds = uptime_ms / 1000;
@@ -218,6 +228,7 @@ String getUptime() {
     return String(buffer);
 }
 
+// Arduino String wrapper around compareVersionsStr() for use within OTA.cpp.
 int compareVersions(const String& v1, const String& v2) {
     return compareVersionsStr(v1.c_str(), v2.c_str());
 }

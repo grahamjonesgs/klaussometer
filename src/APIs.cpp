@@ -101,6 +101,8 @@ static bool fetch_uv() {
     }
 }
 
+// Returns true on success or non-HTTP error (no backoff needed)
+// Returns false on HTTP error (backoff should be applied)
 static bool fetch_weather() {
     if (WiFi.status() != WL_CONNECTED) return true;
 
@@ -157,6 +159,8 @@ static bool fetch_weather() {
     }
 }
 
+// Returns true on success or non-HTTP error (no backoff needed)
+// Returns false on HTTP error (backoff should be applied)
 static bool fetch_air_quality() {
     if (WiFi.status() != WL_CONNECTED) return true;
 
@@ -202,6 +206,8 @@ static bool fetch_air_quality() {
     }
 }
 
+// Fetches a JWT bearer token from the Solarman API and stores it in solar.token.
+// Tokens last ~24h; api_manager_t refreshes after 12h or when a request is rejected.
 static void fetch_solar_token() {
     if (WiFi.status() != WL_CONNECTED) return;
 
@@ -241,6 +247,9 @@ static void fetch_solar_token() {
     http.end();
 }
 
+// Fetches real-time solar data (power flows, battery SoC) from Solarman.
+// Also tracks daily battery min/max, resetting them at midnight.
+// Returns true on success or non-HTTP error, false on HTTP error.
 static bool fetch_current_solar() {
     if (WiFi.status() != WL_CONNECTED) return true;
 
@@ -344,6 +353,8 @@ static bool fetch_current_solar() {
     }
 }
 
+// Fetches today's solar energy totals (generation, usage, grid buy) from Solarman (timeType 2).
+// Returns true on success or non-HTTP error, false on HTTP error.
 static bool fetch_daily_solar() {
     if (WiFi.status() != WL_CONNECTED) return true;
 
@@ -399,6 +410,8 @@ static bool fetch_daily_solar() {
     }
 }
 
+// Fetches this month's solar energy totals from Solarman (timeType 3).
+// Returns true on success or non-HTTP error, false on HTTP error.
 static bool fetch_monthly_solar() {
     if (WiFi.status() != WL_CONNECTED) return true;
 
@@ -541,6 +554,9 @@ void api_manager_t(void* pvParameters) {
     }
 }
 
+// Reads a chunked-transfer-encoded HTTP body into buffer.
+// Each chunk is preceded by its size as a hex string followed by CRLF.
+// Returns total bytes read, or -1 if the buffer would overflow.
 int readChunkedPayload(WiFiClient* stream, char* buffer, size_t buffer_size) {
     size_t total_read = 0;
 
@@ -588,6 +604,8 @@ int readChunkedPayload(WiFiClient* stream, char* buffer, size_t buffer_size) {
     return total_read;
 }
 
+// Reads exactly content_length bytes from stream into buffer (Content-Length style).
+// Returns bytes read, or -1 if content_length >= buffer_size.
 int readFixedLengthPayload(WiFiClient* stream, char* buffer, size_t buffer_size, size_t content_length) {
     // Check for buffer overflow before starting the read
     if (content_length >= buffer_size) {

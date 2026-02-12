@@ -1,5 +1,10 @@
 #include "utils.h"
 
+// Returns an RGB hex colour matching the standard UV Index risk scale.
+// Colours follow WHO/meteorological convention:
+//   <1  dark green (low)    1-2  green  (low)
+//   3-4  yellow (moderate)  5-6  orange (high)
+//   7-9  red (very high)    10   dark red (extreme)   11+ purple (maximum)
 int uv_color(float uv) {
     if (uv < 1)  return 0x658D1B;
     if (uv < 2)  return 0x84BD00;
@@ -15,6 +20,10 @@ int uv_color(float uv) {
     return 0x4B1E88;
 }
 
+// Converts a wind bearing (0-360°, clockwise from North) to a compass abbreviation.
+// Adding 22.5° before bucketing centres each 45° sector on its nominal bearing,
+// so North covers 337.5°-22.5° rather than an off-centre 0°-45°.
+// Handles negative and >360° inputs via fmod.
 const char* degreesToDirection(double degrees) {
     degrees = fmod(degrees, 360.0);
     if (degrees < 0) degrees += 360.0;
@@ -30,6 +39,9 @@ const char* degreesToDirection(double degrees) {
     return "NW";
 }
 
+// Maps a WMO weather interpretation code to a human-readable string.
+// isDay selects day/night variants for codes that have both (e.g. 0 = "Sunny"/"Clear").
+// See https://open-meteo.com/en/docs for the full WMO code table.
 const char* wmoToText(int code, bool isDay) {
     switch (code) {
     case 0:  return isDay ? "Sunny" : "Clear";
@@ -64,6 +76,10 @@ const char* wmoToText(int code, bool isDay) {
     }
 }
 
+// Formats num into out with thousands separators, e.g. 1234567 -> "1,234,567".
+// Writes "ERR" if the buffer is too small. Handles negative numbers.
+// Works right-to-left: pre-calculates the output length (digits + commas + sign),
+// then fills the buffer from the end, inserting a comma every 3rd digit.
 void format_integer_with_commas(long long num, char* out, size_t outSize) {
     char buffer[32];
     int len;
@@ -87,6 +103,7 @@ void format_integer_with_commas(long long num, char* out, size_t outSize) {
         return;
     }
 
+    // Fill from right to left, inserting a comma after every 3rd digit
     out[total_len] = '\0';
     int j = total_len - 1;
     int digits = 0;
@@ -101,6 +118,8 @@ void format_integer_with_commas(long long num, char* out, size_t outSize) {
     if (is_negative) out[0] = '-';
 }
 
+// XOR checksum over a byte range. Simple and fast; sufficient for detecting
+// accidental corruption in the small packed structs saved to SD card.
 uint8_t calculateChecksum(const void* data_ptr, size_t size) {
     uint8_t sum = 0;
     const uint8_t* bytePtr = (const uint8_t*)data_ptr;
@@ -110,6 +129,10 @@ uint8_t calculateChecksum(const void* data_ptr, size_t size) {
     return sum;
 }
 
+// Compares two semantic version strings (e.g. "4.1.35" vs "4.1.36").
+// Returns 1 if v1 > v2, -1 if v1 < v2, 0 if equal.
+// Parses each dotted component as a decimal integer and compares left to right,
+// stopping as soon as a difference is found.
 int compareVersionsStr(const char* v1, const char* v2) {
     int i = 0, j = 0;
     int len1 = (int)strlen(v1), len2 = (int)strlen(v2);
@@ -119,7 +142,7 @@ int compareVersionsStr(const char* v1, const char* v2) {
         while (j < len2 && v2[j] != '.') { num2 = num2 * 10 + (v2[j] - '0'); j++; }
         if (num1 > num2) return 1;
         if (num1 < num2) return -1;
-        i++; j++;
+        i++; j++;  // skip the '.'
     }
     return 0;
 }

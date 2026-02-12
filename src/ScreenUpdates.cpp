@@ -8,7 +8,10 @@ extern Solar solar;
 extern QueueHandle_t statusMessageQueue;
 extern char statusMessageValue[];
 
-// Set solar values in GUI
+// Updates all solar-related LVGL widgets: battery/solar/usage arcs and labels,
+// charge/discharge status and estimated time remaining, daily min/max battery,
+// grid energy totals, cost (in Rand), and self-sufficiency percentages.
+// Does nothing if solar data has never been received (currentUpdateTime == 0).
 void set_solar_values() {
     char tempString[CHAR_LEN];
     // Set screen values
@@ -35,6 +38,8 @@ void set_solar_values() {
             snprintf(tempString, CHAR_LEN, "Discharging %2.1fkW", solar.batteryPower);
             lv_label_set_text(ui_ChargingLabel, tempString);
 
+            // Time remaining = usable capacity left / current draw rate
+            // Usable capacity = (SoC% - min%) * total kWh; power is in kW
             float remain_hours = (solar.batteryCharge / 100.0 - BATTERY_MIN) * BATTERY_CAPACITY / solar.batteryPower;
             int remain_minutes = 60.0 * remain_hours;
             int remain_minutes_round = 10 * (round(remain_minutes / 10)); // Round to 10 mins
@@ -65,6 +70,7 @@ void set_solar_values() {
                 snprintf(tempString, CHAR_LEN, "Charging %2.1fkW", -solar.batteryPower);
                 lv_label_set_text(ui_ChargingLabel, tempString);
 
+                // Time to full = remaining capacity to fill / charge rate (batteryPower is negative when charging)
                 float remain_hours = -(0.99 - solar.batteryCharge / 100) * BATTERY_CAPACITY / solar.batteryPower;
                 int remain_minutes = 60.0 * remain_hours;
                 int remain_minutes_round = 10 * (round(remain_minutes / 10));
@@ -238,6 +244,8 @@ void set_arc_night_mode(bool isNight) {
     lv_obj_set_style_arc_opa(ui_UVArc, indicatorOpa, LV_PART_INDICATOR | LV_STATE_DEFAULT);
 }
 
+// FreeRTOS task: dequeues status messages and displays each one for its requested
+// duration, then clears the label. Blocks indefinitely on the queue.
 void displayStatusMessages_t(void* pvParameters) {
     StatusMessage receivedMsg;
     while (true) {
