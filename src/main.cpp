@@ -12,7 +12,12 @@ Events Core 1
 Arduino Core 0
 */
 
-#include "globals.h"
+// Display hardware — only used by main.cpp
+#include <Arduino_GFX_Library.h>
+#include <TAMC_GT911.h>
+#include <Wire.h>
+#include <SPI.h>
+#include "types.h"
 #include "connections.h"
 #include "mqtt.h"
 #include "APIs.h"
@@ -27,11 +32,17 @@ WebServer webServer(80);
 HTTPClient http;
 static const int HTTP_TIMEOUT_MS = 10000; // 10 second timeout for API calls
 SemaphoreHandle_t mqttMutex;
-SemaphoreHandle_t sdMutex;
+
+// Forward declarations for functions defined later in this file
+void pin_init();
+void touch_init();
+void my_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
+void touch_read(lv_indev_t* indev, lv_indev_data_t* data);
+void getBatteryStatus(float batteryValue, int readingIndex, char* iconCharacterPtr, lv_color_t* colorPtr);
+void invalidateOldReadings();
 
 // Global variables
 struct tm timeinfo;
-// void touch_read(lv_indev_drv_t* indev_driver, lv_indev_data_t* data);
 Weather weather = {0.0, 0.0, 0.0, 0.0, false, 0, "", "", "--:--:--"};
 UV uv = {0, 0, "--:--:--"};
 Solar solar = {0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, "--:--:--", 100, 0, false, 0.0, 0.0};
@@ -40,12 +51,10 @@ Readings readings[]{READINGS_ARRAY};
 Preferences storage;
 int numberOfReadings = sizeof(readings) / sizeof(readings[0]);
 QueueHandle_t statusMessageQueue;
-QueueHandle_t sdLogQueue;
 char log_topic[CHAR_LEN];
 char error_topic[CHAR_LEN];
 char chip_id[CHAR_LEN];
 String macAddress;
-unsigned long lastOTAUpdateCheck = 0;
 
 // Status messages
 char statusMessageValue[CHAR_LEN];
@@ -147,24 +156,14 @@ void setup() {
 
     // Setup queues and mutexes
     statusMessageQueue = xQueueCreate(20, sizeof(StatusMessage));
-    sdLogQueue = xQueueCreate(20, sizeof(SDLogMessage)); // Queue for SD card logging
     mqttMutex = xSemaphoreCreateMutex();
-    sdMutex = xSemaphoreCreateMutex();
+    sdcard_init();
 
-    // Check if the queue was created successfully
     if (statusMessageQueue == NULL) {
         Serial.println("Error: Failed to create status message queue");
     }
-    if (sdLogQueue == NULL) {
-        Serial.println("Error: Failed to create SD log queue");
-    }
     if (mqttMutex == NULL) {
         Serial.println("Error: Failed to create MQTT mutex! Restarting...");
-        delay(1000);
-        esp_restart();
-    }
-    if (sdMutex == NULL) {
-        Serial.println("Error: Failed to create SD mutex! Restarting...");
         delay(1000);
         esp_restart();
     }

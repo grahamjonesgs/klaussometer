@@ -1,6 +1,7 @@
-#include "globals.h"
+#include "types.h"
+#include <ArduinoMqttClient.h>
+#include "SDCard.h"
 
-extern QueueHandle_t sdLogQueue;
 extern QueueHandle_t statusMessageQueue;
 extern MqttClient mqttClient;
 extern SemaphoreHandle_t mqttMutex;

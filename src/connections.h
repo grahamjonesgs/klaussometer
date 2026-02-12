@@ -1,7 +1,10 @@
 #ifndef CONNECTIONS_H
 #define CONNECTIONS_H
 
-#include "globals.h"
+#include "types.h"
+#include <WiFi.h>
+#include <ArduinoMqttClient.h>
+#include <Preferences.h>
 
 void setup_wifi();
 void mqtt_connect();

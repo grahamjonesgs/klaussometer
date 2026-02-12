@@ -1,7 +1,20 @@
 #include "SDCard.h"
 extern Solar solar;
-extern SemaphoreHandle_t sdMutex;
-extern QueueHandle_t sdLogQueue;
+SemaphoreHandle_t sdMutex;
+QueueHandle_t sdLogQueue;
+
+void sdcard_init() {
+    sdLogQueue = xQueueCreate(20, sizeof(SDLogMessage));
+    sdMutex = xSemaphoreCreateMutex();
+    if (sdLogQueue == NULL) {
+        Serial.println("Error: Failed to create SD log queue");
+    }
+    if (sdMutex == NULL) {
+        Serial.println("Error: Failed to create SD mutex! Restarting...");
+        delay(1000);
+        esp_restart();
+    }
+}
 
 // Cache line counts for faster log reading
 static int normalLogLineCount = -1;  // -1 means not yet initialized

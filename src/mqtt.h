@@ -1,7 +1,9 @@
 #ifndef MQTT_H
 #define MQTT_H
 
-#include "globals.h"
+#include "types.h"
+#include <ArduinoMqttClient.h>
+#include <WiFi.h>
 
 void receive_mqtt_messages_t(void* pvParams);
 void update_temperature(char* recMessage, int index);

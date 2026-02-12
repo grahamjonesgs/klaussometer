@@ -1,6 +1,8 @@
 #ifndef CONSTANTS_H
 #define CONSTANTS_H
 
+#include <time.h>
+
 #define STORED_READING 6
 #define READINGS_ARRAY                                                                                                             \
     {"Cave", "cave/tempset-ambient/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0},                  \
@@ -74,6 +76,8 @@ static const float LOG_CHANGE_THRESHOLD_HUMIDITY = 2.0f; // %
 static const float LOG_CHANGE_THRESHOLD_BATTERY  = 0.1f; // V
 
 // Define constants used
+static const time_t TIME_SYNC_THRESHOLD = 1577836800;     // 2020-01-01: used to detect unsynced/zero time
+
 static const int MAX_NO_MESSAGE_SEC = 1800;               // Time before CHAR_NO_MESSAGE is set in seconds (long)
 static const int TIME_RETRIES = 100;                      // Number of time to retry getting the time during setup
 static const int WEATHER_UPDATE_INTERVAL_SEC = 300;       // Interval between weather updates

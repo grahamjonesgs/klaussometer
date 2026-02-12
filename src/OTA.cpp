@@ -4,7 +4,7 @@
 
 extern WebServer webServer;
 extern String macAddress;
-extern unsigned long lastOTAUpdateCheck;
+unsigned long lastOTAUpdateCheck = 0;
 extern HTTPClient http;
 extern char chip_id[CHAR_LEN];
 

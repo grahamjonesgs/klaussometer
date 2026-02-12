@@ -1,7 +1,11 @@
 #ifndef APIS_H
 #define APIS_H
 
-#include "globals.h"
+#include "types.h"
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <Preferences.h>
 
 void api_manager_t(void* pvParameters);
 const char* degreesToDirection(double degrees);

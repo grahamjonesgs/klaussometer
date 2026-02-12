@@ -1,7 +1,9 @@
 #ifndef SCREENUPDATES_H
 #define SCREENUPDATES_H
 
-#include "globals.h"
+#include "types.h"
+#include <lvgl.h>
+#include "UI/ui.h"
 
 void set_solar_values();
 int uv_color(float UV);
