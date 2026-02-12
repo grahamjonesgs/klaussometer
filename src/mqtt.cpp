@@ -106,8 +106,11 @@ void update_readings(char* recMessage, int index, int dataType) {
     char* endptr;
     float parsedValue = strtof(recMessage, &endptr);
 
-    // Check if conversion failed (no digits consumed) or value is out of reasonable range
-    if (endptr == recMessage || *endptr != '\0') {
+    // Check if conversion failed (no digits consumed), trailing garbage, or non-finite result.
+    // isnan/isinf must be checked explicitly: strtof("NaN"/"Inf") sets endptr to end of string
+    // so the endptr check alone does not catch these, and NaN comparisons always return false
+    // so the range checks below would not catch NaN either.
+    if (endptr == recMessage || *endptr != '\0' || isnan(parsedValue) || isinf(parsedValue)) {
         char log_msg[CHAR_LEN];
         snprintf(log_msg, CHAR_LEN, "Invalid numeric value received: '%s' for %s", recMessage, readings[index].description);
         logAndPublish(log_msg);
@@ -141,9 +144,9 @@ void update_readings(char* recMessage, int index, int dataType) {
         valueChanged = true;
     } else {
         switch (dataType) {
-        case DATA_TEMPERATURE: valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= 0.5f; break;
-        case DATA_HUMIDITY:    valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= 2.0f; break;
-        case DATA_BATTERY:     valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= 0.1f; break;
+        case DATA_TEMPERATURE: valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= LOG_CHANGE_THRESHOLD_TEMP;     break;
+        case DATA_HUMIDITY:    valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= LOG_CHANGE_THRESHOLD_HUMIDITY; break;
+        case DATA_BATTERY:     valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= LOG_CHANGE_THRESHOLD_BATTERY;  break;
         default:               valueChanged = true; break;
         }
     }

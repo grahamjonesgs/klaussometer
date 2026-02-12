@@ -68,6 +68,11 @@ static const int DATA_SETTING = 2;
 static const int DATA_ONOFF = 3;
 static const int DATA_BATTERY = 4;
 
+// Minimum change required to log a new sensor reading (avoids log spam for noise)
+static const float LOG_CHANGE_THRESHOLD_TEMP    = 0.5f;  // °C
+static const float LOG_CHANGE_THRESHOLD_HUMIDITY = 2.0f; // %
+static const float LOG_CHANGE_THRESHOLD_BATTERY  = 0.1f; // V
+
 // Define constants used
 static const int MAX_NO_MESSAGE_SEC = 1800;               // Time before CHAR_NO_MESSAGE is set in seconds (long)
 static const int TIME_RETRIES = 100;                      // Number of time to retry getting the time during setup
