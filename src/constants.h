@@ -2,24 +2,25 @@
 #define CONSTANTS_H
 
 #include <time.h>
+#include <stdint.h>
 
 #define STORED_READING 6
 #define READINGS_ARRAY                                                                                                             \
-    {"Cave", "cave/tempset-ambient/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0},                  \
-        {"Living room", "livingroom/tempset-ambient/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0}, \
-        {"Playroom", "guest/tempset-ambient/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0},         \
-        {"Bedroom", "bedroom/tempset-ambient/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0},        \
-        {"Outside", "outside/tempset-ambient/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_TEMPERATURE, 0, 0},        \
-        {"Cave", "cave/tempset-humidity/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY, 0, 0},                \
-        {"Living room", "livingroom/tempset-humidity/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY, 0, 0},   \
-        {"Playroom", "guest/tempset-humidity/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY, 0, 0},           \
-        {"Bedroom", "bedroom/tempset-humidity/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY, 0, 0},          \
-        {"Outside", "outside/tempset-humidity/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_HUMIDITY, 0, 0},          \
-        {"Cave", "cave/battery/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY, 0, 0},                          \
-        {"Living room", "livingroom/battery/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY, 0, 0},             \
-        {"Playroom", "guest/battery/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY, 0, 0},                     \
-        {"Bedroom", "bedroom/battery/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY, 0, 0},                    \
-        {"Outside", "outside/battery/set", NO_READING, 0.0, {0.0}, CHAR_NO_MESSAGE, false, DATA_BATTERY, 0, 0}
+    {"Cave", "cave/tempset-ambient/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0},                  \
+        {"Living room", "livingroom/tempset-ambient/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0}, \
+        {"Playroom", "guest/tempset-ambient/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0},         \
+        {"Bedroom", "bedroom/tempset-ambient/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0},        \
+        {"Outside", "outside/tempset-ambient/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0},        \
+        {"Cave", "cave/tempset-humidity/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY, 0, 0},                \
+        {"Living room", "livingroom/tempset-humidity/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY, 0, 0},   \
+        {"Playroom", "guest/tempset-humidity/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY, 0, 0},           \
+        {"Bedroom", "bedroom/tempset-humidity/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY, 0, 0},          \
+        {"Outside", "outside/tempset-humidity/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY, 0, 0},          \
+        {"Cave", "cave/battery/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY, 0, 0},                          \
+        {"Living room", "livingroom/battery/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY, 0, 0},             \
+        {"Playroom", "guest/battery/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY, 0, 0},                     \
+        {"Bedroom", "bedroom/battery/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY, 0, 0},                    \
+        {"Outside", "outside/battery/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY, 0, 0}
 
 #define ROOM_COUNT 5
 #define ROOM_NAME_LABELS {&ui_RoomName1, &ui_RoomName2, &ui_RoomName3, &ui_RoomName4, &ui_RoomName5}
@@ -39,7 +40,6 @@ static const char CHAR_UP = 'a';   // Based on epicycles font
 static const char CHAR_DOWN = 'b'; // Based on epicycles ADF font
 static const char CHAR_SAME = ' '; // Based on epicycles ADF font as blank if no change
 static const char CHAR_BLANK = 32;
-static const char CHAR_NO_MESSAGE = '#';       // Based on epicycles ADF font
 static const char CHAR_BATTERY_GOOD = '.';     // Based on battery2 font
 static const char CHAR_BATTERY_OK = ';';       // Based on battery2 font
 static const char CHAR_BATTERY_BAD = ',';      // Based on battery2 font
@@ -63,6 +63,29 @@ static const float BATTERY_OK = 3.70;       // The point where the battery is co
 static const float BATTERY_BAD = 3.55;      // The point where the battery is considered to be in bad condition and may not provide power for long
 static const float BATTERY_CRITICAL = 3.40; // The point where the battery is considered to be in critical condition and may not provide power for more than a short time
 
+// Reading state: tracks whether a sensor has valid data and which direction it's trending.
+// Stored in the Readings struct as uint8_t so it persists to SD card with no size change.
+enum class ReadingState : uint8_t {
+    NO_DATA       = 0, // No reading received yet, or the reading has expired
+    FIRST_READING = 1, // Only one data point so far — direction is unknown
+    TRENDING_UP   = 2, // Current value is above the historical average
+    TRENDING_DOWN = 3, // Current value is below the historical average
+    STABLE        = 4  // Current value equals the historical average
+};
+
+// Returns the glyph character for the given reading state.
+// CHAR_SAME is returned for NO_DATA so the direction widget shows blank when there is no data.
+inline char readingStateGlyph(ReadingState state) {
+    switch (state) {
+        case ReadingState::TRENDING_UP:   return CHAR_UP;
+        case ReadingState::TRENDING_DOWN: return CHAR_DOWN;
+        case ReadingState::STABLE:        return CHAR_SAME;
+        case ReadingState::FIRST_READING: return CHAR_BLANK;
+        case ReadingState::NO_DATA:
+        default:                          return CHAR_SAME;
+    }
+}
+
 // Data type definition for array
 static const int DATA_TEMPERATURE = 0;
 static const int DATA_HUMIDITY = 1;
@@ -78,7 +101,7 @@ static const float LOG_CHANGE_THRESHOLD_BATTERY  = 0.1f; // V
 // Define constants used
 static const time_t TIME_SYNC_THRESHOLD = 1577836800;     // 2020-01-01: used to detect unsynced/zero time
 
-static const int MAX_NO_MESSAGE_SEC = 1800;               // Time before CHAR_NO_MESSAGE is set in seconds (long)
+static const int MAX_NO_MESSAGE_SEC = 1800;               // Seconds without a message before a reading is invalidated (ReadingState::NO_DATA)
 static const int TIME_RETRIES = 100;                      // Number of time to retry getting the time during setup
 static const int WEATHER_UPDATE_INTERVAL_SEC = 300;       // Interval between weather updates
 static const int UV_UPDATE_INTERVAL_SEC = 3600;           // Interval between UV updates

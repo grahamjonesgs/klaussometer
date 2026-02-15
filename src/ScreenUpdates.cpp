@@ -1,5 +1,6 @@
 
 #include "ScreenUpdates.h"
+#include <Arduino.h>
 #include <cstdio>
 
 extern Readings readings[];
@@ -245,14 +246,22 @@ void set_arc_night_mode(bool isNight) {
 }
 
 // FreeRTOS task: dequeues status messages and displays each one for its requested
-// duration, then clears the label. Blocks indefinitely on the queue.
+// duration, then clears the label. Uses a 1-minute receive timeout so the HWM
+// check below runs even during long quiet periods.
 void displayStatusMessages_t(void* pvParameters) {
     StatusMessage receivedMsg;
+    unsigned long lastHwmLog = 0;
     while (true) {
-        if (xQueueReceive(statusMessageQueue, &receivedMsg, portMAX_DELAY) == pdTRUE) {
+        if (xQueueReceive(statusMessageQueue, &receivedMsg, pdMS_TO_TICKS(60000)) == pdTRUE) {
             snprintf(statusMessageValue, CHAR_LEN, "%s", receivedMsg.text);
             vTaskDelay(pdMS_TO_TICKS(receivedMsg.duration_s * 1000));
             statusMessageValue[0] = '\0';
+        }
+        if (millis() - lastHwmLog > 3600000UL) {
+            lastHwmLog = millis();
+            char hwm_msg[CHAR_LEN];
+            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: Display Status %u words", uxTaskGetStackHighWaterMark(NULL));
+            logAndPublish(hwm_msg);
         }
     }
 }

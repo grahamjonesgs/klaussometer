@@ -24,7 +24,7 @@ typedef struct __attribute__((packed)) {
     char output[CHAR_LEN];
     float currentValue;
     float lastValue[STORED_READING];
-    uint8_t changeChar;
+    ReadingState readingState;
     bool enoughData;
     int dataType;
     int readingIndex;

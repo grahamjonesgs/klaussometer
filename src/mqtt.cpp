@@ -20,10 +20,18 @@ void receive_mqtt_messages_t(void* pvParams) {
     char topicBuffer[CHAR_LEN];
     char recMessage[CHAR_LEN]; // Remove = {0} here
     int index;
+    unsigned long lastHwmLog = 0;
 
     while (true) {
         // Reset watchdog at the start of each loop iteration
         esp_task_wdt_reset();
+
+        if (millis() - lastHwmLog > 3600000UL) {
+            lastHwmLog = millis();
+            char hwm_msg[CHAR_LEN];
+            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: MQTT Receive %u words", uxTaskGetStackHighWaterMark(NULL));
+            logAndPublish(hwm_msg);
+        }
 
         // Reconnect if necessary
         if (!mqttClient.connected()) {
@@ -180,7 +188,7 @@ void update_readings(char* recMessage, int index, int dataType) {
     }
 
     if (readings[index].readingIndex == 0) {
-        readings[index].changeChar = CHAR_BLANK;
+        readings[index].readingState = ReadingState::FIRST_READING;
         readings[index].lastValue[0] = readings[index].currentValue;
     } else {
         for (int i = 0; i < readings[index].readingIndex; i++) {
@@ -188,14 +196,14 @@ void update_readings(char* recMessage, int index, int dataType) {
         }
         averageHistory = totalHistory / readings[index].readingIndex;
 
-        // Only update change character for temperature and humidity
+        // Only update trend state for temperature and humidity
         if (dataType == DATA_TEMPERATURE || dataType == DATA_HUMIDITY) {
             if (readings[index].currentValue > averageHistory) {
-                readings[index].changeChar = CHAR_UP;
+                readings[index].readingState = ReadingState::TRENDING_UP;
             } else if (readings[index].currentValue < averageHistory) {
-                readings[index].changeChar = CHAR_DOWN;
+                readings[index].readingState = ReadingState::TRENDING_DOWN;
             } else {
-                readings[index].changeChar = CHAR_SAME;
+                readings[index].readingState = ReadingState::STABLE;
             }
         }
     }

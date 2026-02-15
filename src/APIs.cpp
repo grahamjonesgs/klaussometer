@@ -470,9 +470,18 @@ static bool fetch_monthly_solar() {
 void api_manager_t(void* pvParameters) {
     esp_task_wdt_add(NULL);
 
+    static time_t lastHwmLog = 0;
+
     while (true) {
         esp_task_wdt_reset();
         time_t now = time(NULL);
+
+        if (now - lastHwmLog > 3600) {
+            lastHwmLog = now;
+            char hwm_msg[CHAR_LEN];
+            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: API Manager %u words", uxTaskGetStackHighWaterMark(NULL));
+            logAndPublish(hwm_msg);
+        }
 
         // Solar token - fetch if empty or expired (tokens last ~24h, refresh after 12h)
         if (strlen(solar.token) == 0 || (solar.tokenTime > 0 && (now - solar.tokenTime) > 43200)) {

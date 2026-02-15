@@ -432,12 +432,20 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
   free(jsonBuffer);
 }
 
-// SD card logger task - runs at lowest priority to avoid blocking other tasks
+// SD card logger task - runs at lowest priority to avoid blocking other tasks.
+// Uses a 1-minute receive timeout so the HWM check below runs even during quiet periods.
 void sdcard_logger_t(void* pvParameters) {
     SDLogMessage logMsg;
+    unsigned long lastHwmLog = 0;
     while (true) {
-        if (xQueueReceive(sdLogQueue, &logMsg, portMAX_DELAY) == pdTRUE) {
+        if (xQueueReceive(sdLogQueue, &logMsg, pdMS_TO_TICKS(60000)) == pdTRUE) {
             addLogToSDCard(logMsg.message, logMsg.filename);
+        }
+        if (millis() - lastHwmLog > 3600000UL) {
+            lastHwmLog = millis();
+            char hwm_msg[CHAR_LEN];
+            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: SD Logger %u words", uxTaskGetStackHighWaterMark(NULL));
+            logAndPublish(hwm_msg);
         }
     }
 }

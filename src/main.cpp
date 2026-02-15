@@ -13,17 +13,17 @@ Arduino Core 0
 */
 
 // Display hardware — only used by main.cpp
-#include <Arduino_GFX_Library.h>
-#include <TAMC_GT911.h>
-#include <Wire.h>
-#include <SPI.h>
-#include "types.h"
-#include "connections.h"
-#include "mqtt.h"
 #include "APIs.h"
-#include "ScreenUpdates.h"
 #include "OTA.h"
 #include "SDCard.h"
+#include "ScreenUpdates.h"
+#include "connections.h"
+#include "mqtt.h"
+#include "types.h"
+#include <Arduino_GFX_Library.h>
+#include <SPI.h>
+#include <TAMC_GT911.h>
+#include <Wire.h>
 
 // Create network objects
 WiFiClient espClient;
@@ -114,9 +114,7 @@ void shutdown_handler(void) {
 
 void setup() {
     Serial.begin(115200);
-    // Suppress cosmetic SSL teardown errors (connection reset during close_notify)
     esp_log_level_set("ssl_client", ESP_LOG_WARN);
-    // delay one second to enabling monitoring
     snprintf(chip_id, CHAR_LEN, "%04llx", ESP.getEfuseMac() & 0xffff);
     Serial.printf("Starting Klaussometer Display %s\n", chip_id);
 
@@ -167,8 +165,6 @@ void setup() {
         delay(1000);
         esp_restart();
     }
-
-    // SD card-based logging is used (no memory buffers needed)
 
     // Initialize the SD card
     SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0);
@@ -339,8 +335,8 @@ void setup() {
     storage.end();
 
     configTime(TIME_OFFSET, 0, NTP_SERVER); // Setup as used to display time from stored values
-    http.setTimeout(HTTP_TIMEOUT_MS); // Set read timeout for all API calls
-    http.setReuse(false);              // Disable keep-alive - single task calls different hosts/protocols
+    http.setTimeout(HTTP_TIMEOUT_MS);       // Set read timeout for all API calls
+    http.setReuse(false);                   // Disable keep-alive - single task calls different hosts/protocols
 
     // Register shutdown handler to log reboots (including watchdog timeouts)
     esp_register_shutdown_handler(shutdown_handler);
@@ -348,25 +344,21 @@ void setup() {
     // Configure and enable the Task Watchdog Timer for the loop task
     // 60 second timeout - will reboot if loop hangs for this long
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
-    esp_task_wdt_config_t wdt_config = {
-        .timeout_ms = 60000,
-        .idle_core_mask = 0,
-        .trigger_panic = true
-    };
+    esp_task_wdt_config_t wdt_config = {.timeout_ms = 60000, .idle_core_mask = 0, .trigger_panic = true};
     esp_task_wdt_reconfigure(&wdt_config);
 #else
     esp_task_wdt_init(60, true);
 #endif
-    esp_task_wdt_add(NULL);      // Add current task (loop task) to watchdog
+    esp_task_wdt_add(NULL); // Add current task (loop task) to watchdog
 
     // Start tasks
     // Priority guide: Arduino loop() runs at priority 1 on core 1 (loopTask)
     // Keep background tasks at low priority to avoid starving the display loop
-    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, NULL, 0, NULL, 1);             // Core 1, priority 0 (lowest)
-    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_SMALL, NULL, 2, NULL, 1);  // Core 1, priority 2
+    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, NULL, 0, NULL, 1);            // Core 1, priority 0 (lowest)
+    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_MEDIUM, NULL, 2, NULL, 1); // Core 1, priority 2 - MEDIUM needed: update_readings() has deep call chain + multiple char[255] buffers
     xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_SMALL, NULL, 1, NULL, 1);
     xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_SMALL, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(api_manager_t, "API Manager", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);           // HTTPS - replaces 7 API tasks + OTA check
+    xTaskCreatePinnedToCore(api_manager_t, "API Manager", TASK_STACK_MEDIUM, NULL, 1, NULL, 1); // HTTPS - replaces 7 API tasks + OTA check
 }
 
 void loop() {
@@ -397,16 +389,12 @@ void loop() {
         for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
             lv_arc_set_value(*tempArcs[i], readings[i].currentValue);
             lv_label_set_text(*tempLabels[i], readings[i].output);
-            if (readings[i].changeChar != CHAR_NO_MESSAGE) {
+            if (readings[i].readingState != ReadingState::NO_DATA) {
                 lv_obj_clear_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
             } else {
                 lv_obj_add_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
             }
-            if (readings[i].changeChar == CHAR_NO_MESSAGE) {
-                snprintf(tempString, CHAR_LEN, "%c", CHAR_SAME);
-            } else {
-                snprintf(tempString, CHAR_LEN, "%c", readings[i].changeChar);
-            }
+            snprintf(tempString, CHAR_LEN, "%c", readingStateGlyph(readings[i].readingState));
             lv_label_set_text(*directionLabels[i], tempString);
             lv_label_set_text(*humidityLabels[i], readings[i + ROOM_COUNT].output);
         }
@@ -432,10 +420,8 @@ void loop() {
             snprintf(tempString, CHAR_LEN, "%i", uv.index);
             lv_label_set_text(ui_UVLabel, tempString);
             lv_arc_set_value(ui_UVArc, uv.index * 10);
-            lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(uv_color(uv.index)),
-                                       LV_PART_INDICATOR | LV_STATE_DEFAULT);
-            lv_obj_set_style_bg_color(ui_UVArc, lv_color_hex(uv_color(uv.index)),
-                                      LV_PART_KNOB | LV_STATE_DEFAULT);
+            lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(uv_color(uv.index)), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+            lv_obj_set_style_bg_color(ui_UVArc, lv_color_hex(uv_color(uv.index)), LV_PART_KNOB | LV_STATE_DEFAULT);
         }
     }
 
@@ -449,11 +435,12 @@ void loop() {
             snprintf(tempString, CHAR_LEN, "Wind %2.0f km/h %s", weather.windSpeed, weather.windDir);
             lv_label_set_text(ui_FCWindSpeed, tempString);
             if (airQuality.updateTime > 0) {
-                const char* aqiRating = airQuality.european_aqi <= 20 ? "Good" :
-                                        airQuality.european_aqi <= 40 ? "Fair" :
-                                        airQuality.european_aqi <= 60 ? "Moderate" :
-                                        airQuality.european_aqi <= 80 ? "Poor" :
-                                        airQuality.european_aqi <= 100 ? "Very Poor" : "Hazardous";
+                const char* aqiRating = airQuality.european_aqi <= 20    ? "Good"
+                                        : airQuality.european_aqi <= 40  ? "Fair"
+                                        : airQuality.european_aqi <= 60  ? "Moderate"
+                                        : airQuality.european_aqi <= 80  ? "Poor"
+                                        : airQuality.european_aqi <= 100 ? "Very Poor"
+                                                                         : "Hazardous";
                 snprintf(tempString, CHAR_LEN, "AQI: %d %s", airQuality.european_aqi, aqiRating);
                 lv_label_set_text(ui_FCAQI, tempString);
                 snprintf(tempString, CHAR_LEN, "AQI Updated %s", airQuality.time_string);
@@ -580,8 +567,8 @@ void loop() {
 void invalidateOldReadings() {
     if (time(NULL) > TIME_SYNC_THRESHOLD) {
         for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
-            if ((time(NULL) > readings[i].lastMessageTime + (MAX_NO_MESSAGE_SEC)) && (readings[i].changeChar != CHAR_NO_MESSAGE)) {
-                readings[i].changeChar = CHAR_NO_MESSAGE;
+            if ((time(NULL) > readings[i].lastMessageTime + (MAX_NO_MESSAGE_SEC)) && (readings[i].readingState != ReadingState::NO_DATA)) {
+                readings[i].readingState = ReadingState::NO_DATA;
                 snprintf(readings[i].output, sizeof(readings[i].output), NO_READING);
                 readings[i].currentValue = 0.0;
                 dirty_rooms = true;
@@ -676,4 +663,3 @@ void getBatteryStatus(float batteryValue, int readingIndex, char* iconCharacterP
         *colorPtr = lv_color_hex(COLOR_GREEN);
     }
 }
-

@@ -80,9 +80,17 @@ void connectivity_manager_t(void* pvParameters) {
 
     bool wasDisconnected = false;
     int wifiFailCount = 0;
+    unsigned long lastHwmLog = 0;
     while (true) {
         // Reset watchdog at the start of each loop iteration
         esp_task_wdt_reset();
+
+        if (millis() - lastHwmLog > 3600000UL) {
+            lastHwmLog = millis();
+            char hwm_msg[CHAR_LEN];
+            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: Connectivity %u words", uxTaskGetStackHighWaterMark(NULL));
+            logAndPublish(hwm_msg);
+        }
 
         if (WiFi.status() != WL_CONNECTED) {
             wasDisconnected = true;
