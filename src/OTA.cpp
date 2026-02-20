@@ -1,7 +1,7 @@
 #include "OTA.h"
 #include "SDCard.h"
-#include "utils.h"
 #include "html.h"
+#include "utils.h"
 
 extern WebServer webServer;
 extern String macAddress;
@@ -13,7 +13,8 @@ extern char chip_id[CHAR_LEN];
 // If the server has a newer version, calls updateFirmware() immediately.
 // Called periodically from api_manager_t (not a standalone task).
 void checkForUpdates() {
-    if (WiFi.status() != WL_CONNECTED) return;
+    if (WiFi.status() != WL_CONNECTED)
+        return;
 
     char url[CHAR_LEN];
     snprintf(url, CHAR_LEN, "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_VERSION_PATH);
@@ -135,7 +136,7 @@ void setup_web_server() {
     webServer.on("/reboot", HTTP_POST, []() {
         logAndPublish("Reboot requested via web interface");
         webServer.send(200, "text/plain", "Rebooting...");
-        delay(1000);  // Give time for response to be sent
+        delay(1000); // Give time for response to be sent
         ESP.restart();
     });
 

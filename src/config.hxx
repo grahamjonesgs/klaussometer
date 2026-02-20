@@ -6,13 +6,13 @@ static const char* WIFI_SSID = "xxx";
 static const char* WIFI_PASSWORD = "xxx";
 
 static const char* MQTT_SERVER = "xxx.com"; // server name or IP
-static const char* MQTT_USER = "xxx";         // username
-static const char* MQTT_PASSWORD = "xxx";       // password
-static const char* MQTT_TOPIC_USER = "";           // topic
-static const int MQTT_PORT = 1883;                 // port
+static const char* MQTT_USER = "xxx";       // username
+static const char* MQTT_PASSWORD = "xxx";   // password
+static const char* MQTT_TOPIC_USER = "";    // topic
+static const int MQTT_PORT = 1883;          // port
 
-static const char* WEATHERBIT_API = "xxx"; // API key
-static const char* WEATHERBIT_CITY_ID = "xxx";                      // City ID for Cape Town
+static const char* WEATHERBIT_API = "xxx";     // API key
+static const char* WEATHERBIT_CITY_ID = "xxx"; // City ID for Cape Town
 static const char* LATITUDE = "xxx";
 static const char* LONGITUDE = "xxx";
 

@@ -354,8 +354,9 @@ void setup() {
     // Start tasks
     // Priority guide: Arduino loop() runs at priority 1 on core 1 (loopTask)
     // Keep background tasks at low priority to avoid starving the display loop
-    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, NULL, 0, NULL, 1);            // Core 1, priority 0 (lowest)
-    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_MEDIUM, NULL, 2, NULL, 1); // Core 1, priority 2 - MEDIUM needed: update_readings() has deep call chain + multiple char[255] buffers
+    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, NULL, 0, NULL, 1); // Core 1, priority 0 (lowest)
+    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_MEDIUM, NULL, 2, NULL,
+                            1); // Core 1, priority 2 - MEDIUM needed: update_readings() has deep call chain + multiple char[255] buffers
     xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_SMALL, NULL, 1, NULL, 1);
     xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_SMALL, NULL, 1, NULL, 1);
     xTaskCreatePinnedToCore(api_manager_t, "API Manager", TASK_STACK_MEDIUM, NULL, 1, NULL, 1); // HTTPS - replaces 7 API tasks + OTA check

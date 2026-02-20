@@ -2,9 +2,9 @@
 #define CONNECTIONS_H
 
 #include "types.h"
-#include <WiFi.h>
 #include <ArduinoMqttClient.h>
 #include <Preferences.h>
+#include <WiFi.h>
 
 void setup_wifi();
 void mqtt_connect();

@@ -2,10 +2,10 @@
 #define OTA_H
 
 #include "types.h"
-#include <WiFi.h>
-#include <WebServer.h>
-#include <Update.h>
 #include <HTTPClient.h>
+#include <Update.h>
+#include <WebServer.h>
+#include <WiFi.h>
 
 void setup_web_server();
 void updateFirmware();

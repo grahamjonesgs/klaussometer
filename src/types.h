@@ -2,21 +2,21 @@
 #define TYPES_H
 
 // Lightweight universal headers - safe to include everywhere
-#include <time.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/queue.h>
-#include <freertos/semphr.h>
-#include <esp_task_wdt.h>
-#include <esp_system.h>
-#include <cctype>
-#include <cmath>
-#include <cstring>
 #include "config.h"
 #include "constants.h"
 #include "logging.h"
+#include <cctype>
+#include <cmath>
+#include <cstring>
+#include <esp_system.h>
+#include <esp_task_wdt.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/semphr.h>
+#include <freertos/task.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <time.h>
 
 typedef struct __attribute__((packed)) {
     const char description[CHAR_LEN];

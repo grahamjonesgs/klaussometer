@@ -2,11 +2,11 @@
 #define UTILS_H
 
 // Pure utility functions - no hardware dependencies, fully unit-testable on native builds
+#include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <stddef.h>
 #include <stdint.h>
-#include <cstdio>
-#include <cmath>
-#include <cstring>
 
 // UV index to display colour (RGB hex)
 int uv_color(float uv);

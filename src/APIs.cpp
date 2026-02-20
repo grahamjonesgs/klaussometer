@@ -1,7 +1,7 @@
 
 #include "APIs.h"
-#include "SDCard.h"
 #include "OTA.h"
+#include "SDCard.h"
 
 extern Weather weather;
 extern UV uv;
@@ -68,7 +68,8 @@ static int readHttpPayload() {
 // Returns true on success or non-HTTP error (no backoff needed)
 // Returns false on HTTP error (backoff should be applied)
 static bool fetch_uv() {
-    if (WiFi.status() != WL_CONNECTED) return true;
+    if (WiFi.status() != WL_CONNECTED)
+        return true;
 
     snprintf(url_buffer, URL_BUFFER_SIZE, "https://api.weatherbit.io/v2.0/current?city_id=%s&key=%s", WEATHERBIT_CITY_ID, WEATHERBIT_API);
     http.begin(url_buffer);
@@ -104,7 +105,8 @@ static bool fetch_uv() {
 // Returns true on success or non-HTTP error (no backoff needed)
 // Returns false on HTTP error (backoff should be applied)
 static bool fetch_weather() {
-    if (WiFi.status() != WL_CONNECTED) return true;
+    if (WiFi.status() != WL_CONNECTED)
+        return true;
 
     snprintf(url_buffer, URL_BUFFER_SIZE,
              "https://api.open-meteo.com/v1/"
@@ -162,7 +164,8 @@ static bool fetch_weather() {
 // Returns true on success or non-HTTP error (no backoff needed)
 // Returns false on HTTP error (backoff should be applied)
 static bool fetch_air_quality() {
-    if (WiFi.status() != WL_CONNECTED) return true;
+    if (WiFi.status() != WL_CONNECTED)
+        return true;
 
     snprintf(url_buffer, URL_BUFFER_SIZE,
              "https://air-quality-api.open-meteo.com/v1/"
@@ -187,8 +190,8 @@ static bool fetch_air_quality() {
             dirty_weather = true;
             strftime(airQuality.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
             char log_message[CHAR_LEN];
-            snprintf(log_message, CHAR_LEN, "Air quality updated. PM10: %.2f, PM2.5: %.2f, Ozone: %.2f, AQI: %d", airQuality.pm10, airQuality.pm2_5,
-                     airQuality.ozone, airQuality.european_aqi);
+            snprintf(log_message, CHAR_LEN, "Air quality updated. PM10: %.2f, PM2.5: %.2f, Ozone: %.2f, AQI: %d", airQuality.pm10, airQuality.pm2_5, airQuality.ozone,
+                     airQuality.european_aqi);
             logAndPublish(log_message);
             saveDataBlock(AIR_QUALITY_DATA_FILENAME, &airQuality, sizeof(airQuality));
         } else {
@@ -209,14 +212,14 @@ static bool fetch_air_quality() {
 // Fetches a JWT bearer token from the Solarman API and stores it in solar.token.
 // Tokens last ~24h; api_manager_t refreshes after 12h or when a request is rejected.
 static void fetch_solar_token() {
-    if (WiFi.status() != WL_CONNECTED) return;
+    if (WiFi.status() != WL_CONNECTED)
+        return;
 
     snprintf(url_buffer, sizeof(url_buffer), "https://%s/account/v1.0/token?appId=%s", SOLAR_URL, SOLAR_APPID);
     http.begin(url_buffer);
     http.addHeader("Content-Type", "application/json");
 
-    snprintf(post_buffer, POST_BUFFER_SIZE, "{\n\"appSecret\" : \"%s\", \n\"email\" : \"%s\",\n\"password\" : \"%s\"\n}", SOLAR_SECRET, SOLAR_USERNAME,
-             SOLAR_PASSHASH);
+    snprintf(post_buffer, POST_BUFFER_SIZE, "{\n\"appSecret\" : \"%s\", \n\"email\" : \"%s\",\n\"password\" : \"%s\"\n}", SOLAR_SECRET, SOLAR_USERNAME, SOLAR_PASSHASH);
     int httpCode_token = http.POST(post_buffer);
     if (httpCode_token == HTTP_CODE_OK) {
         int payload_len = readHttpPayload();
@@ -251,7 +254,8 @@ static void fetch_solar_token() {
 // Also tracks daily battery min/max, resetting them at midnight.
 // Returns true on success or non-HTTP error, false on HTTP error.
 static bool fetch_current_solar() {
-    if (WiFi.status() != WL_CONNECTED) return true;
+    if (WiFi.status() != WL_CONNECTED)
+        return true;
 
     snprintf(url_buffer, URL_BUFFER_SIZE, "https://%s/station/v1.0/realTime?language=en", SOLAR_URL);
     http.setReuse(true); // Keep the connection open for potential token refresh and daily data fetches
@@ -356,7 +360,8 @@ static bool fetch_current_solar() {
 // Fetches today's solar energy totals (generation, usage, grid buy) from Solarman (timeType 2).
 // Returns true on success or non-HTTP error, false on HTTP error.
 static bool fetch_daily_solar() {
-    if (WiFi.status() != WL_CONNECTED) return true;
+    if (WiFi.status() != WL_CONNECTED)
+        return true;
 
     char currentDate[CHAR_LEN];
 
@@ -373,8 +378,8 @@ static bool fetch_daily_solar() {
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", solar.token);
 
-    snprintf(post_buffer, POST_BUFFER_SIZE, "{\n\"stationId\" : \"%s\",\n\"timeType\" : 2,\n\"startTime\" : \"%s\",\n\"endTime\" : \"%s\"\n}", SOLAR_STATIONID,
-             currentDate, currentDate);
+    snprintf(post_buffer, POST_BUFFER_SIZE, "{\n\"stationId\" : \"%s\",\n\"timeType\" : 2,\n\"startTime\" : \"%s\",\n\"endTime\" : \"%s\"\n}", SOLAR_STATIONID, currentDate,
+             currentDate);
     int httpCode = http.POST(post_buffer);
     if (httpCode == HTTP_CODE_OK) {
         int payload_len = readHttpPayload();
@@ -413,7 +418,8 @@ static bool fetch_daily_solar() {
 // Fetches this month's solar energy totals from Solarman (timeType 3).
 // Returns true on success or non-HTTP error, false on HTTP error.
 static bool fetch_monthly_solar() {
-    if (WiFi.status() != WL_CONNECTED) return true;
+    if (WiFi.status() != WL_CONNECTED)
+        return true;
 
     char currentYearMonth[CHAR_LEN];
 
@@ -430,8 +436,8 @@ static bool fetch_monthly_solar() {
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", solar.token);
 
-    snprintf(post_buffer, POST_BUFFER_SIZE, "{\n\"stationId\" : \"%s\",\n\"timeType\" : 3,\n\"startTime\" : \"%s\",\n\"endTime\" : \"%s\"\n}", SOLAR_STATIONID,
-             currentYearMonth, currentYearMonth);
+    snprintf(post_buffer, POST_BUFFER_SIZE, "{\n\"stationId\" : \"%s\",\n\"timeType\" : 3,\n\"startTime\" : \"%s\",\n\"endTime\" : \"%s\"\n}", SOLAR_STATIONID, currentYearMonth,
+             currentYearMonth);
     int httpCode = http.POST(post_buffer);
     if (httpCode == HTTP_CODE_OK) {
         int payload_len = readHttpPayload();

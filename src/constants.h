@@ -1,11 +1,11 @@
 #ifndef CONSTANTS_H
 #define CONSTANTS_H
 
-#include <time.h>
 #include <stdint.h>
+#include <time.h>
 
 #define STORED_READING 6
-#define READINGS_ARRAY                                                                                                             \
+#define READINGS_ARRAY                                                                                                                   \
     {"Cave", "cave/tempset-ambient/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0},                  \
         {"Living room", "livingroom/tempset-ambient/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0}, \
         {"Playroom", "guest/tempset-ambient/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0},         \
@@ -46,17 +46,17 @@ static const char CHAR_BATTERY_BAD = ',';      // Based on battery2 font
 static const char CHAR_BATTERY_CRITICAL = '>'; // Based on battery2 font
 
 // Phosphor WiFi icons
-static const char* WIFI_HIGH          = "\xEE\x93\xAA";  // U+E4EA
-static const char* WIFI_MEDIUM        = "\xEE\x93\xAE";  // U+E4EE
-static const char* WIFI_LOW           = "\xEE\x93\xAC";  // U+E4EC
-static const char* WIFI_NONE          = "\xEE\x93\xB0";  // U+E4F0
-static const char* WIFI_SLASH         = "\xEE\x93\xB2";  // U+E4F2
-static const char* WIFI_X             = "\xEE\x93\xB4";  // U+E4F4
+static const char* WIFI_HIGH = "\xEE\x93\xAA";   // U+E4EA
+static const char* WIFI_MEDIUM = "\xEE\x93\xAE"; // U+E4EE
+static const char* WIFI_LOW = "\xEE\x93\xAC";    // U+E4EC
+static const char* WIFI_NONE = "\xEE\x93\xB0";   // U+E4F0
+static const char* WIFI_SLASH = "\xEE\x93\xB2";  // U+E4F2
+static const char* WIFI_X = "\xEE\x93\xB4";      // U+E4F4
 
 // WiFi signal strength thresholds (RSSI in dBm)
-static const int WIFI_RSSI_HIGH   = -50;  // Excellent signal
-static const int WIFI_RSSI_MEDIUM = -60;  // Good signal
-static const int WIFI_RSSI_LOW    = -70;  // Fair signal, below this is weak
+static const int WIFI_RSSI_HIGH = -50;   // Excellent signal
+static const int WIFI_RSSI_MEDIUM = -60; // Good signal
+static const int WIFI_RSSI_LOW = -70;    // Fair signal, below this is weak
 
 // Battery limits
 static const float BATTERY_OK = 3.70;       // The point where the battery is considered to be in good condition and can provide power for a reasonable amount of time
@@ -66,23 +66,28 @@ static const float BATTERY_CRITICAL = 3.40; // The point where the battery is co
 // Reading state: tracks whether a sensor has valid data and which direction it's trending.
 // Stored in the Readings struct as uint8_t so it persists to SD card with no size change.
 enum class ReadingState : uint8_t {
-    NO_DATA       = 0, // No reading received yet, or the reading has expired
+    NO_DATA = 0,       // No reading received yet, or the reading has expired
     FIRST_READING = 1, // Only one data point so far — direction is unknown
-    TRENDING_UP   = 2, // Current value is above the historical average
+    TRENDING_UP = 2,   // Current value is above the historical average
     TRENDING_DOWN = 3, // Current value is below the historical average
-    STABLE        = 4  // Current value equals the historical average
+    STABLE = 4         // Current value equals the historical average
 };
 
 // Returns the glyph character for the given reading state.
 // CHAR_SAME is returned for NO_DATA so the direction widget shows blank when there is no data.
 inline char readingStateGlyph(ReadingState state) {
     switch (state) {
-        case ReadingState::TRENDING_UP:   return CHAR_UP;
-        case ReadingState::TRENDING_DOWN: return CHAR_DOWN;
-        case ReadingState::STABLE:        return CHAR_SAME;
-        case ReadingState::FIRST_READING: return CHAR_BLANK;
-        case ReadingState::NO_DATA:
-        default:                          return CHAR_SAME;
+    case ReadingState::TRENDING_UP:
+        return CHAR_UP;
+    case ReadingState::TRENDING_DOWN:
+        return CHAR_DOWN;
+    case ReadingState::STABLE:
+        return CHAR_SAME;
+    case ReadingState::FIRST_READING:
+        return CHAR_BLANK;
+    case ReadingState::NO_DATA:
+    default:
+        return CHAR_SAME;
     }
 }
 
@@ -94,12 +99,12 @@ static const int DATA_ONOFF = 3;
 static const int DATA_BATTERY = 4;
 
 // Minimum change required to log a new sensor reading (avoids log spam for noise)
-static const float LOG_CHANGE_THRESHOLD_TEMP    = 0.5f;  // °C
+static const float LOG_CHANGE_THRESHOLD_TEMP = 0.5f;     // °C
 static const float LOG_CHANGE_THRESHOLD_HUMIDITY = 2.0f; // %
-static const float LOG_CHANGE_THRESHOLD_BATTERY  = 0.1f; // V
+static const float LOG_CHANGE_THRESHOLD_BATTERY = 0.1f;  // V
 
 // Define constants used
-static const time_t TIME_SYNC_THRESHOLD = 1577836800;     // 2020-01-01: used to detect unsynced/zero time
+static const time_t TIME_SYNC_THRESHOLD = 1577836800; // 2020-01-01: used to detect unsynced/zero time
 
 static const int MAX_NO_MESSAGE_SEC = 1800;               // Seconds without a message before a reading is invalidated (ReadingState::NO_DATA)
 static const int TIME_RETRIES = 100;                      // Number of time to retry getting the time during setup
@@ -108,7 +113,7 @@ static const int UV_UPDATE_INTERVAL_SEC = 3600;           // Interval between UV
 static const int SOLAR_CURRENT_UPDATE_INTERVAL_SEC = 60;  // Interval between solar updates
 static const int SOLAR_MONTHLY_UPDATE_INTERVAL_SEC = 300; // Interval between solar current updates
 static const int SOLAR_DAILY_UPDATE_INTERVAL_SEC = 300;   // Interval between solar daily updates
-static const int AIR_QUALITY_UPDATE_INTERVAL_SEC = 1800;   // Interval between air quality updates (30 min)
+static const int AIR_QUALITY_UPDATE_INTERVAL_SEC = 1800;  // Interval between air quality updates (30 min)
 static const int SOLAR_TOKEN_WAIT_SEC = 10;               // Time to wait for solar token to be available
 static const int API_SEMAPHORE_WAIT_SEC = 10;             // Time to wait for http semaphore
 static const int API_FAIL_DELAY_SEC = 30;                 // Initial delay when API call fails
@@ -141,10 +146,10 @@ static const int COLOR_BLACK = 0x000000;
 static const int COLOR_WHITE = 0xFFFFFF;
 
 // Night mode arc colors
-static const int COLOR_ARC_TRACK_NIGHT = 0x404040;  // Dark gray track for night
-static const int COLOR_ARC_TRACK_DAY = 0xE0E0E0;    // Light gray track for day
-static const int ARC_OPACITY_NIGHT = 180;            // Dimmer indicator at night
-static const int ARC_OPACITY_DAY = 255;              // Full opacity during day
+static const int COLOR_ARC_TRACK_NIGHT = 0x404040; // Dark gray track for night
+static const int COLOR_ARC_TRACK_DAY = 0xE0E0E0;   // Light gray track for day
+static const int ARC_OPACITY_NIGHT = 180;          // Dimmer indicator at night
+static const int ARC_OPACITY_DAY = 255;            // Full opacity during day
 
 // Define LCD panel constants
 static const int LCD_DE_PIN = 40;
@@ -207,12 +212,12 @@ static const char* NORMAL_LOG_FILENAME = "/normal_log.txt";
 static const char* ERROR_LOG_FILENAME = "/error_log.txt";
 
 // Log settings
-#define MAX_LOG_FILE_SIZE (1024 * 1024)  // 1MB max per log file
-#define MAX_LOG_ENTRIES_TO_READ 500       // Max entries to read when displaying logs
+#define MAX_LOG_FILE_SIZE (1024 * 1024) // 1MB max per log file
+#define MAX_LOG_ENTRIES_TO_READ 500     // Max entries to read when displaying logs
 
 // FreeRTOS task stack sizes (in bytes)
-static const int TASK_STACK_SMALL = 4096;   // For simple tasks like SD logger
-static const int TASK_STACK_MEDIUM = 8192;  // For most tasks (MQTT, connectivity, etc.)
-static const int TASK_STACK_LARGE = 16384;  // For memory-intensive tasks if needed
+static const int TASK_STACK_SMALL = 4096;  // For simple tasks like SD logger
+static const int TASK_STACK_MEDIUM = 8192; // For most tasks (MQTT, connectivity, etc.)
+static const int TASK_STACK_LARGE = 16384; // For memory-intensive tasks if needed
 
 #endif // CONSTANTS_H

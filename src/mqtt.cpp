@@ -72,7 +72,6 @@ void receive_mqtt_messages_t(void* pvParams) {
                     continue;
                 }
 
-
                 // Additional validation - check if message is empty or just whitespace
                 if (messageSize == 0 || recMessage[0] == '\0') {
                     char log_msg[CHAR_LEN];
@@ -153,10 +152,18 @@ void update_readings(char* recMessage, int index, int dataType) {
         valueChanged = true;
     } else {
         switch (dataType) {
-        case DATA_TEMPERATURE: valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= LOG_CHANGE_THRESHOLD_TEMP;     break;
-        case DATA_HUMIDITY:    valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= LOG_CHANGE_THRESHOLD_HUMIDITY; break;
-        case DATA_BATTERY:     valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= LOG_CHANGE_THRESHOLD_BATTERY;  break;
-        default:               valueChanged = true; break;
+        case DATA_TEMPERATURE:
+            valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= LOG_CHANGE_THRESHOLD_TEMP;
+            break;
+        case DATA_HUMIDITY:
+            valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= LOG_CHANGE_THRESHOLD_HUMIDITY;
+            break;
+        case DATA_BATTERY:
+            valueChanged = fabsf(parsedValue - lastLoggedValue[index]) >= LOG_CHANGE_THRESHOLD_BATTERY;
+            break;
+        default:
+            valueChanged = true;
+            break;
         }
     }
 
