@@ -88,9 +88,9 @@ static void updateGridMetrics() {
     todayGridPercentage = todayGridPercentage > 100 ? 100 : (todayGridPercentage < 0 ? 0 : todayGridPercentage);
     monthGridPercentage = monthGridPercentage > 100 ? 100 : (monthGridPercentage < 0 ? 0 : monthGridPercentage);
 
-    snprintf(tempString, CHAR_LEN, "%.1f", solar.today_buy);
+    snprintf(tempString, CHAR_LEN, "%.0f", solar.today_buy);
     lv_label_set_text(ui_GridTodayEnergy, tempString);
-    snprintf(tempString, CHAR_LEN, "%.1f", solar.month_buy);
+    snprintf(tempString, CHAR_LEN, "%.0f", solar.month_buy);
     lv_label_set_text(ui_GridMonthEnergy, tempString);
     snprintf(tempString, CHAR_LEN, "R%s", boughtTodayBuf);
     lv_label_set_text(ui_GridTodayCost, tempString);
@@ -100,6 +100,11 @@ static void updateGridMetrics() {
     lv_label_set_text(ui_GridTodayPercentage, tempString);
     snprintf(tempString, CHAR_LEN, "%d%%", monthGridPercentage);
     lv_label_set_text(ui_GridMonthPercentage, tempString);
+
+    snprintf(tempString, CHAR_LEN, "%.0f", solar.today_generation);
+    lv_label_set_text(ui_SolarTodayEnergy, tempString);
+    snprintf(tempString, CHAR_LEN, "%.0f", solar.month_generation);
+    lv_label_set_text(ui_SolarMonthEnergy, tempString);
 }
 
 // Updates all solar-related LVGL widgets: battery/solar/usage arcs and labels,

@@ -321,6 +321,8 @@ void setup() {
     lv_label_set_text(ui_GridBought, "\nToday:\nThis month:");
     lv_label_set_text(ui_GridTodayEnergy, "Pending");
     lv_label_set_text(ui_GridMonthEnergy, "Pending");
+    lv_label_set_text(ui_SolarTodayEnergy, "Pending");
+    lv_label_set_text(ui_SolarMonthEnergy, "Pending");
     lv_label_set_text(ui_GridTodayCost, "");
     lv_label_set_text(ui_GridMonthCost, "");
     lv_label_set_text(ui_GridTodayPercentage, "");
