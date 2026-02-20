@@ -7,6 +7,7 @@
 #include <cstring>
 #include <stddef.h>
 #include <stdint.h>
+#include <time.h>
 
 // UV index to display colour (RGB hex)
 int uv_color(float uv);
@@ -25,5 +26,14 @@ uint8_t calculateChecksum(const void* data_ptr, size_t size);
 
 // Semantic version comparison ("major.minor.patch"); returns 1, 0, or -1
 int compareVersionsStr(const char* v1, const char* v2);
+
+// European AQI score to plain-English risk label (Good → Hazardous)
+const char* getAQIRating(int aqi);
+
+// RSSI (dBm) to Phosphor WiFi icon glyph string
+const char* getWiFiIcon(int rssi);
+
+// Format a time_t as "HH:MM:SS" into buf
+void formatTimeHMS(time_t t, char* buf, size_t bufSize);
 
 #endif // UTILS_H

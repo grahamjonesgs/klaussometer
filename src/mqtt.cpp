@@ -39,7 +39,7 @@ void receive_mqtt_messages_t(void* pvParams) {
             continue;
         }
 
-        if (xSemaphoreTake(mqttMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        if (xSemaphoreTake(mqttMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MQTT_MS)) == pdTRUE) {
             messageSize = mqttClient.parseMessage();
             if (messageSize) {
                 // Clear buffers at the start of each message processing

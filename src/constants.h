@@ -5,22 +5,24 @@
 #include <time.h>
 
 #define STORED_READING 6
-#define READINGS_ARRAY                                                                                                                   \
-    {"Cave", "cave/tempset-ambient/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0},                  \
-        {"Living room", "livingroom/tempset-ambient/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0}, \
-        {"Playroom", "guest/tempset-ambient/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0},         \
-        {"Bedroom", "bedroom/tempset-ambient/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0},        \
-        {"Outside", "outside/tempset-ambient/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0},        \
-        {"Cave", "cave/tempset-humidity/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY, 0, 0},                \
-        {"Living room", "livingroom/tempset-humidity/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY, 0, 0},   \
-        {"Playroom", "guest/tempset-humidity/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY, 0, 0},           \
-        {"Bedroom", "bedroom/tempset-humidity/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY, 0, 0},          \
-        {"Outside", "outside/tempset-humidity/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY, 0, 0},          \
-        {"Cave", "cave/battery/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY, 0, 0},                          \
-        {"Living room", "livingroom/battery/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY, 0, 0},             \
-        {"Playroom", "guest/battery/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY, 0, 0},                     \
-        {"Bedroom", "bedroom/battery/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY, 0, 0},                    \
-        {"Outside", "outside/battery/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY, 0, 0}
+// clang-format off
+#define READINGS_ARRAY                                                                                                                    \
+        {"Cave",        "cave/tempset-ambient/set",        NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0}, \
+        {"Living room", "livingroom/tempset-ambient/set",  NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0}, \
+        {"Playroom",    "guest/tempset-ambient/set",       NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0}, \
+        {"Bedroom",     "bedroom/tempset-ambient/set",     NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0}, \
+        {"Outside",     "outside/tempset-ambient/set",     NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0}, \
+        {"Cave",        "cave/tempset-humidity/set",       NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY,    0, 0}, \
+        {"Living room", "livingroom/tempset-humidity/set", NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY,    0, 0}, \
+        {"Playroom",    "guest/tempset-humidity/set",      NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY,    0, 0}, \
+        {"Bedroom",     "bedroom/tempset-humidity/set",    NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY,    0, 0}, \
+        {"Outside",     "outside/tempset-humidity/set",    NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_HUMIDITY,    0, 0}, \
+        {"Cave",        "cave/battery/set",                NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY,     0, 0}, \
+        {"Living room", "livingroom/battery/set",          NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY,     0, 0}, \
+        {"Playroom",    "guest/battery/set",               NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY,     0, 0}, \
+        {"Bedroom",     "bedroom/battery/set",             NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY,     0, 0}, \
+        {"Outside",     "outside/battery/set",             NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY,     0, 0}
+// clang-format on
 
 #define ROOM_COUNT 5
 #define ROOM_NAME_LABELS {&ui_RoomName1, &ui_RoomName2, &ui_RoomName3, &ui_RoomName4, &ui_RoomName5}
@@ -29,6 +31,24 @@
 #define BATTERY_LABELS {&ui_BatteryLabel1, &ui_BatteryLabel2, &ui_BatteryLabel3, &ui_BatteryLabel4, &ui_BatteryLabel5}
 #define DIRECTION_LABELS {&ui_Direction1, &ui_Direction2, &ui_Direction3, &ui_Direction4, &ui_Direction5}
 #define HUMIDITY_LABELS {&ui_HumidLabel1, &ui_HumidLabel2, &ui_HumidLabel3, &ui_HumidLabel4, &ui_HumidLabel5}
+
+// All text labels that receive a uniform color in day/night mode (used by set_basic_text_color).
+// clang-format off
+#define TEXT_COLOR_LABELS { \
+    &ui_TempLabelFC,      &ui_UVLabel,             &ui_UsingLabel,           &ui_SolarLabel,           &ui_BatteryLabel,     \
+    &ui_RoomName1,        &ui_RoomName2,           &ui_RoomName3,            &ui_RoomName4,            &ui_RoomName5,        \
+    &ui_TempLabel1,       &ui_TempLabel2,          &ui_TempLabel3,           &ui_TempLabel4,           &ui_TempLabel5,       \
+    &ui_HumidLabel1,      &ui_HumidLabel2,         &ui_HumidLabel3,          &ui_HumidLabel4,          &ui_HumidLabel5,      \
+    &ui_StatusMessage,    &ui_Time,                &ui_TextRooms,            &ui_TextForecastName,     &ui_TextBattery,      \
+    &ui_TextSolar,        &ui_TextUsing,           &ui_TextUV,               &ui_FCConditions,         &ui_FCWindSpeed,      \
+    &ui_FCUpdateTime,     &ui_UVUpdateTime,        &ui_ChargingLabel,        &ui_AsofTimeLabel,        &ui_ChargingTime,     \
+    &ui_TextKlaussometer, &ui_SolarMinMax,         &ui_GridBought,           &ui_GridTodayEnergy,      &ui_GridMonthEnergy,  \
+    &ui_GridTodayCost,    &ui_GridMonthCost,       &ui_GridTodayPercentage,  &ui_GridMonthPercentage,  &ui_GridTitlekWh,     \
+    &ui_GridTitleCost,    &ui_GridTitlePercentage, &ui_FCMin,                &ui_FCMax,                                      \
+    &ui_Direction1,       &ui_Direction2,          &ui_Direction3,           &ui_Direction4,           &ui_Direction5,       \
+    &ui_Version,                                                                                                             \
+}
+// clang-format on
 
 static const char* LOG_TOPIC = "klaussometer/log";
 static const char* ERROR_TOPIC = "klaussometer/error";
@@ -126,6 +146,11 @@ static const int CHECK_UPDATE_INTERVAL_SEC = 300;         // Interval between ch
 static const int WIFI_RETRY_DELAY_SEC = 5; // Delay between WiFi connection attempts
 static const int MQTT_RETRY_DELAY_SEC = 5; // Delay between MQTT connection attempts
 
+// Mutex timeout values (in ms) — use the named constant that matches the call site's tolerance
+static const int MUTEX_TIMEOUT_SD_MS   = 5000; // SD operations can be slow; wait up to 5 s
+static const int MUTEX_TIMEOUT_MQTT_MS = 500;  // MQTT parse window; short wait is fine
+#define MUTEX_NOWAIT 0                          // Non-blocking: try once, skip if unavailable
+
 // Touch screen settings
 static const int I2C_SDA_PIN = 17;
 static const int I2C_SCL_PIN = 18;
@@ -144,6 +169,7 @@ static const int COLOR_YELLOW = 0xF7EA48;
 static const int COLOR_GREEN = 0x205602;
 static const int COLOR_BLACK = 0x000000;
 static const int COLOR_WHITE = 0xFFFFFF;
+static const int COLOR_BATTERY_IDLE = 0x2095F6; // Blue: battery neither charging nor discharging
 
 // Night mode arc colors
 static const int COLOR_ARC_TRACK_NIGHT = 0x404040; // Dark gray track for night

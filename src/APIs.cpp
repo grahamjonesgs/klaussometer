@@ -49,6 +49,13 @@ static void applyBackoff(ApiBackoff& state) {
     state.nextRetryTime = time(NULL) + getBackoffDelay(state.failCount);
 }
 
+// Logs an HTTP error with a consistent "[HTTP] <label> failed, error: <code>" format.
+static void reportHttpError(const char* label, int httpCode) {
+    char log_message[CHAR_LEN];
+    snprintf(log_message, CHAR_LEN, "[HTTP] %s failed, error: %d", label, httpCode);
+    errorPublish(log_message);
+}
+
 const size_t JSON_PAYLOAD_SIZE = 4096;
 char payload_buffer[JSON_PAYLOAD_SIZE] = {0};
 const size_t URL_BUFFER_SIZE = 512;
@@ -93,9 +100,7 @@ static bool fetch_uv() {
         http.end();
         return true;
     } else {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, CHAR_LEN, "[HTTP] GET UV failed, error code is %d", httpCode);
-        errorPublish(log_message);
+        reportHttpError("GET UV", httpCode);
         http.end();
         logAndPublish("UV update failed");
         return false;
@@ -152,9 +157,7 @@ static bool fetch_weather() {
         http.end();
         return true;
     } else {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, CHAR_LEN, "[HTTP] GET current weather failed, error: %d", httpCode);
-        errorPublish(log_message);
+        reportHttpError("GET current weather", httpCode);
         logAndPublish("Weather update failed");
         http.end();
         return false;
@@ -200,9 +203,7 @@ static bool fetch_air_quality() {
         http.end();
         return true;
     } else {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, CHAR_LEN, "[HTTP] GET air quality failed, error code is %d", httpCode);
-        errorPublish(log_message);
+        reportHttpError("GET air quality", httpCode);
         http.end();
         logAndPublish("Air quality update failed");
         return false;
@@ -348,11 +349,9 @@ static bool fetch_current_solar() {
         http.setReuse(false); // Disable keep-alive after this request to avoid issues with token refresh and subsequent calls
         return true;
     } else {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, CHAR_LEN, "[HTTP] GET solar status failed, error: %d", httpCode);
-        errorPublish(log_message);
+        reportHttpError("GET solar status", httpCode);
         http.end();
-        http.setReuse(false); // Disable keep-alive after this request to avoid issues with token refresh and subsequent calls
+        http.setReuse(false);
         return false;
     }
 }
@@ -366,10 +365,10 @@ static bool fetch_daily_solar() {
     char currentDate[CHAR_LEN];
 
     time_t now_time = time(NULL);
-    struct tm CurrenTimeInfo;
-    localtime_r(&now_time, &CurrenTimeInfo);
+    struct tm CurrentTimeInfo;
+    localtime_r(&now_time, &CurrentTimeInfo);
 
-    strftime(currentDate, sizeof(currentDate), "%Y-%m-%d", &CurrenTimeInfo);
+    strftime(currentDate, sizeof(currentDate), "%Y-%m-%d", &CurrentTimeInfo);
 
     // Get the today buy amount (timetype 2)
     snprintf(url_buffer, URL_BUFFER_SIZE, "https://%s/station/v1.0/history?language=en", SOLAR_URL);
@@ -405,12 +404,10 @@ static bool fetch_daily_solar() {
         http.setReuse(false); // Disable keep-alive after this request to avoid issues with token refresh and subsequent calls
         return true;
     } else {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, CHAR_LEN, "[HTTP] GET solar today buy value failed, error: %d", httpCode);
-        errorPublish(log_message);
+        reportHttpError("GET solar today buy value", httpCode);
         logAndPublish("Getting solar today buy value failed");
         http.end();
-        http.setReuse(false); // Disable keep-alive after this request to avoid issues with token refresh and subsequent calls
+        http.setReuse(false);
         return false;
     }
 }
@@ -462,12 +459,10 @@ static bool fetch_monthly_solar() {
         http.setReuse(false); // Disable keep-alive after this request to avoid issues with token refresh and subsequent calls
         return true;
     } else {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, CHAR_LEN, "[HTTP] GET solar month buy value failed, error: %d", httpCode);
-        errorPublish(log_message);
+        reportHttpError("GET solar month buy value", httpCode);
         logAndPublish("Getting solar month buy value failed");
         http.end();
-        http.setReuse(false); // Disable keep-alive after this request to avoid issues with token refresh and subsequent calls
+        http.setReuse(false);
         return false;
     }
 }

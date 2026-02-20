@@ -21,7 +21,7 @@ static int normalLogLineCount = -1; // -1 means not yet initialized
 static int errorLogLineCount = -1;
 
 bool saveDataBlock(const char* filename, const void* data_ptr, size_t size) {
-    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
         return false;
     }
 
@@ -71,7 +71,7 @@ bool saveDataBlock(const char* filename, const void* data_ptr, size_t size) {
 }
 
 bool loadDataBlock(const char* filename, void* data_ptr, size_t expected_size) {
-    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
         return false;
     }
 
@@ -144,7 +144,7 @@ void addLogToSDCard(const char* message, const char* logFilename) {
         return;
     }
 
-    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
         return;
     }
 
@@ -268,7 +268,7 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
     size_t bufferPos = 0;
     bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "{\"logs\":[");
 
-    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
         bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "]}");
         jsonOutput = jsonBuffer;
         free(jsonBuffer);

@@ -40,6 +40,12 @@ void my_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
 void touch_read(lv_indev_t* indev, lv_indev_data_t* data);
 void getBatteryStatus(float batteryValue, int readingIndex, char* iconCharacterPtr, lv_color_t* colorPtr);
 void invalidateOldReadings();
+static void setStatusColor(lv_obj_t* label, time_t updateTime, int maxAgeSec);
+static void updateRoomDisplay();
+static void updateUVDisplay();
+static void updateWeatherDisplay();
+static void updatePeriodicStatus(unsigned long currentMillis);
+static void adjustDayNightMode();
 
 // Global variables
 struct tm timeinfo;
@@ -363,206 +369,199 @@ void setup() {
 }
 
 void loop() {
-    // Feed the watchdog at the start of each loop iteration
     esp_task_wdt_reset();
-
-    char tempString[CHAR_LEN];
-    char batteryIcon = CHAR_BLANK;
-    lv_color_t batteryColour;
 
     static unsigned long lastTick = 0;
     unsigned long currentMillis = millis();
     unsigned long elapsed = currentMillis - lastTick;
-
     if (elapsed > 0) {
-        lv_tick_inc(elapsed); // Tell LVGL how much time passed
+        lv_tick_inc(elapsed);
         lastTick = currentMillis;
     }
 
     lv_timer_handler(); // Run GUI - do this BEFORE delays
     webServer.handleClient();
-
     vTaskDelay(pdMS_TO_TICKS(20));
 
-    // Room sensors and battery - only update when MQTT data changes or readings expire
-    if (dirty_rooms) {
-        dirty_rooms = false;
-        for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
-            lv_arc_set_value(*tempArcs[i], readings[i].currentValue);
-            lv_label_set_text(*tempLabels[i], readings[i].output);
-            if (readings[i].readingState != ReadingState::NO_DATA) {
-                lv_obj_clear_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
-            } else {
-                lv_obj_add_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
-            }
-            snprintf(tempString, CHAR_LEN, "%c", readingStateGlyph(readings[i].readingState));
-            lv_label_set_text(*directionLabels[i], tempString);
-            lv_label_set_text(*humidityLabels[i], readings[i + ROOM_COUNT].output);
-        }
-        for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
-            getBatteryStatus(readings[i + 2 * ROOM_COUNT].currentValue, readings[i + 2 * ROOM_COUNT].readingIndex, &batteryIcon, &batteryColour);
-            snprintf(tempString, CHAR_LEN, "%c", batteryIcon);
-            lv_label_set_text(*batteryLabels[i], tempString);
-            lv_obj_set_style_text_color(*batteryLabels[i], batteryColour, LV_PART_MAIN);
-        }
-    }
+    updateRoomDisplay();
+    updateUVDisplay();
+    updateWeatherDisplay();
 
-    // UV - only update when API data arrives
-    if (dirty_uv) {
-        dirty_uv = false;
-        if (uv.updateTime > 0) {
-            lv_obj_clear_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
-            if (weather.isDay) {
-                snprintf(tempString, CHAR_LEN, "Updated %s", uv.time_string);
-            } else {
-                tempString[0] = '\0';
-            }
-            lv_label_set_text(ui_UVUpdateTime, tempString);
-            snprintf(tempString, CHAR_LEN, "%i", uv.index);
-            lv_label_set_text(ui_UVLabel, tempString);
-            lv_arc_set_value(ui_UVArc, uv.index * 10);
-            lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(uv_color(uv.index)), LV_PART_INDICATOR | LV_STATE_DEFAULT);
-            lv_obj_set_style_bg_color(ui_UVArc, lv_color_hex(uv_color(uv.index)), LV_PART_KNOB | LV_STATE_DEFAULT);
-        }
-    }
-
-    // Weather and air quality - only update when API data arrives
-    if (dirty_weather) {
-        dirty_weather = false;
-        if (weather.updateTime > 0) {
-            lv_label_set_text(ui_FCConditions, weather.description);
-            snprintf(tempString, CHAR_LEN, "Updated %s", weather.time_string);
-            lv_label_set_text(ui_FCUpdateTime, tempString);
-            snprintf(tempString, CHAR_LEN, "Wind %2.0f km/h %s", weather.windSpeed, weather.windDir);
-            lv_label_set_text(ui_FCWindSpeed, tempString);
-            if (airQuality.updateTime > 0) {
-                const char* aqiRating = airQuality.european_aqi <= 20    ? "Good"
-                                        : airQuality.european_aqi <= 40  ? "Fair"
-                                        : airQuality.european_aqi <= 60  ? "Moderate"
-                                        : airQuality.european_aqi <= 80  ? "Poor"
-                                        : airQuality.european_aqi <= 100 ? "Very Poor"
-                                                                         : "Hazardous";
-                snprintf(tempString, CHAR_LEN, "AQI: %d %s", airQuality.european_aqi, aqiRating);
-                lv_label_set_text(ui_FCAQI, tempString);
-                snprintf(tempString, CHAR_LEN, "AQI Updated %s", airQuality.time_string);
-                lv_label_set_text(ui_FCAQIUpdateTime, tempString);
-            }
-            lv_arc_set_value(ui_TempArcFC, weather.temperature);
-            snprintf(tempString, CHAR_LEN, "%2.0f", weather.temperature);
-            lv_label_set_text(ui_TempLabelFC, tempString);
-            if (weather.temperature < weather.minTemp) {
-                weather.minTemp = weather.temperature;
-            }
-            if (weather.temperature > weather.maxTemp) {
-                weather.maxTemp = weather.temperature;
-            }
-            snprintf(tempString, CHAR_LEN, "%2.0f°C", weather.minTemp);
-            lv_label_set_text(ui_FCMin, tempString);
-            snprintf(tempString, CHAR_LEN, "%2.0f°C", weather.maxTemp);
-            lv_label_set_text(ui_FCMax, tempString);
-            lv_obj_clear_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
-            lv_arc_set_range(ui_TempArcFC, weather.minTemp, weather.maxTemp);
-        }
-    }
-
-    // Solar - only update when API data arrives
     if (dirty_solar) {
         dirty_solar = false;
         set_solar_values();
     }
 
-    // Periodic updates once per second: connectivity status, time, version, stale-data indicators
-    static unsigned long lastPeriodicMs = 0;
-    if (currentMillis - lastPeriodicMs >= 1000) {
-        lastPeriodicMs = currentMillis;
+    updatePeriodicStatus(currentMillis);
+    adjustDayNightMode();
 
-        if (time(NULL) - solar.currentUpdateTime > 2 * SOLAR_CURRENT_UPDATE_INTERVAL_SEC) {
-            lv_obj_set_style_text_color(ui_SolarStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-        } else {
-            lv_obj_set_style_text_color(ui_SolarStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
-        }
-        if (time(NULL) - weather.updateTime > 2 * WEATHER_UPDATE_INTERVAL_SEC) {
-            lv_obj_set_style_text_color(ui_WeatherStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-        } else {
-            lv_obj_set_style_text_color(ui_WeatherStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
-        }
-
-        if (WiFi.status() == WL_CONNECTED) {
-            lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
-            lv_color_t wifiIconColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
-            int rssi = WiFi.RSSI();
-            if (rssi > WIFI_RSSI_HIGH) {
-                lv_label_set_text(ui_WiFiIcon, WIFI_HIGH);
-            } else if (rssi > WIFI_RSSI_MEDIUM) {
-                lv_label_set_text(ui_WiFiIcon, WIFI_MEDIUM);
-            } else if (rssi > WIFI_RSSI_LOW) {
-                lv_label_set_text(ui_WiFiIcon, WIFI_LOW);
-            } else {
-                lv_label_set_text(ui_WiFiIcon, WIFI_NONE);
-            }
-            lv_obj_set_style_text_color(ui_WiFiIcon, wifiIconColor, LV_PART_MAIN);
-        } else {
-            lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-            lv_label_set_text(ui_WiFiIcon, WIFI_X);
-            lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-        }
-
-        if (mqttClient.connected()) {
-            lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
-        } else {
-            lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-        }
-
-        if (!getLocalTime(&timeinfo)) {
-            lv_label_set_text(ui_Time, "Syncing");
-        } else {
-            char timeString[CHAR_LEN];
-            strftime(timeString, sizeof(timeString), "%H:%M:%S", &timeinfo);
-            lv_label_set_text(ui_Time, timeString);
-        }
-
-        if (WiFi.status() == WL_CONNECTED) {
-            snprintf(tempString, CHAR_LEN, "IP: %s | Chip ID: %s | Firmware Version: V%s", WiFi.localIP().toString().c_str(), chip_id, FIRMWARE_VERSION);
-        } else {
-            snprintf(tempString, CHAR_LEN, "Chip ID: %s | Firmware Version: V%s", chip_id, FIRMWARE_VERSION);
-        }
-        lv_label_set_text(ui_Version, tempString);
-    }
-
-    // Adjust brightness and colors based on day/night (only when state changes)
-    static bool lastIsDay = false;
-    if (weather.isDay != lastIsDay) {
-        lastIsDay = weather.isDay;
-        if (!weather.isDay) {
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-            ledcWrite(TFT_BL, NIGHTTIME_DUTY);
-#else
-            ledcWrite(PWMChannel, NIGHTTIME_DUTY);
-#endif
-            set_basic_text_color(lv_color_hex(COLOR_WHITE));
-            set_arc_night_mode(true);
-            lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
-            lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-            lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-        } else {
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-            ledcWrite(TFT_BL, DAYTIME_DUTY);
-#else
-            ledcWrite(PWMChannel, DAYTIME_DUTY);
-#endif
-            set_basic_text_color(lv_color_hex(COLOR_BLACK));
-            set_arc_night_mode(false);
-            lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-            lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
-            lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
-        }
-    }
-
-    // Update status message
     lv_label_set_text(ui_StatusMessage, statusMessageValue);
-
-    // Invalidate readings if too old
     invalidateOldReadings();
+}
+
+// Colors a status indicator green if data is fresh, red if it exceeds maxAgeSec.
+static void setStatusColor(lv_obj_t* label, time_t updateTime, int maxAgeSec) {
+    bool stale = (time(NULL) - updateTime) > maxAgeSec;
+    lv_obj_set_style_text_color(label, lv_color_hex(stale ? COLOR_RED : COLOR_GREEN), LV_PART_MAIN);
+}
+
+// Updates room temperature, humidity, trend arrows and sensor battery icons.
+static void updateRoomDisplay() {
+    if (!dirty_rooms) return;
+    dirty_rooms = false;
+    char tempString[CHAR_LEN];
+    char batteryIcon;
+    lv_color_t batteryColour;
+    for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
+        lv_arc_set_value(*tempArcs[i], readings[i].currentValue);
+        lv_label_set_text(*tempLabels[i], readings[i].output);
+        if (readings[i].readingState != ReadingState::NO_DATA) {
+            lv_obj_clear_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        snprintf(tempString, CHAR_LEN, "%c", readingStateGlyph(readings[i].readingState));
+        lv_label_set_text(*directionLabels[i], tempString);
+        lv_label_set_text(*humidityLabels[i], readings[i + ROOM_COUNT].output);
+    }
+    for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
+        getBatteryStatus(readings[i + 2 * ROOM_COUNT].currentValue, readings[i + 2 * ROOM_COUNT].readingIndex, &batteryIcon, &batteryColour);
+        snprintf(tempString, CHAR_LEN, "%c", batteryIcon);
+        lv_label_set_text(*batteryLabels[i], tempString);
+        lv_obj_set_style_text_color(*batteryLabels[i], batteryColour, LV_PART_MAIN);
+    }
+}
+
+// Updates the UV arc, label and update-time label.
+static void updateUVDisplay() {
+    if (!dirty_uv) return;
+    dirty_uv = false;
+    char tempString[CHAR_LEN];
+    if (uv.updateTime > 0) {
+        lv_obj_clear_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
+        if (weather.isDay) {
+            snprintf(tempString, CHAR_LEN, "Updated %s", uv.time_string);
+        } else {
+            tempString[0] = '\0';
+        }
+        lv_label_set_text(ui_UVUpdateTime, tempString);
+        snprintf(tempString, CHAR_LEN, "%i", uv.index);
+        lv_label_set_text(ui_UVLabel, tempString);
+        lv_arc_set_value(ui_UVArc, uv.index * 10);
+        lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(uv_color(uv.index)), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(ui_UVArc, lv_color_hex(uv_color(uv.index)), LV_PART_KNOB | LV_STATE_DEFAULT);
+    }
+}
+
+// Updates weather forecast labels, the temperature arc and the AQI display.
+static void updateWeatherDisplay() {
+    if (!dirty_weather) return;
+    dirty_weather = false;
+    char tempString[CHAR_LEN];
+    if (weather.updateTime > 0) {
+        lv_label_set_text(ui_FCConditions, weather.description);
+        snprintf(tempString, CHAR_LEN, "Updated %s", weather.time_string);
+        lv_label_set_text(ui_FCUpdateTime, tempString);
+        snprintf(tempString, CHAR_LEN, "Wind %2.0f km/h %s", weather.windSpeed, weather.windDir);
+        lv_label_set_text(ui_FCWindSpeed, tempString);
+        if (airQuality.updateTime > 0) {
+            const char* aqiRating = getAQIRating(airQuality.european_aqi);
+            snprintf(tempString, CHAR_LEN, "AQI: %d %s", airQuality.european_aqi, aqiRating);
+            lv_label_set_text(ui_FCAQI, tempString);
+            snprintf(tempString, CHAR_LEN, "AQI Updated %s", airQuality.time_string);
+            lv_label_set_text(ui_FCAQIUpdateTime, tempString);
+        }
+        lv_arc_set_value(ui_TempArcFC, weather.temperature);
+        snprintf(tempString, CHAR_LEN, "%2.0f", weather.temperature);
+        lv_label_set_text(ui_TempLabelFC, tempString);
+        if (weather.temperature < weather.minTemp) {
+            weather.minTemp = weather.temperature;
+        }
+        if (weather.temperature > weather.maxTemp) {
+            weather.maxTemp = weather.temperature;
+        }
+        snprintf(tempString, CHAR_LEN, "%2.0f°C", weather.minTemp);
+        lv_label_set_text(ui_FCMin, tempString);
+        snprintf(tempString, CHAR_LEN, "%2.0f°C", weather.maxTemp);
+        lv_label_set_text(ui_FCMax, tempString);
+        lv_obj_clear_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
+        lv_arc_set_range(ui_TempArcFC, weather.minTemp, weather.maxTemp);
+    }
+}
+
+// Updates status indicators, clock, WiFi icon and version string once per second.
+static void updatePeriodicStatus(unsigned long currentMillis) {
+    static unsigned long lastPeriodicMs = 0;
+    if (currentMillis - lastPeriodicMs < 1000) return;
+    lastPeriodicMs = currentMillis;
+
+    char tempString[CHAR_LEN];
+
+    setStatusColor(ui_SolarStatus, solar.currentUpdateTime, 2 * SOLAR_CURRENT_UPDATE_INTERVAL_SEC);
+    setStatusColor(ui_WeatherStatus, weather.updateTime, 2 * WEATHER_UPDATE_INTERVAL_SEC);
+
+    if (WiFi.status() == WL_CONNECTED) {
+        lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
+        lv_color_t wifiIconColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
+        int rssi = WiFi.RSSI();
+        lv_label_set_text(ui_WiFiIcon, getWiFiIcon(rssi));
+        lv_obj_set_style_text_color(ui_WiFiIcon, wifiIconColor, LV_PART_MAIN);
+    } else {
+        lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
+        lv_label_set_text(ui_WiFiIcon, WIFI_X);
+        lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_RED), LV_PART_MAIN);
+    }
+
+    if (mqttClient.connected()) {
+        lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
+    } else {
+        lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
+    }
+
+    if (!getLocalTime(&timeinfo)) {
+        lv_label_set_text(ui_Time, "Syncing");
+    } else {
+        char timeString[CHAR_LEN];
+        strftime(timeString, sizeof(timeString), "%H:%M:%S", &timeinfo);
+        lv_label_set_text(ui_Time, timeString);
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        snprintf(tempString, CHAR_LEN, "IP: %s | Chip ID: %s | Firmware: V%s", WiFi.localIP().toString().c_str(), chip_id, FIRMWARE_VERSION);
+    } else {
+        snprintf(tempString, CHAR_LEN, "Chip ID: %s | Firmware: V%s", chip_id, FIRMWARE_VERSION);
+    }
+    lv_label_set_text(ui_Version, tempString);
+}
+
+// Adjusts screen brightness and text/arc colours when the day/night state changes.
+static void adjustDayNightMode() {
+    static bool lastIsDay = false;
+    if (weather.isDay == lastIsDay) return;
+    lastIsDay = weather.isDay;
+    if (!weather.isDay) {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+        ledcWrite(TFT_BL, NIGHTTIME_DUTY);
+#else
+        ledcWrite(PWMChannel, NIGHTTIME_DUTY);
+#endif
+        set_basic_text_color(lv_color_hex(COLOR_WHITE));
+        set_arc_night_mode(true);
+        lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
+        lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
+        lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
+    } else {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+        ledcWrite(TFT_BL, DAYTIME_DUTY);
+#else
+        ledcWrite(PWMChannel, DAYTIME_DUTY);
+#endif
+        set_basic_text_color(lv_color_hex(COLOR_BLACK));
+        set_arc_night_mode(false);
+        lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
+        lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
+        lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
+    }
 }
 
 void invalidateOldReadings() {

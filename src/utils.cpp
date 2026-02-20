@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "constants.h" // WIFI_RSSI_*, WIFI_HIGH/MEDIUM/LOW/NONE icon glyphs
 
 // Returns an RGB hex colour matching the standard UV Index risk scale.
 // Colours follow WHO/meteorological convention:
@@ -167,6 +168,31 @@ void format_integer_with_commas(long long num, char* out, size_t outSize) {
 
     if (is_negative)
         out[0] = '-';
+}
+
+// Maps a European AQI score to a plain-English risk label.
+const char* getAQIRating(int aqi) {
+    if (aqi <= 20)  return "Good";
+    if (aqi <= 40)  return "Fair";
+    if (aqi <= 60)  return "Moderate";
+    if (aqi <= 80)  return "Poor";
+    if (aqi <= 100) return "Very Poor";
+    return "Hazardous";
+}
+
+// Returns the Phosphor WiFi icon glyph string for the given RSSI (dBm).
+const char* getWiFiIcon(int rssi) {
+    if (rssi > WIFI_RSSI_HIGH)   return WIFI_HIGH;
+    if (rssi > WIFI_RSSI_MEDIUM) return WIFI_MEDIUM;
+    if (rssi > WIFI_RSSI_LOW)    return WIFI_LOW;
+    return WIFI_NONE;
+}
+
+// Formats a time_t value as "HH:MM:SS" into buf.
+void formatTimeHMS(time_t t, char* buf, size_t bufSize) {
+    struct tm ts;
+    localtime_r(&t, &ts);
+    strftime(buf, bufSize, "%H:%M:%S", &ts);
 }
 
 // XOR checksum over a byte range. Simple and fast; sufficient for detecting
