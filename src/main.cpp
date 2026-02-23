@@ -122,7 +122,7 @@ void shutdown_handler(void) {
 void setup() {
     Serial.begin(115200);
     esp_log_level_set("ssl_client", ESP_LOG_WARN);
-    snprintf(chip_id, CHAR_LEN, "%04llx", ESP.getEfuseMac() & 0xffff);
+    snprintf(chip_id, CHAR_LEN, "%04llx", ESP.getEfuseMac() & CHIP_ID_MASK);
     Serial.printf("Starting Klaussometer Display %s\n", chip_id);
 
     // Log reset reason to help diagnose watchdog issues
@@ -160,7 +160,7 @@ void setup() {
     Serial.printf("Reset reason: %s (%d)\n", reasonStr, reason);
 
     // Setup queues and mutexes
-    statusMessageQueue = xQueueCreate(20, sizeof(StatusMessage));
+    statusMessageQueue = xQueueCreate(STATUS_MESSAGE_QUEUE_SIZE, sizeof(StatusMessage));
     mqttMutex = xSemaphoreCreateMutex();
     sdcard_init();
 
@@ -242,7 +242,7 @@ void setup() {
     screenHeight = gfx->height();
 
     // Allocate display buffer
-    size_t bufferSize = sizeof(lv_color_t) * screenWidth * 10;
+    size_t bufferSize = sizeof(lv_color_t) * screenWidth * DISPLAY_BUFFER_LINES;
 
     disp_draw_buf = (lv_color_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!disp_draw_buf) {
@@ -389,7 +389,7 @@ void loop() {
 
     lv_timer_handler(); // Run GUI - do this BEFORE delays
     webServer.handleClient();
-    vTaskDelay(pdMS_TO_TICKS(20));
+    vTaskDelay(pdMS_TO_TICKS(LOOP_DELAY_MS));
 
     updateRoomDisplay();
     updateUVDisplay();
@@ -415,7 +415,8 @@ static void setStatusColor(lv_obj_t* label, time_t updateTime, int maxAgeSec) {
 
 // Updates room temperature, humidity, trend arrows and sensor battery icons.
 static void updateRoomDisplay() {
-    if (!dirty_rooms) return;
+    if (!dirty_rooms)
+        return;
     dirty_rooms = false;
     char tempString[CHAR_LEN];
     char batteryIcon;
@@ -423,7 +424,12 @@ static void updateRoomDisplay() {
     for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
         lv_arc_set_value(*tempArcs[i], readings[i].currentValue);
         lv_label_set_text(*tempLabels[i], readings[i].output);
-        if (readings[i].readingState != ReadingState::NO_DATA) {
+        if (readings[i].readingState == ReadingState::STALE) {
+            lv_obj_set_style_text_color(*tempLabels[i], lv_color_hex(COLOR_RED), LV_PART_MAIN);
+            lv_obj_clear_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
+        } else if (readings[i].readingState != ReadingState::NO_DATA) {
+            lv_color_t normalColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
+            lv_obj_set_style_text_color(*tempLabels[i], normalColor, LV_PART_MAIN);
             lv_obj_clear_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
@@ -442,7 +448,8 @@ static void updateRoomDisplay() {
 
 // Updates the UV arc, label and update-time label.
 static void updateUVDisplay() {
-    if (!dirty_uv) return;
+    if (!dirty_uv)
+        return;
     dirty_uv = false;
     char tempString[CHAR_LEN];
     if (uv.updateTime > 0) {
@@ -463,7 +470,8 @@ static void updateUVDisplay() {
 
 // Updates weather forecast labels, the temperature arc and the AQI display.
 static void updateWeatherDisplay() {
-    if (!dirty_weather) return;
+    if (!dirty_weather)
+        return;
     dirty_weather = false;
     char tempString[CHAR_LEN];
     if (weather.updateTime > 0) {
@@ -500,7 +508,8 @@ static void updateWeatherDisplay() {
 // Updates status indicators, clock, WiFi icon and version string once per second.
 static void updatePeriodicStatus(unsigned long currentMillis) {
     static unsigned long lastPeriodicMs = 0;
-    if (currentMillis - lastPeriodicMs < 1000) return;
+    if (currentMillis - lastPeriodicMs < PERIODIC_STATUS_INTERVAL_MS)
+        return;
     lastPeriodicMs = currentMillis;
 
     char tempString[CHAR_LEN];
@@ -545,8 +554,10 @@ static void updatePeriodicStatus(unsigned long currentMillis) {
 // Adjusts screen brightness and text/arc colours when the day/night state changes.
 static void adjustDayNightMode() {
     static bool lastIsDay = false;
-    if (weather.isDay == lastIsDay) return;
+    if (weather.isDay == lastIsDay)
+        return;
     lastIsDay = weather.isDay;
+    dirty_rooms = true; // Re-apply stale label colours after set_basic_text_color resets them
     if (!weather.isDay) {
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
         ledcWrite(TFT_BL, NIGHTTIME_DUTY);
@@ -574,11 +585,16 @@ static void adjustDayNightMode() {
 
 void invalidateOldReadings() {
     if (time(nullptr) > TIME_SYNC_THRESHOLD) {
+        time_t now = time(nullptr);
         for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
-            if ((time(nullptr) > readings[i].lastMessageTime + (MAX_NO_MESSAGE_SEC)) && (readings[i].readingState != ReadingState::NO_DATA)) {
+            time_t age = now - readings[i].lastMessageTime;
+            if (age > MAX_NO_MESSAGE_BLANK_SEC && readings[i].readingState != ReadingState::NO_DATA) {
                 readings[i].readingState = ReadingState::NO_DATA;
                 snprintf(readings[i].output, sizeof(readings[i].output), NO_READING);
                 readings[i].currentValue = 0.0;
+                dirty_rooms = true;
+            } else if (age > MAX_NO_MESSAGE_STALE_SEC && readings[i].readingState != ReadingState::STALE && readings[i].readingState != ReadingState::NO_DATA) {
+                readings[i].readingState = ReadingState::STALE;
                 dirty_rooms = true;
             }
         }

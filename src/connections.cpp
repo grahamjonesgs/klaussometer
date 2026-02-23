@@ -9,11 +9,11 @@ extern struct tm timeinfo;
 void setup_wifi() {
     int counter = 0;
     WiFi.disconnect(true); // Full radio reset for clean state after reboots
-    vTaskDelay(pdMS_TO_TICKS(500));
+    vTaskDelay(pdMS_TO_TICKS(WIFI_DISCONNECT_DELAY_MS));
     WiFi.mode(WIFI_STA);
     WiFi.persistent(false);
     WiFi.setTxPower(WIFI_POWER_19_5dBm); // Max power - mains-powered stationary device
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(WIFI_MODE_SETUP_DELAY_MS));
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
     while (WiFi.status() != WL_CONNECTED) {
@@ -24,7 +24,7 @@ void setup_wifi() {
             snprintf(messageBuffer, CHAR_LEN, "WiFi connection failed (status: %d), will retry later", WiFi.status());
             logAndPublish(messageBuffer);
             WiFi.disconnect(true); // Fully shut down radio on failure so display shows accurate state
-            vTaskDelay(pdMS_TO_TICKS(500));
+            vTaskDelay(pdMS_TO_TICKS(WIFI_DISCONNECT_DELAY_MS));
             return;
         }
         char messageBuffer[CHAR_LEN];
@@ -85,7 +85,7 @@ void connectivity_manager_t(void* pvParameters) {
         // Reset watchdog at the start of each loop iteration
         esp_task_wdt_reset();
 
-        if (millis() - lastHwmLog > 3600000UL) {
+        if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
             lastHwmLog = millis();
             char hwm_msg[CHAR_LEN];
             snprintf(hwm_msg, CHAR_LEN, "Stack HWM: Connectivity %u words", uxTaskGetStackHighWaterMark(nullptr));
@@ -95,7 +95,7 @@ void connectivity_manager_t(void* pvParameters) {
         if (WiFi.status() != WL_CONNECTED) {
             wasDisconnected = true;
             wifiFailCount++;
-            if (wifiFailCount == 1 || wifiFailCount % 5 == 0) {
+            if (wifiFailCount == 1 || wifiFailCount % WIFI_RECONNECT_GROUP == 0) {
                 // Full reconnect on first failure and every 5th attempt
                 char messageBuffer[CHAR_LEN];
                 snprintf(messageBuffer, CHAR_LEN, "WiFi reconnecting (attempt group %d, status: %d)", wifiFailCount, WiFi.status());
@@ -103,7 +103,7 @@ void connectivity_manager_t(void* pvParameters) {
                 setup_wifi();
             }
             // Otherwise let autoReconnect work in the background
-            vTaskDelay(pdMS_TO_TICKS(5000));
+            vTaskDelay(pdMS_TO_TICKS(WIFI_RECONNECT_CHECK_DELAY_MS));
             continue;
         }
 
@@ -119,9 +119,9 @@ void connectivity_manager_t(void* pvParameters) {
         if (!mqttClient.connected()) {
             logAndPublish("MQTT is reconnecting");
             mqtt_connect();
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            vTaskDelay(pdMS_TO_TICKS(MQTT_RECONNECT_DELAY_MS));
         }
 
-        vTaskDelay(pdMS_TO_TICKS(5000)); // Check connection status every 5 seconds
+        vTaskDelay(pdMS_TO_TICKS(CONNECTION_CHECK_INTERVAL_MS)); // Check connection status every 5 seconds
     }
 }

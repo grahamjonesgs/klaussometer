@@ -19,7 +19,7 @@ extern char statusMessageValue[];
 // Shows remaining time to empty (discharging) or full (charging).
 static void updateChargingStatus() {
     char tempString[CHAR_LEN];
-    if (solar.batteryPower > 0.1) {
+    if (solar.batteryPower > BATTERY_POWER_DISCHARGE_THRESHOLD) {
         snprintf(tempString, CHAR_LEN, "Discharging %2.1fkW", solar.batteryPower);
         lv_label_set_text(ui_ChargingLabel, tempString);
 
@@ -27,7 +27,7 @@ static void updateChargingStatus() {
         // Usable capacity = (SoC% - min%) * total kWh; power is in kW
         float remain_hours = (solar.batteryCharge / 100.0 - BATTERY_MIN) * BATTERY_CAPACITY / solar.batteryPower;
         int remain_minutes = 60.0 * remain_hours;
-        int remain_minutes_round = 10 * (round(remain_minutes / 10)); // Round to 10 mins
+        int remain_minutes_round = REMAINING_TIME_ROUND_MIN * (round(remain_minutes / REMAINING_TIME_ROUND_MIN));
 
         time_t end_time = solar.currentUpdateTime + remain_minutes_round * 60;
         char time_buf_end[CHAR_LEN];
@@ -42,14 +42,14 @@ static void updateChargingStatus() {
         }
         lv_label_set_text(ui_ChargingTime, tempString);
         setArcColor(ui_BatteryArc, lv_color_hex(COLOR_RED));
-    } else if (solar.batteryPower < -0.1) {
+    } else if (solar.batteryPower < BATTERY_POWER_CHARGE_THRESHOLD) {
         snprintf(tempString, CHAR_LEN, "Charging %2.1fkW", -solar.batteryPower);
         lv_label_set_text(ui_ChargingLabel, tempString);
 
         // Time to full = remaining capacity to fill / charge rate (batteryPower is negative when charging)
-        float remain_hours = -(0.99 - solar.batteryCharge / 100) * BATTERY_CAPACITY / solar.batteryPower;
+        float remain_hours = -(BATTERY_CHARGE_FULL_THRESHOLD - solar.batteryCharge / 100) * BATTERY_CAPACITY / solar.batteryPower;
         int remain_minutes = 60.0 * remain_hours;
-        int remain_minutes_round = 10 * (round(remain_minutes / 10));
+        int remain_minutes_round = REMAINING_TIME_ROUND_MIN * (round(remain_minutes / REMAINING_TIME_ROUND_MIN));
 
         if (remain_minutes == 0) {
             tempString[0] = '\0';
@@ -72,7 +72,8 @@ static void updateChargingStatus() {
 
 // Updates grid energy totals, Rand cost and self-sufficiency percentage labels.
 static void updateGridMetrics() {
-    if (solar.today_use <= 0.0 && solar.month_use <= 0.0) return;
+    if (solar.today_use <= 0.0 && solar.month_use <= 0.0)
+        return;
     char tempString[CHAR_LEN];
     char boughtTodayBuf[32];
     char boughtMonthBuf[32];
@@ -112,7 +113,8 @@ static void updateGridMetrics() {
 // grid energy totals, cost (in Rand), and self-sufficiency percentages.
 // Does nothing if solar data has never been received (currentUpdateTime == 0).
 void set_solar_values() {
-    if (solar.currentUpdateTime == 0) return;
+    if (solar.currentUpdateTime == 0)
+        return;
     char tempString[CHAR_LEN];
 
     lv_obj_clear_flag(ui_BatteryArc, LV_OBJ_FLAG_HIDDEN);
@@ -123,11 +125,11 @@ void set_solar_values() {
     snprintf(tempString, CHAR_LEN, "%2.0f%%", solar.batteryCharge);
     lv_label_set_text(ui_BatteryLabel, tempString);
 
-    lv_arc_set_value(ui_SolarArc, solar.solarPower * 10);
+    lv_arc_set_value(ui_SolarArc, solar.solarPower * POWER_ARC_SCALE);
     snprintf(tempString, CHAR_LEN, "%2.1fkW", solar.solarPower);
     lv_label_set_text(ui_SolarLabel, tempString);
 
-    lv_arc_set_value(ui_UsingArc, solar.usingPower * 10);
+    lv_arc_set_value(ui_UsingArc, solar.usingPower * POWER_ARC_SCALE);
     snprintf(tempString, CHAR_LEN, "%2.1fkW", solar.usingPower);
     lv_label_set_text(ui_UsingLabel, tempString);
 
@@ -190,12 +192,12 @@ void displayStatusMessages_t(void* pvParameters) {
     StatusMessage receivedMsg;
     unsigned long lastHwmLog = 0;
     while (true) {
-        if (xQueueReceive(statusMessageQueue, &receivedMsg, pdMS_TO_TICKS(60000)) == pdTRUE) {
+        if (xQueueReceive(statusMessageQueue, &receivedMsg, pdMS_TO_TICKS(STATUS_MESSAGE_QUEUE_TIMEOUT_MS)) == pdTRUE) {
             snprintf(statusMessageValue, CHAR_LEN, "%s", receivedMsg.text);
             vTaskDelay(pdMS_TO_TICKS(receivedMsg.duration_s * 1000));
             statusMessageValue[0] = '\0';
         }
-        if (millis() - lastHwmLog > 3600000UL) {
+        if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
             lastHwmLog = millis();
             char hwm_msg[CHAR_LEN];
             snprintf(hwm_msg, CHAR_LEN, "Stack HWM: Display Status %u words", uxTaskGetStackHighWaterMark(nullptr));

@@ -4,7 +4,7 @@ SemaphoreHandle_t sdMutex;
 QueueHandle_t sdLogQueue;
 
 void sdcard_init() {
-    sdLogQueue = xQueueCreate(20, sizeof(SDLogMessage));
+    sdLogQueue = xQueueCreate(SD_LOG_QUEUE_SIZE, sizeof(SDLogMessage));
     sdMutex = xSemaphoreCreateMutex();
     if (sdLogQueue == nullptr) {
         Serial.println("Error: Failed to create SD log queue");
@@ -442,7 +442,7 @@ void sdcard_logger_t(void* pvParameters) {
         if (xQueueReceive(sdLogQueue, &logMsg, pdMS_TO_TICKS(60000)) == pdTRUE) {
             addLogToSDCard(logMsg.message, logMsg.filename);
         }
-        if (millis() - lastHwmLog > 3600000UL) {
+        if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
             lastHwmLog = millis();
             char hwm_msg[CHAR_LEN];
             snprintf(hwm_msg, CHAR_LEN, "Stack HWM: SD Logger %u words", uxTaskGetStackHighWaterMark(nullptr));

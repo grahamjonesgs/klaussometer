@@ -7,9 +7,8 @@ extern Readings readings[];
 extern const int numberOfReadings;
 
 // Track last logged value per reading (compared against to detect meaningful changes)
-// Using 20 as safe upper bound for number of readings (currently 15)
-static float lastLoggedValue[20] = {0};
-static bool hasLoggedBefore[20] = {false};
+static float lastLoggedValue[MAX_READINGS] = {0};
+static bool hasLoggedBefore[MAX_READINGS] = {false};
 
 // Get mqtt messages
 void receive_mqtt_messages_t(void* pvParams) {
@@ -26,7 +25,7 @@ void receive_mqtt_messages_t(void* pvParams) {
         // Reset watchdog at the start of each loop iteration
         esp_task_wdt_reset();
 
-        if (millis() - lastHwmLog > 3600000UL) {
+        if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
             lastHwmLog = millis();
             char hwm_msg[CHAR_LEN];
             snprintf(hwm_msg, CHAR_LEN, "Stack HWM: MQTT Receive %u words", uxTaskGetStackHighWaterMark(nullptr));
@@ -35,7 +34,7 @@ void receive_mqtt_messages_t(void* pvParams) {
 
         // Reconnect if necessary
         if (!mqttClient.connected()) {
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            vTaskDelay(pdMS_TO_TICKS(MQTT_WAIT_CONNECTED_MS));
             continue;
         }
 
@@ -126,19 +125,19 @@ void update_readings(char* recMessage, int index, int dataType) {
     }
 
     // Sanity check for reasonable sensor values
-    if (dataType == DATA_TEMPERATURE && (parsedValue < -50.0f || parsedValue > 100.0f)) {
+    if (dataType == DATA_TEMPERATURE && (parsedValue < TEMP_MIN_VALID || parsedValue > TEMP_MAX_VALID)) {
         char log_msg[CHAR_LEN];
         snprintf(log_msg, CHAR_LEN, "Temperature out of range: %.1f for %s", parsedValue, readings[index].description);
         logAndPublish(log_msg);
         return;
     }
-    if (dataType == DATA_HUMIDITY && (parsedValue < 0.0f || parsedValue > 100.0f)) {
+    if (dataType == DATA_HUMIDITY && (parsedValue < 0.0f || parsedValue > HUMIDITY_MAX_VALID)) {
         char log_msg[CHAR_LEN];
         snprintf(log_msg, CHAR_LEN, "Humidity out of range: %.1f for %s", parsedValue, readings[index].description);
         logAndPublish(log_msg);
         return;
     }
-    if (dataType == DATA_BATTERY && (parsedValue < 0.0f || parsedValue > 5.0f)) {
+    if (dataType == DATA_BATTERY && (parsedValue < 0.0f || parsedValue > BATTERY_MAX_VALID_V)) {
         char log_msg[CHAR_LEN];
         snprintf(log_msg, CHAR_LEN, "Battery voltage out of range: %.2f for %s", parsedValue, readings[index].description);
         logAndPublish(log_msg);

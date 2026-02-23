@@ -478,7 +478,7 @@ void api_manager_t(void* pvParameters) {
         esp_task_wdt_reset();
         time_t now = time(nullptr);
 
-        if (now - lastHwmLog > 3600) {
+        if (now - lastHwmLog > HWM_LOG_INTERVAL_SEC) {
             lastHwmLog = now;
             char hwm_msg[CHAR_LEN];
             snprintf(hwm_msg, CHAR_LEN, "Stack HWM: API Manager %u words", uxTaskGetStackHighWaterMark(nullptr));
@@ -486,7 +486,7 @@ void api_manager_t(void* pvParameters) {
         }
 
         // Solar token - fetch if empty or expired (tokens last ~24h, refresh after 12h)
-        if (strlen(solarToken.token) == 0 || (solarToken.tokenTime > 0 && (now - solarToken.tokenTime) > 43200)) {
+        if (strlen(solarToken.token) == 0 || (solarToken.tokenTime > 0 && (now - solarToken.tokenTime) > SOLAR_TOKEN_REFRESH_SEC)) {
             solarToken.token[0] = '\0';
             fetch_solar_token();
         }

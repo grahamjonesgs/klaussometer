@@ -59,7 +59,7 @@ void updateFirmware() {
             WiFiClient& client = http.getStream();
 
             // Manual chunked download with watchdog resets
-            uint8_t buff[128];
+            uint8_t buff[OTA_BUFFER_SIZE];
             size_t written = 0;
             int lastProgress = -1;
 
@@ -74,7 +74,7 @@ void updateFirmware() {
                         esp_task_wdt_reset();
 
                         int progress = (written * 100) / contentLength;
-                        if (progress != lastProgress && progress % 10 == 0) {
+                        if (progress != lastProgress && progress % OTA_LOG_INTERVAL_PERCENT == 0) {
                             char log_message[CHAR_LEN];
                             snprintf(log_message, CHAR_LEN, "Download Progress: %d%%", progress);
                             logAndPublish(log_message);
@@ -82,7 +82,7 @@ void updateFirmware() {
                         }
                     }
                 }
-                vTaskDelay(pdMS_TO_TICKS(1)); // Allow other tasks to run
+                vTaskDelay(pdMS_TO_TICKS(OTA_YIELD_DELAY_MS)); // Allow other tasks to run
             }
 
             if (written == contentLength) {

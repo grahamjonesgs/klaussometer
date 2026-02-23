@@ -5,6 +5,7 @@
 #include <time.h>
 
 static constexpr int STORED_READING = 6;
+static constexpr int MAX_READINGS = 20; // Safe upper bound for per-reading tracking arrays (currently 15)
 // clang-format off
 #define READINGS_ARRAY                                                                                                                    \
         {"Cave",        "cave/tempset-ambient/set",        NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0}, \
@@ -84,6 +85,11 @@ static const float BATTERY_OK = 3.70;       // The point where the battery is co
 static const float BATTERY_BAD = 3.55;      // The point where the battery is considered to be in bad condition and may not provide power for long
 static const float BATTERY_CRITICAL = 3.40; // The point where the battery is considered to be in critical condition and may not provide power for more than a short time
 
+// Battery power thresholds for charge/discharge detection
+static const float BATTERY_POWER_DISCHARGE_THRESHOLD = 0.1f; // Min kW for the battery to be considered discharging
+static const float BATTERY_POWER_CHARGE_THRESHOLD = -0.1f;   // Max kW (negative) for the battery to be considered charging
+static const float BATTERY_CHARGE_FULL_THRESHOLD = 0.99f;    // SoC fraction treated as fully charged (99%)
+
 // Reading state: tracks whether a sensor has valid data and which direction it's trending.
 // Stored in the Readings struct as uint8_t so it persists to SD card with no size change.
 enum class ReadingState : uint8_t {
@@ -91,7 +97,8 @@ enum class ReadingState : uint8_t {
     FIRST_READING = 1, // Only one data point so far — direction is unknown
     TRENDING_UP = 2,   // Current value is above the historical average
     TRENDING_DOWN = 3, // Current value is below the historical average
-    STABLE = 4         // Current value equals the historical average
+    STABLE = 4,        // Current value equals the historical average
+    STALE = 5          // No message for >30 min — value still shown but coloured red; direction hidden
 };
 
 // Returns the glyph character for the given reading state.
@@ -106,11 +113,18 @@ inline char readingStateGlyph(ReadingState state) {
         return CHAR_SAME;
     case ReadingState::FIRST_READING:
         return CHAR_BLANK;
+    case ReadingState::STALE:
     case ReadingState::NO_DATA:
     default:
         return CHAR_SAME;
     }
 }
+
+// Sensor validation ranges — reject readings outside these bounds
+static const float TEMP_MIN_VALID = -50.0f;     // Minimum plausible temperature (°C)
+static const float TEMP_MAX_VALID = 100.0f;     // Maximum plausible temperature (°C)
+static const float HUMIDITY_MAX_VALID = 100.0f; // Maximum plausible humidity (%)
+static const float BATTERY_MAX_VALID_V = 5.0f;  // Maximum plausible sensor battery voltage (V)
 
 // Data type definition for array
 static const int DATA_TEMPERATURE = 0;
@@ -127,7 +141,8 @@ static const float LOG_CHANGE_THRESHOLD_BATTERY = 0.1f;  // V
 // Define constants used
 static const time_t TIME_SYNC_THRESHOLD = 1577836800; // 2020-01-01: used to detect unsynced/zero time
 
-static const int MAX_NO_MESSAGE_SEC = 1800;               // Seconds without a message before a reading is invalidated (ReadingState::NO_DATA)
+static const int MAX_NO_MESSAGE_STALE_SEC = 1800;         // Seconds without a message before a reading turns red (ReadingState::STALE)
+static const int MAX_NO_MESSAGE_BLANK_SEC = 3600;         // Seconds without a message before a reading is blanked (ReadingState::NO_DATA)
 static const int TIME_RETRIES = 100;                      // Number of time to retry getting the time during setup
 static const int WEATHER_UPDATE_INTERVAL_SEC = 300;       // Interval between weather updates
 static const int UV_UPDATE_INTERVAL_SEC = 3600;           // Interval between UV updates
@@ -147,10 +162,32 @@ static const int CHECK_UPDATE_INTERVAL_SEC = 300;         // Interval between ch
 static const int WIFI_RETRY_DELAY_SEC = 5; // Delay between WiFi connection attempts
 static const int MQTT_RETRY_DELAY_SEC = 5; // Delay between MQTT connection attempts
 
+// WiFi / MQTT connection management delays
+static const int WIFI_DISCONNECT_DELAY_MS = 500;       // Settle time after WiFi.disconnect(true) before re-init
+static const int WIFI_MODE_SETUP_DELAY_MS = 100;       // Settle time after WiFi.mode() before beginning
+static const int WIFI_RECONNECT_GROUP = 5;             // Run a full setup_wifi() every Nth failed attempt; others rely on autoReconnect
+static const int WIFI_RECONNECT_CHECK_DELAY_MS = 5000; // Delay between connectivity_manager WiFi check loops when disconnected
+static const int CONNECTION_CHECK_INTERVAL_MS = 5000;  // Delay at end of connectivity_manager main loop
+static const int MQTT_RECONNECT_DELAY_MS = 1000;       // Delay after successful MQTT reconnect before re-checking
+static const int MQTT_WAIT_CONNECTED_MS = 1000;        // Delay in MQTT task when broker not yet connected
+
+// Main loop and periodic update timing
+static const int LOOP_DELAY_MS = 20;                      // Main loop vTaskDelay to yield CPU between LVGL frames
+static const int PERIODIC_STATUS_INTERVAL_MS = 1000;      // How often updatePeriodicStatus() refreshes clock/WiFi/status
+static const int STATUS_MESSAGE_QUEUE_TIMEOUT_MS = 60000; // Queue receive timeout in displayStatusMessages_t (1 min)
+static const int REMAINING_TIME_ROUND_MIN = 10;           // Round battery remaining time to nearest N minutes for display
+
+// Stack high-water-mark logging
+static const unsigned long HWM_LOG_INTERVAL_MS = 3600000UL; // Milliseconds between periodic stack HWM log entries
+static const int HWM_LOG_INTERVAL_SEC = 3600;               // Seconds between stack HWM log entries (for tasks using time())
+
+// Solar token
+static const int SOLAR_TOKEN_REFRESH_SEC = 43200; // Refresh Solarman JWT after 12 hours
+
 // Mutex timeout values (in ms) — use the named constant that matches the call site's tolerance
-static const int MUTEX_TIMEOUT_SD_MS   = 5000; // SD operations can be slow; wait up to 5 s
-static const int MUTEX_TIMEOUT_MQTT_MS = 500;  // MQTT parse window; short wait is fine
-static constexpr int MUTEX_NOWAIT = 0;          // Non-blocking: try once, skip if unavailable
+static const int MUTEX_TIMEOUT_SD_MS = 5000;  // SD operations can be slow; wait up to 5 s
+static const int MUTEX_TIMEOUT_MQTT_MS = 500; // MQTT parse window; short wait is fine
+static constexpr int MUTEX_NOWAIT = 0;        // Non-blocking: try once, skip if unavailable
 
 // Touch screen settings
 static const int I2C_SDA_PIN = 17;
@@ -244,5 +281,19 @@ static constexpr int MAX_LOG_ENTRIES_TO_READ = 500;   // Max entries to read whe
 static const int TASK_STACK_SMALL = 4096;  // For simple tasks like SD logger
 static const int TASK_STACK_MEDIUM = 8192; // For most tasks (MQTT, connectivity, etc.)
 static const int TASK_STACK_LARGE = 16384; // For memory-intensive tasks if needed
+
+// FreeRTOS queue sizes
+static const int STATUS_MESSAGE_QUEUE_SIZE = 20; // Slots in the status message display queue
+static const int SD_LOG_QUEUE_SIZE = 20;         // Slots in the SD card log write queue
+
+// Display
+static constexpr uint64_t CHIP_ID_MASK = 0xFFFF; // Lower 16 bits of eFuse MAC used as chip ID
+static const int DISPLAY_BUFFER_LINES = 10;      // Height of the LVGL draw buffer in screen lines
+static const int POWER_ARC_SCALE = 10;           // Multiplier to convert kW values to arc range (0–100)
+
+// OTA
+static const int OTA_BUFFER_SIZE = 128;         // Byte buffer for OTA firmware download chunks
+static const int OTA_LOG_INTERVAL_PERCENT = 10; // Log OTA download progress every N percent
+static const int OTA_YIELD_DELAY_MS = 1;        // vTaskDelay in OTA download loop to yield CPU
 
 #endif // CONSTANTS_H
