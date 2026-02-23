@@ -150,7 +150,7 @@ static const int MQTT_RETRY_DELAY_SEC = 5; // Delay between MQTT connection atte
 // Mutex timeout values (in ms) — use the named constant that matches the call site's tolerance
 static const int MUTEX_TIMEOUT_SD_MS   = 5000; // SD operations can be slow; wait up to 5 s
 static const int MUTEX_TIMEOUT_MQTT_MS = 500;  // MQTT parse window; short wait is fine
-#define MUTEX_NOWAIT 0                          // Non-blocking: try once, skip if unavailable
+static constexpr int MUTEX_NOWAIT = 0;          // Non-blocking: try once, skip if unavailable
 
 // Touch screen settings
 static const int I2C_SDA_PIN = 17;
@@ -231,6 +231,7 @@ static const float MIN_BRIGHTNESS = 0.1;
 #define PIN_SD_D0 13
 static const int SD_CS_PIN = 5;
 static const char* SOLAR_DATA_FILENAME = "/solar_data.bin";
+static const char* SOLAR_TOKEN_FILENAME = "/solar_token.bin";
 static const char* WEATHER_DATA_FILENAME = "/weather_data.bin";
 static const char* UV_DATA_FILENAME = "/uv_data.bin";
 static const char* READINGS_DATA_FILENAME = "/readings_data.bin";

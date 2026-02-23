@@ -14,6 +14,7 @@
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
+#include <atomic>
 #include <stddef.h>
 #include <stdint.h>
 #include <time.h>
@@ -77,9 +78,13 @@ typedef struct __attribute__((packed)) {
     float month_buy;
     float month_use;
     float month_generation;
+} Solar;
+
+// Stored separately to avoid writing 2 KB on every solar data update.
+typedef struct __attribute__((packed)) {
     char token[2048];
     time_t tokenTime;
-} Solar;
+} SolarToken;
 
 typedef struct __attribute__((packed)) {
     size_t size;
@@ -102,9 +107,9 @@ struct LogEntry {
 };
 
 // Dirty flags for display update groups (set by data producers, cleared by loop)
-extern volatile bool dirty_rooms;
-extern volatile bool dirty_solar;
-extern volatile bool dirty_weather;
-extern volatile bool dirty_uv;
+extern std::atomic<bool> dirty_rooms;
+extern std::atomic<bool> dirty_solar;
+extern std::atomic<bool> dirty_weather;
+extern std::atomic<bool> dirty_uv;
 
 #endif // TYPES_H

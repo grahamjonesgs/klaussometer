@@ -52,6 +52,7 @@ struct tm timeinfo;
 Weather weather = {0.0, 0.0, 0.0, 0.0, false, 0, "", "", "--:--:--"};
 UV uv = {0, 0, "--:--:--"};
 Solar solar = {0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, "--:--:--", 100, 0, false, 0.0, 0.0};
+SolarToken solarToken = {};
 AirQuality airQuality = {0.0, 0.0, 0.0, 0, 0, "--:--:--"};
 Readings readings[]{READINGS_ARRAY};
 Preferences storage;
@@ -60,16 +61,16 @@ QueueHandle_t statusMessageQueue;
 char log_topic[CHAR_LEN];
 char error_topic[CHAR_LEN];
 char chip_id[CHAR_LEN];
-String macAddress;
+char macAddress[18]; // "AA:BB:CC:DD:EE:FF" + null
 
 // Status messages
 char statusMessageValue[CHAR_LEN];
 
 // Dirty flags for display update groups (set by producers, cleared by loop)
-volatile bool dirty_rooms = true;
-volatile bool dirty_solar = true;
-volatile bool dirty_weather = true;
-volatile bool dirty_uv = true;
+std::atomic<bool> dirty_rooms(true);
+std::atomic<bool> dirty_solar(true);
+std::atomic<bool> dirty_weather(true);
+std::atomic<bool> dirty_uv(true);
 
 const int MAX_DUTY_CYCLE = (int)(pow(2, PWMResolution) - 1);
 const float DAYTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MAX_BRIGHTNESS);
@@ -193,6 +194,11 @@ void setup() {
         } else {
             logAndPublish("Solar state restore failed");
         }
+        if (loadDataBlock(SOLAR_TOKEN_FILENAME, &solarToken, sizeof(solarToken))) {
+            logAndPublish("Solar token restored OK");
+        } else {
+            logAndPublish("Solar token restore failed");
+        }
         if (loadDataBlock(WEATHER_DATA_FILENAME, &weather, sizeof(weather))) {
             logAndPublish("Weather state restored OK");
         } else {
@@ -217,7 +223,7 @@ void setup() {
     }
 
     // Add unique topics for MQTT logging
-    macAddress = WiFi.macAddress();
+    WiFi.macAddress().toCharArray(macAddress, sizeof(macAddress));
     snprintf(log_topic, CHAR_LEN, "klaussometer/%s/log", chip_id);
     snprintf(error_topic, CHAR_LEN, "klaussometer/%s/error", chip_id);
 

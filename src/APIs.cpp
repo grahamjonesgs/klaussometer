@@ -6,6 +6,7 @@
 extern Weather weather;
 extern UV uv;
 extern Solar solar;
+extern SolarToken solarToken;
 extern AirQuality airQuality;
 extern Preferences storage;
 extern struct tm timeinfo;
@@ -210,7 +211,7 @@ static bool fetch_air_quality() {
     }
 }
 
-// Fetches a JWT bearer token from the Solarman API and stores it in solar.token.
+// Fetches a JWT bearer token from the Solarman API and stores it in solarToken.
 // Tokens last ~24h; api_manager_t refreshes after 12h or when a request is rejected.
 static void fetch_solar_token() {
     if (WiFi.status() != WL_CONNECTED)
@@ -229,12 +230,12 @@ static void fetch_solar_token() {
             deserializeJson(root, payload_buffer);
             if (root["access_token"].is<const char*>()) {
                 const char* rec_token = root["access_token"];
-                snprintf(solar.token, sizeof(solar.token), "bearer %s", rec_token);
-                solar.tokenTime = time(NULL);
+                snprintf(solarToken.token, sizeof(solarToken.token), "bearer %s", rec_token);
+                solarToken.tokenTime = time(NULL);
                 char log_message2[CHAR_LEN];
-                snprintf(log_message2, CHAR_LEN, "Solar token obtained, raw=%zu, stored=%zu", strlen(rec_token), strlen(solar.token));
+                snprintf(log_message2, CHAR_LEN, "Solar token obtained, raw=%zu, stored=%zu", strlen(rec_token), strlen(solarToken.token));
                 logAndPublish(log_message2);
-                saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
+                saveDataBlock(SOLAR_TOKEN_FILENAME, &solarToken, sizeof(solarToken));
             } else {
                 char log_message[CHAR_LEN];
                 snprintf(log_message, CHAR_LEN, "Solar token error: %s", root["msg"].as<const char*>());
@@ -262,7 +263,7 @@ static bool fetch_current_solar() {
     http.setReuse(true); // Keep the connection open for potential token refresh and daily data fetches
     http.begin(url_buffer);
     http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", solar.token);
+    http.addHeader("Authorization", solarToken.token);
     snprintf(post_buffer, POST_BUFFER_SIZE, "{\n\"stationId\" : \"%s\"\n}", SOLAR_STATIONID);
     int httpCode = http.POST(post_buffer);
 
@@ -333,9 +334,9 @@ static bool fetch_current_solar() {
                 const char* msg = root["msg"];
                 if (msg && strcmp(msg, "auth invalid token") == 0) {
                     char log_message[CHAR_LEN];
-                    snprintf(log_message, CHAR_LEN, "Solar token rejected (len=%zu), clearing for refresh", strlen(solar.token));
+                    snprintf(log_message, CHAR_LEN, "Solar token rejected (len=%zu), clearing for refresh", strlen(solarToken.token));
                     logAndPublish(log_message);
-                    solar.token[0] = '\0'; // Clear the token to trigger a refresh
+                    solarToken.token[0] = '\0'; // Clear the token to trigger a refresh
                 } else {
                     char log_message[CHAR_LEN];
                     snprintf(log_message, CHAR_LEN, "Solar status failed: %s", msg);
@@ -375,7 +376,7 @@ static bool fetch_daily_solar() {
     http.setReuse(true); // Keep the connection open for potential token refresh and daily data fetches
     http.begin(url_buffer);
     http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", solar.token);
+    http.addHeader("Authorization", solarToken.token);
 
     snprintf(post_buffer, POST_BUFFER_SIZE, "{\n\"stationId\" : \"%s\",\n\"timeType\" : 2,\n\"startTime\" : \"%s\",\n\"endTime\" : \"%s\"\n}", SOLAR_STATIONID, currentDate,
              currentDate);
@@ -431,7 +432,7 @@ static bool fetch_monthly_solar() {
     http.setReuse(true); // Keep the connection open for potential token refresh and daily data fetches
     http.begin(url_buffer);
     http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", solar.token);
+    http.addHeader("Authorization", solarToken.token);
 
     snprintf(post_buffer, POST_BUFFER_SIZE, "{\n\"stationId\" : \"%s\",\n\"timeType\" : 3,\n\"startTime\" : \"%s\",\n\"endTime\" : \"%s\"\n}", SOLAR_STATIONID, currentYearMonth,
              currentYearMonth);
@@ -485,8 +486,8 @@ void api_manager_t(void* pvParameters) {
         }
 
         // Solar token - fetch if empty or expired (tokens last ~24h, refresh after 12h)
-        if (strlen(solar.token) == 0 || (solar.tokenTime > 0 && (now - solar.tokenTime) > 43200)) {
-            solar.token[0] = '\0';
+        if (strlen(solarToken.token) == 0 || (solarToken.tokenTime > 0 && (now - solarToken.tokenTime) > 43200)) {
+            solarToken.token[0] = '\0';
             fetch_solar_token();
         }
 
@@ -526,7 +527,7 @@ void api_manager_t(void* pvParameters) {
         }
 
         // Solar APIs - skip if token not available
-        if (strlen(solar.token) > 0) {
+        if (strlen(solarToken.token) > 0) {
             // Current Solar
             if (canRetry(solarCurrentBackoff) && (now - solar.currentUpdateTime > SOLAR_CURRENT_UPDATE_INTERVAL_SEC)) {
                 if (fetch_current_solar()) {

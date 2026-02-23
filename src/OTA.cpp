@@ -4,7 +4,7 @@
 #include "utils.h"
 
 extern WebServer webServer;
-extern String macAddress;
+extern char macAddress[18];
 unsigned long lastOTAUpdateCheck = 0;
 extern HTTPClient http;
 extern char chip_id[CHAR_LEN];
@@ -147,7 +147,7 @@ void setup_web_server() {
                          String(FIRMWARE_VERSION) +
                          "</td></tr>"
                          "<tr><td><b>MAC Address:</b></td><td>" +
-                         macAddress +
+                         String(macAddress) +
                          "</td></tr>"
                          "<tr><td><b>Chip ID:</b></td><td>" +
                          String(chip_id) +
