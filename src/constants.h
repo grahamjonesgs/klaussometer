@@ -60,8 +60,7 @@ static const int CHAR_LEN = 255;
 // Character settings
 static const char CHAR_UP = 'a';   // Based on epicycles font
 static const char CHAR_DOWN = 'b'; // Based on epicycles ADF font
-static const char CHAR_SAME = ' '; // Based on epicycles ADF font as blank if no change
-static const char CHAR_BLANK = 32;
+static const char CHAR_BLANK = 32; // Space — blank direction glyph (epicycles font)
 static const char CHAR_BATTERY_GOOD = '.';     // Based on battery2 font
 static const char CHAR_BATTERY_OK = ';';       // Based on battery2 font
 static const char CHAR_BATTERY_BAD = ',';      // Based on battery2 font
@@ -102,7 +101,7 @@ enum class ReadingState : uint8_t {
 };
 
 // Returns the glyph character for the given reading state.
-// CHAR_SAME is returned for NO_DATA so the direction widget shows blank when there is no data.
+// CHAR_BLANK is returned for NO_DATA so the direction widget shows blank when there is no data.
 inline char readingStateGlyph(ReadingState state) {
     switch (state) {
     case ReadingState::TRENDING_UP:
@@ -110,13 +109,13 @@ inline char readingStateGlyph(ReadingState state) {
     case ReadingState::TRENDING_DOWN:
         return CHAR_DOWN;
     case ReadingState::STABLE:
-        return CHAR_SAME;
+        return CHAR_BLANK;
     case ReadingState::FIRST_READING:
         return CHAR_BLANK;
     case ReadingState::STALE:
     case ReadingState::NO_DATA:
     default:
-        return CHAR_SAME;
+        return CHAR_BLANK;
     }
 }
 
