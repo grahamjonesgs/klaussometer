@@ -56,7 +56,7 @@ SolarToken solarToken = {};
 AirQuality airQuality = {0.0, 0.0, 0.0, 0, 0, "--:--:--"};
 Readings readings[]{READINGS_ARRAY};
 Preferences storage;
-int numberOfReadings = sizeof(readings) / sizeof(readings[0]);
+extern const int numberOfReadings = sizeof(readings) / sizeof(readings[0]);
 QueueHandle_t statusMessageQueue;
 char log_topic[CHAR_LEN];
 char error_topic[CHAR_LEN];
@@ -91,7 +91,7 @@ int touch_last_y = 0;
 // Screen setting
 static uint32_t screenWidth = LCD_WIDTH;
 static uint32_t screenHeight = LCD_HEIGHT;
-static lv_display_t* disp = NULL;
+static lv_display_t* disp = nullptr;
 static lv_color_t* disp_draw_buf;
 
 // Arrays of UI objects
@@ -107,7 +107,7 @@ void shutdown_handler(void) {
     // Write directly to SD card (can't use queue as system is shutting down)
     File logFile = SD_MMC.open(ERROR_LOG_FILENAME, FILE_APPEND);
     if (logFile) {
-        time_t now = time(NULL);
+        time_t now = time(nullptr);
         char logLine[CHAR_LEN + 50];
         snprintf(logLine, sizeof(logLine), "%ld|SYSTEM REBOOT - Watchdog or manual reboot triggered\n", now);
         logFile.print(logLine);
@@ -164,10 +164,10 @@ void setup() {
     mqttMutex = xSemaphoreCreateMutex();
     sdcard_init();
 
-    if (statusMessageQueue == NULL) {
+    if (statusMessageQueue == nullptr) {
         Serial.println("Error: Failed to create status message queue");
     }
-    if (mqttMutex == NULL) {
+    if (mqttMutex == nullptr) {
         Serial.println("Error: Failed to create MQTT mutex! Restarting...");
         delay(1000);
         esp_restart();
@@ -184,7 +184,7 @@ void setup() {
         File errorLog = SD_MMC.open(ERROR_LOG_FILENAME, FILE_APPEND);
         if (errorLog) {
             char logLine[CHAR_LEN + 50];
-            snprintf(logLine, sizeof(logLine), "%ld|BOOT - Reset reason: %s (%d)\n", time(NULL), reasonStr, reason);
+            snprintf(logLine, sizeof(logLine), "%ld|BOOT - Reset reason: %s (%d)\n", time(nullptr), reasonStr, reason);
             errorLog.print(logLine);
             errorLog.close();
         }
@@ -263,7 +263,7 @@ void setup() {
         esp_restart();
     }
     lv_display_set_flush_cb(disp, my_disp_flush);
-    lv_display_set_buffers(disp, disp_draw_buf, NULL, bufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(disp, disp_draw_buf, nullptr, bufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
     ui_init();
 
     // Set initial UI values
@@ -363,17 +363,17 @@ void setup() {
 #else
     esp_task_wdt_init(60, true);
 #endif
-    esp_task_wdt_add(NULL); // Add current task (loop task) to watchdog
+    esp_task_wdt_add(nullptr); // Add current task (loop task) to watchdog
 
     // Start tasks
     // Priority guide: Arduino loop() runs at priority 1 on core 1 (loopTask)
     // Keep background tasks at low priority to avoid starving the display loop
-    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, NULL, 0, NULL, 1); // Core 1, priority 0 (lowest)
-    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_MEDIUM, NULL, 2, NULL,
+    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, nullptr, 0, nullptr, 1); // Core 1, priority 0 (lowest)
+    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_MEDIUM, nullptr, 2, nullptr,
                             1); // Core 1, priority 2 - MEDIUM needed: update_readings() has deep call chain + multiple char[255] buffers
-    xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_SMALL, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_SMALL, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(api_manager_t, "API Manager", TASK_STACK_MEDIUM, NULL, 1, NULL, 1); // HTTPS - replaces 7 API tasks + OTA check
+    xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_SMALL, nullptr, 1, nullptr, 1);
+    xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_SMALL, nullptr, 1, nullptr, 1);
+    xTaskCreatePinnedToCore(api_manager_t, "API Manager", TASK_STACK_MEDIUM, nullptr, 1, nullptr, 1); // HTTPS - replaces 7 API tasks + OTA check
 }
 
 void loop() {
@@ -409,7 +409,7 @@ void loop() {
 
 // Colors a status indicator green if data is fresh, red if it exceeds maxAgeSec.
 static void setStatusColor(lv_obj_t* label, time_t updateTime, int maxAgeSec) {
-    bool stale = (time(NULL) - updateTime) > maxAgeSec;
+    bool stale = (time(nullptr) - updateTime) > maxAgeSec;
     lv_obj_set_style_text_color(label, lv_color_hex(stale ? COLOR_RED : COLOR_GREEN), LV_PART_MAIN);
 }
 
@@ -573,9 +573,9 @@ static void adjustDayNightMode() {
 }
 
 void invalidateOldReadings() {
-    if (time(NULL) > TIME_SYNC_THRESHOLD) {
+    if (time(nullptr) > TIME_SYNC_THRESHOLD) {
         for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
-            if ((time(NULL) > readings[i].lastMessageTime + (MAX_NO_MESSAGE_SEC)) && (readings[i].readingState != ReadingState::NO_DATA)) {
+            if ((time(nullptr) > readings[i].lastMessageTime + (MAX_NO_MESSAGE_SEC)) && (readings[i].readingState != ReadingState::NO_DATA)) {
                 readings[i].readingState = ReadingState::NO_DATA;
                 snprintf(readings[i].output, sizeof(readings[i].output), NO_READING);
                 readings[i].currentValue = 0.0;

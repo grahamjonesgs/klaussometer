@@ -13,7 +13,7 @@ static void publishMessageInternal(const char* messageBuffer, const char* filena
     Serial.println(messageBuffer);
 
     // Queue SD card write (non-blocking)
-    if (sdLogQueue != NULL) {
+    if (sdLogQueue != nullptr) {
         SDLogMessage logMsg;
         snprintf(logMsg.message, CHAR_LEN, "%s", messageBuffer);
         snprintf(logMsg.filename, sizeof(logMsg.filename), "%s", filename);

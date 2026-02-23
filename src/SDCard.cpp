@@ -6,10 +6,10 @@ QueueHandle_t sdLogQueue;
 void sdcard_init() {
     sdLogQueue = xQueueCreate(20, sizeof(SDLogMessage));
     sdMutex = xSemaphoreCreateMutex();
-    if (sdLogQueue == NULL) {
+    if (sdLogQueue == nullptr) {
         Serial.println("Error: Failed to create SD log queue");
     }
-    if (sdMutex == NULL) {
+    if (sdMutex == nullptr) {
         Serial.println("Error: Failed to create SD mutex! Restarting...");
         delay(1000);
         esp_restart();
@@ -140,7 +140,7 @@ bool loadDataBlock(const char* filename, void* data_ptr, size_t expected_size) {
 }
 
 void addLogToSDCard(const char* message, const char* logFilename) {
-    if (message == NULL || strlen(message) == 0) {
+    if (message == nullptr || strlen(message) == 0) {
         return;
     }
 
@@ -238,7 +238,7 @@ void addLogToSDCard(const char* message, const char* logFilename) {
     // Append new log entry
     File logFile = SD_MMC.open(logFilename, FILE_APPEND);
     if (logFile) {
-        time_t now = time(NULL);
+        time_t now = time(nullptr);
         char logLine[CHAR_LEN + 50];
         snprintf(logLine, sizeof(logLine), "%ld|%s\n", now, message);
         logFile.print(logLine);
@@ -445,7 +445,7 @@ void sdcard_logger_t(void* pvParameters) {
         if (millis() - lastHwmLog > 3600000UL) {
             lastHwmLog = millis();
             char hwm_msg[CHAR_LEN];
-            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: SD Logger %u words", uxTaskGetStackHighWaterMark(NULL));
+            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: SD Logger %u words", uxTaskGetStackHighWaterMark(nullptr));
             logAndPublish(hwm_msg);
         }
     }

@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <time.h>
 
-#define STORED_READING 6
+static constexpr int STORED_READING = 6;
 // clang-format off
 #define READINGS_ARRAY                                                                                                                    \
         {"Cave",        "cave/tempset-ambient/set",        NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0}, \
@@ -24,7 +24,7 @@
         {"Outside",     "outside/battery/set",             NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_BATTERY,     0, 0}
 // clang-format on
 
-#define ROOM_COUNT 5
+static constexpr int ROOM_COUNT = 5;
 #define ROOM_NAME_LABELS {&ui_RoomName1, &ui_RoomName2, &ui_RoomName3, &ui_RoomName4, &ui_RoomName5}
 #define TEMP_ARC_LABELS {&ui_TempArc1, &ui_TempArc2, &ui_TempArc3, &ui_TempArc4, &ui_TempArc5}
 #define TEMP_LABELS {&ui_TempLabel1, &ui_TempLabel2, &ui_TempLabel3, &ui_TempLabel4, &ui_TempLabel5}
@@ -51,8 +51,8 @@
 }
 // clang-format on
 
-static const char* LOG_TOPIC = "klaussometer/log";
-static const char* ERROR_TOPIC = "klaussometer/error";
+static const char* const LOG_TOPIC = "klaussometer/log";
+static const char* const ERROR_TOPIC = "klaussometer/error";
 
 static const int CHAR_LEN = 255;
 #define NO_READING "--"
@@ -67,12 +67,12 @@ static const char CHAR_BATTERY_BAD = ',';      // Based on battery2 font
 static const char CHAR_BATTERY_CRITICAL = '>'; // Based on battery2 font
 
 // Phosphor WiFi icons
-static const char* WIFI_HIGH = "\xEE\x93\xAA";   // U+E4EA
-static const char* WIFI_MEDIUM = "\xEE\x93\xAE"; // U+E4EE
-static const char* WIFI_LOW = "\xEE\x93\xAC";    // U+E4EC
-static const char* WIFI_NONE = "\xEE\x93\xB0";   // U+E4F0
-static const char* WIFI_SLASH = "\xEE\x93\xB2";  // U+E4F2
-static const char* WIFI_X = "\xEE\x93\xB4";      // U+E4F4
+static const char* const WIFI_HIGH = "\xEE\x93\xAA";   // U+E4EA
+static const char* const WIFI_MEDIUM = "\xEE\x93\xAE"; // U+E4EE
+static const char* const WIFI_LOW = "\xEE\x93\xAC";    // U+E4EC
+static const char* const WIFI_NONE = "\xEE\x93\xB0";   // U+E4F0
+static const char* const WIFI_SLASH = "\xEE\x93\xB2";  // U+E4F2
+static const char* const WIFI_X = "\xEE\x93\xB4";      // U+E4F4
 
 // WiFi signal strength thresholds (RSSI in dBm)
 static const int WIFI_RSSI_HIGH = -50;   // Excellent signal
@@ -226,22 +226,19 @@ static const float MAX_BRIGHTNESS = 1.0;
 static const float MIN_BRIGHTNESS = 0.1;
 
 // microSD card
-#define PIN_SD_CMD 11
-#define PIN_SD_CLK 12
-#define PIN_SD_D0 13
 static const int SD_CS_PIN = 5;
-static const char* SOLAR_DATA_FILENAME = "/solar_data.bin";
-static const char* SOLAR_TOKEN_FILENAME = "/solar_token.bin";
-static const char* WEATHER_DATA_FILENAME = "/weather_data.bin";
-static const char* UV_DATA_FILENAME = "/uv_data.bin";
-static const char* READINGS_DATA_FILENAME = "/readings_data.bin";
-static const char* AIR_QUALITY_DATA_FILENAME = "/air_quality_data.bin";
-static const char* NORMAL_LOG_FILENAME = "/normal_log.txt";
-static const char* ERROR_LOG_FILENAME = "/error_log.txt";
+static const char* const SOLAR_DATA_FILENAME = "/solar_data.bin";
+static const char* const SOLAR_TOKEN_FILENAME = "/solar_token.bin";
+static const char* const WEATHER_DATA_FILENAME = "/weather_data.bin";
+static const char* const UV_DATA_FILENAME = "/uv_data.bin";
+static const char* const READINGS_DATA_FILENAME = "/readings_data.bin";
+static const char* const AIR_QUALITY_DATA_FILENAME = "/air_quality_data.bin";
+static const char* const NORMAL_LOG_FILENAME = "/normal_log.txt";
+static const char* const ERROR_LOG_FILENAME = "/error_log.txt";
 
 // Log settings
-#define MAX_LOG_FILE_SIZE (1024 * 1024) // 1MB max per log file
-#define MAX_LOG_ENTRIES_TO_READ 500     // Max entries to read when displaying logs
+static constexpr int MAX_LOG_FILE_SIZE = 1024 * 1024; // 1MB max per log file
+static constexpr int MAX_LOG_ENTRIES_TO_READ = 500;   // Max entries to read when displaying logs
 
 // FreeRTOS task stack sizes (in bytes)
 static const int TASK_STACK_SMALL = 4096;  // For simple tasks like SD logger

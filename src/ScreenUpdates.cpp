@@ -198,7 +198,7 @@ void displayStatusMessages_t(void* pvParameters) {
         if (millis() - lastHwmLog > 3600000UL) {
             lastHwmLog = millis();
             char hwm_msg[CHAR_LEN];
-            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: Display Status %u words", uxTaskGetStackHighWaterMark(NULL));
+            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: Display Status %u words", uxTaskGetStackHighWaterMark(nullptr));
             logAndPublish(hwm_msg);
         }
     }

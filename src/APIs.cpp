@@ -37,7 +37,7 @@ static int getBackoffDelay(int failCount) {
 }
 
 static bool canRetry(ApiBackoff& state) {
-    return time(NULL) >= state.nextRetryTime;
+    return time(nullptr) >= state.nextRetryTime;
 }
 
 static void resetBackoff(ApiBackoff& state) {
@@ -47,7 +47,7 @@ static void resetBackoff(ApiBackoff& state) {
 
 static void applyBackoff(ApiBackoff& state) {
     state.failCount++;
-    state.nextRetryTime = time(NULL) + getBackoffDelay(state.failCount);
+    state.nextRetryTime = time(nullptr) + getBackoffDelay(state.failCount);
 }
 
 // Logs an HTTP error with a consistent "[HTTP] <label> failed, error: <code>" format.
@@ -89,14 +89,14 @@ static bool fetch_uv() {
             deserializeJson(root, payload_buffer);
             float UV = root["data"][0]["uv"];
             uv.index = UV;
-            uv.updateTime = time(NULL);
+            uv.updateTime = time(nullptr);
             dirty_uv = true;
             logAndPublish("UV updated");
             strftime(uv.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
             saveDataBlock(UV_DATA_FILENAME, &uv, sizeof(uv));
         } else {
             logAndPublish("UV update failed: Payload read error");
-            uv.updateTime = time(NULL); // Prevents constant calls if the API is down
+            uv.updateTime = time(nullptr); // Prevents constant calls if the API is down
         }
         http.end();
         return true;
@@ -147,7 +147,7 @@ static bool fetch_weather() {
             snprintf(weather.description, CHAR_LEN, "%s", wmoToText(weatherCode, weatherIsDay));
             snprintf(weather.windDir, CHAR_LEN, "%s", degreesToDirection(weatherWindDir));
 
-            weather.updateTime = time(NULL);
+            weather.updateTime = time(nullptr);
             dirty_weather = true;
             strftime(weather.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
             logAndPublish("Weather updated");
@@ -190,7 +190,7 @@ static bool fetch_air_quality() {
             airQuality.ozone = root["current"]["ozone"];
             airQuality.european_aqi = root["current"]["european_aqi"];
 
-            airQuality.updateTime = time(NULL);
+            airQuality.updateTime = time(nullptr);
             dirty_weather = true;
             strftime(airQuality.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
             char log_message[CHAR_LEN];
@@ -231,7 +231,7 @@ static void fetch_solar_token() {
             if (root["access_token"].is<const char*>()) {
                 const char* rec_token = root["access_token"];
                 snprintf(solarToken.token, sizeof(solarToken.token), "bearer %s", rec_token);
-                solarToken.tokenTime = time(NULL);
+                solarToken.tokenTime = time(nullptr);
                 char log_message2[CHAR_LEN];
                 snprintf(log_message2, CHAR_LEN, "Solar token obtained, raw=%zu, stored=%zu", strlen(rec_token), strlen(solarToken.token));
                 logAndPublish(log_message2);
@@ -287,7 +287,7 @@ static bool fetch_current_solar() {
                 // rec_time += TIME_OFFSET;
                 localtime_r(&rec_time, &ts);
                 strftime(time_buf, sizeof(time_buf), "%H:%M:%S", &ts);
-                solar.currentUpdateTime = time(NULL);
+                solar.currentUpdateTime = time(nullptr);
                 solar.solarPower = rec_solarPower / 1000;
                 solar.batteryPower = rec_batteryPower / 1000;
                 solar.usingPower = rec_usingPower / 1000;
@@ -365,7 +365,7 @@ static bool fetch_daily_solar() {
 
     char currentDate[CHAR_LEN];
 
-    time_t now_time = time(NULL);
+    time_t now_time = time(nullptr);
     struct tm CurrentTimeInfo;
     localtime_r(&now_time, &CurrentTimeInfo);
 
@@ -393,7 +393,7 @@ static bool fetch_daily_solar() {
                 solar.today_generation = root["stationDataItems"][0]["generationValue"];
                 dirty_solar = true;
                 logAndPublish("Solar today's values updated");
-                solar.dailyUpdateTime = time(NULL);
+                solar.dailyUpdateTime = time(nullptr);
                 saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
             } else {
                 logAndPublish("Solar today's values update failed: No success");
@@ -421,7 +421,7 @@ static bool fetch_monthly_solar() {
 
     char currentYearMonth[CHAR_LEN];
 
-    time_t now_time = time(NULL);
+    time_t now_time = time(nullptr);
     struct tm CurrentTimeInfo;
     localtime_r(&now_time, &CurrentTimeInfo);
 
@@ -447,7 +447,7 @@ static bool fetch_monthly_solar() {
                 solar.month_buy = root["stationDataItems"][0]["buyValue"];
                 solar.month_use = root["stationDataItems"][0]["useValue"];
                 solar.month_generation = root["stationDataItems"][0]["generationValue"];
-                solar.monthlyUpdateTime = time(NULL);
+                solar.monthlyUpdateTime = time(nullptr);
                 dirty_solar = true;
                 logAndPublish("Solar month's values updated");
                 saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
@@ -470,18 +470,18 @@ static bool fetch_monthly_solar() {
 
 // Consolidated API manager task - replaces 7 API tasks + OTA check task
 void api_manager_t(void* pvParameters) {
-    esp_task_wdt_add(NULL);
+    esp_task_wdt_add(nullptr);
 
     static time_t lastHwmLog = 0;
 
     while (true) {
         esp_task_wdt_reset();
-        time_t now = time(NULL);
+        time_t now = time(nullptr);
 
         if (now - lastHwmLog > 3600) {
             lastHwmLog = now;
             char hwm_msg[CHAR_LEN];
-            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: API Manager %u words", uxTaskGetStackHighWaterMark(NULL));
+            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: API Manager %u words", uxTaskGetStackHighWaterMark(nullptr));
             logAndPublish(hwm_msg);
         }
 
@@ -495,7 +495,7 @@ void api_manager_t(void* pvParameters) {
         if (!weather.isDay) {
             uv.index = 0.0;
             if (weather.updateTime > 0) {
-                uv.updateTime = time(NULL);
+                uv.updateTime = time(nullptr);
             }
             dirty_uv = true;
             strftime(uv.time_string, CHAR_LEN, "%H:%M:%S", &timeinfo);
@@ -586,7 +586,7 @@ int readChunkedPayload(WiFiClient* stream, char* buffer, size_t buffer_size) {
         }
 
         // Convert the hex string to an integer
-        long chunkSize = strtol(size_line_buffer, NULL, 16);
+        long chunkSize = strtol(size_line_buffer, nullptr, 16);
         if (chunkSize == 0)
             break; // End of chunks
 

@@ -4,7 +4,7 @@
 extern MqttClient mqttClient;
 extern SemaphoreHandle_t mqttMutex;
 extern Readings readings[];
-extern int numberOfReadings;
+extern const int numberOfReadings;
 
 // Track last logged value per reading (compared against to detect meaningful changes)
 // Using 20 as safe upper bound for number of readings (currently 15)
@@ -14,7 +14,7 @@ static bool hasLoggedBefore[20] = {false};
 // Get mqtt messages
 void receive_mqtt_messages_t(void* pvParams) {
     // Subscribe this task to the watchdog
-    esp_task_wdt_add(NULL);
+    esp_task_wdt_add(nullptr);
 
     int messageSize = 0;
     char topicBuffer[CHAR_LEN];
@@ -29,7 +29,7 @@ void receive_mqtt_messages_t(void* pvParams) {
         if (millis() - lastHwmLog > 3600000UL) {
             lastHwmLog = millis();
             char hwm_msg[CHAR_LEN];
-            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: MQTT Receive %u words", uxTaskGetStackHighWaterMark(NULL));
+            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: MQTT Receive %u words", uxTaskGetStackHighWaterMark(nullptr));
             logAndPublish(hwm_msg);
         }
 
@@ -227,7 +227,7 @@ void update_readings(char* recMessage, int index, int dataType) {
 
     readings[index].lastValue[readings[index].readingIndex] = readings[index].currentValue;
     readings[index].readingIndex++;
-    readings[index].lastMessageTime = time(NULL);
+    readings[index].lastMessageTime = time(nullptr);
     dirty_rooms = true;
 
     if (valueChanged) {

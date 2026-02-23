@@ -3,7 +3,7 @@
 
 extern MqttClient mqttClient;
 extern Readings readings[];
-extern int numberOfReadings;
+extern const int numberOfReadings;
 extern struct tm timeinfo;
 
 void setup_wifi() {
@@ -76,7 +76,7 @@ void time_init() {
 
 void connectivity_manager_t(void* pvParameters) {
     // Subscribe this task to the watchdog
-    esp_task_wdt_add(NULL);
+    esp_task_wdt_add(nullptr);
 
     bool wasDisconnected = false;
     int wifiFailCount = 0;
@@ -88,7 +88,7 @@ void connectivity_manager_t(void* pvParameters) {
         if (millis() - lastHwmLog > 3600000UL) {
             lastHwmLog = millis();
             char hwm_msg[CHAR_LEN];
-            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: Connectivity %u words", uxTaskGetStackHighWaterMark(NULL));
+            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: Connectivity %u words", uxTaskGetStackHighWaterMark(nullptr));
             logAndPublish(hwm_msg);
         }
 
