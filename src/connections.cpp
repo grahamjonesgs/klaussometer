@@ -87,9 +87,9 @@ void connectivity_manager_t(void* pvParameters) {
 
         if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
             lastHwmLog = millis();
-            char hwm_msg[CHAR_LEN];
-            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: Connectivity %u words", uxTaskGetStackHighWaterMark(nullptr));
-            logAndPublish(hwm_msg);
+            char hwmMsg[CHAR_LEN];
+            snprintf(hwmMsg, CHAR_LEN, "Stack HWM: Connectivity %u words", uxTaskGetStackHighWaterMark(nullptr));
+            logAndPublish(hwmMsg);
         }
 
         if (WiFi.status() != WL_CONNECTED) {

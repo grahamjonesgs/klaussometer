@@ -7,7 +7,7 @@ extern WebServer webServer;
 extern char macAddress[18];
 unsigned long lastOTAUpdateCheck = 0;
 extern HTTPClient http;
-extern char chip_id[CHAR_LEN];
+extern char chipId[CHAR_LEN];
 
 // Fetches the version file from the OTA server and compares it to FIRMWARE_VERSION.
 // If the server has a newer version, calls updateFirmware() immediately.
@@ -26,14 +26,14 @@ void checkForUpdates() {
         http.end();
         lastOTAUpdateCheck = time(NULL);
         if (compareVersions(serverVersion, FIRMWARE_VERSION) > 0) {
-            char log_message[CHAR_LEN];
-            snprintf(log_message, CHAR_LEN, "New firmware version available: %s (current: %s)", serverVersion.c_str(), FIRMWARE_VERSION);
-            logAndPublish(log_message);
+            char logMessage[CHAR_LEN];
+            snprintf(logMessage, CHAR_LEN, "New firmware version available: %s (current: %s)", serverVersion.c_str(), FIRMWARE_VERSION);
+            logAndPublish(logMessage);
             updateFirmware();
         } else {
-            char log_message[CHAR_LEN];
-            snprintf(log_message, CHAR_LEN, "Firmware version %s is up to date", FIRMWARE_VERSION);
-            logAndPublish(log_message);
+            char logMessage[CHAR_LEN];
+            snprintf(logMessage, CHAR_LEN, "Firmware version %s is up to date", FIRMWARE_VERSION);
+            logAndPublish(logMessage);
         }
     } else {
         logAndPublish("Error fetching version file");
@@ -75,9 +75,9 @@ void updateFirmware() {
 
                         int progress = (written * 100) / contentLength;
                         if (progress != lastProgress && progress % OTA_LOG_INTERVAL_PERCENT == 0) {
-                            char log_message[CHAR_LEN];
-                            snprintf(log_message, CHAR_LEN, "Download Progress: %d%%", progress);
-                            logAndPublish(log_message);
+                            char logMessage[CHAR_LEN];
+                            snprintf(logMessage, CHAR_LEN, "Download Progress: %d%%", progress);
+                            logAndPublish(logMessage);
                             lastProgress = progress;
                         }
                     }
@@ -88,18 +88,18 @@ void updateFirmware() {
             if (written == contentLength) {
                 logAndPublish("OTA update written successfully");
             } else {
-                char log_message[CHAR_LEN];
-                snprintf(log_message, CHAR_LEN, "OTA incomplete: %d/%d bytes", written, contentLength);
-                logAndPublish(log_message);
+                char logMessage[CHAR_LEN];
+                snprintf(logMessage, CHAR_LEN, "OTA incomplete: %d/%d bytes", written, contentLength);
+                logAndPublish(logMessage);
             }
 
             if (Update.end()) {
                 logAndPublish("Update finished successfully. Restarting");
                 ESP.restart();
             } else {
-                char log_message[CHAR_LEN];
-                snprintf(log_message, CHAR_LEN, "Update failed. Error: %s", Update.errorString());
-                logAndPublish(log_message);
+                char logMessage[CHAR_LEN];
+                snprintf(logMessage, CHAR_LEN, "Update failed. Error: %s", Update.errorString());
+                logAndPublish(logMessage);
             }
         } else {
             logAndPublish("Not enough space to start OTA update");
@@ -150,7 +150,7 @@ void setup_web_server() {
                          String(macAddress) +
                          "</td></tr>"
                          "<tr><td><b>Chip ID:</b></td><td>" +
-                         String(chip_id) +
+                         String(chipId) +
                          "</td></tr>"
                          "<tr><td><b>IP Address:</b></td><td>" +
                          WiFi.localIP().toString() +

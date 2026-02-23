@@ -20,21 +20,21 @@ void sdcard_init() {
 static int normalLogLineCount = -1; // -1 means not yet initialized
 static int errorLogLineCount = -1;
 
-bool saveDataBlock(const char* filename, const void* data_ptr, size_t size) {
+bool saveDataBlock(const char* filename, const void* dataPtr, size_t size) {
     if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
         return false;
     }
 
     DataHeader header;
     header.size = size;
-    header.checksum = calculateChecksum(data_ptr, size);
+    header.checksum = calculateChecksum(dataPtr, size);
 
     File dataFile = SD_MMC.open(filename, FILE_WRITE);
 
     if (!dataFile) {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, sizeof(log_message), "Error opening file %s for writing", filename);
-        logAndPublish(log_message);
+        char logMessage[CHAR_LEN];
+        snprintf(logMessage, sizeof(logMessage), "Error opening file %s for writing", filename);
+        logAndPublish(logMessage);
         SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0);
         if (!SD_MMC.begin("/sdcard", true, true)) {
             logAndPublish("SD Card initialization failed!");
@@ -48,46 +48,46 @@ bool saveDataBlock(const char* filename, const void* data_ptr, size_t size) {
     // 2. Write the header first
     size_t headerWritten = dataFile.write((const uint8_t*)&header, sizeof(DataHeader));
     if (headerWritten != sizeof(DataHeader)) {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, sizeof(log_message), "Failed to write header to %s", filename);
-        logAndPublish(log_message);
+        char logMessage[CHAR_LEN];
+        snprintf(logMessage, sizeof(logMessage), "Failed to write header to %s", filename);
+        logAndPublish(logMessage);
         dataFile.close();
         xSemaphoreGive(sdMutex);
         return false;
     }
 
-    size_t bytesWritten = dataFile.write((const uint8_t*)data_ptr, size);
+    size_t bytesWritten = dataFile.write((const uint8_t*)dataPtr, size);
     dataFile.close();
     xSemaphoreGive(sdMutex);
 
     if (bytesWritten == size) {
         return true;
     } else {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, sizeof(log_message), "Failed to write all data. Wrote %zu of %zu data bytes to %s", bytesWritten, size, filename);
-        logAndPublish(log_message);
+        char logMessage[CHAR_LEN];
+        snprintf(logMessage, sizeof(logMessage), "Failed to write all data. Wrote %zu of %zu data bytes to %s", bytesWritten, size, filename);
+        logAndPublish(logMessage);
         return false;
     }
 }
 
-bool loadDataBlock(const char* filename, void* data_ptr, size_t expected_size) {
+bool loadDataBlock(const char* filename, void* dataPtr, size_t expected_size) {
     if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
         return false;
     }
 
     if (!SD_MMC.exists(filename)) {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, sizeof(log_message), "File %s does not exist", filename);
-        logAndPublish(log_message);
+        char logMessage[CHAR_LEN];
+        snprintf(logMessage, sizeof(logMessage), "File %s does not exist", filename);
+        logAndPublish(logMessage);
         xSemaphoreGive(sdMutex);
         return false;
     }
 
     File dataFile = SD_MMC.open(filename, FILE_READ);
     if (!dataFile) {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, sizeof(log_message), "Error opening file %s for reading", filename);
-        logAndPublish(log_message);
+        char logMessage[CHAR_LEN];
+        snprintf(logMessage, sizeof(logMessage), "Error opening file %s for reading", filename);
+        logAndPublish(logMessage);
         xSemaphoreGive(sdMutex);
         return false;
     }
@@ -97,9 +97,9 @@ bool loadDataBlock(const char* filename, void* data_ptr, size_t expected_size) {
     size_t headerRead = dataFile.readBytes((char*)&header, sizeof(DataHeader));
 
     if (headerRead != sizeof(DataHeader)) {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, sizeof(log_message), "Failed to read header from %s. Expected %zu bytes", filename, sizeof(DataHeader));
-        logAndPublish(log_message);
+        char logMessage[CHAR_LEN];
+        snprintf(logMessage, sizeof(logMessage), "Failed to read header from %s. Expected %zu bytes", filename, sizeof(DataHeader));
+        logAndPublish(logMessage);
         dataFile.close();
         xSemaphoreGive(sdMutex);
         return false;
@@ -107,33 +107,33 @@ bool loadDataBlock(const char* filename, void* data_ptr, size_t expected_size) {
 
     // 2. Verify file size consistency
     if (header.size != expected_size) {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, sizeof(log_message), "Data size mismatch in %s. File header says %zu bytes, but struct expects %zu bytes", filename, header.size, expected_size);
-        logAndPublish(log_message);
+        char logMessage[CHAR_LEN];
+        snprintf(logMessage, sizeof(logMessage), "Data size mismatch in %s. File header says %zu bytes, but struct expects %zu bytes", filename, header.size, expected_size);
+        logAndPublish(logMessage);
         dataFile.close();
         xSemaphoreGive(sdMutex);
         return false;
     }
 
     // 3. Read the raw data block directly into the target memory
-    size_t bytesRead = dataFile.readBytes((char*)data_ptr, expected_size);
+    size_t bytesRead = dataFile.readBytes((char*)dataPtr, expected_size);
     dataFile.close();
     xSemaphoreGive(sdMutex);
 
     if (bytesRead != expected_size) {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, sizeof(log_message), "Failed to read all data from %s. Read %zu of %zu bytes", filename, bytesRead, expected_size);
-        logAndPublish(log_message);
+        char logMessage[CHAR_LEN];
+        snprintf(logMessage, sizeof(logMessage), "Failed to read all data from %s. Read %zu of %zu bytes", filename, bytesRead, expected_size);
+        logAndPublish(logMessage);
         return false;
     }
 
     // 4. Verify integrity
-    uint8_t calculated = calculateChecksum(data_ptr, expected_size);
+    uint8_t calculated = calculateChecksum(dataPtr, expected_size);
 
     if (header.checksum != calculated) {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, sizeof(log_message), "Checksum failed for %s! Loaded: %02X, Calculated: %02X", filename, header.checksum, calculated);
-        logAndPublish(log_message);
+        char logMessage[CHAR_LEN];
+        snprintf(logMessage, sizeof(logMessage), "Checksum failed for %s! Loaded: %02X, Calculated: %02X", filename, header.checksum, calculated);
+        logAndPublish(logMessage);
         return false;
     }
     return true;
@@ -444,9 +444,9 @@ void sdcard_logger_t(void* pvParameters) {
         }
         if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
             lastHwmLog = millis();
-            char hwm_msg[CHAR_LEN];
-            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: SD Logger %u words", uxTaskGetStackHighWaterMark(nullptr));
-            logAndPublish(hwm_msg);
+            char hwmMsg[CHAR_LEN];
+            snprintf(hwmMsg, CHAR_LEN, "Stack HWM: SD Logger %u words", uxTaskGetStackHighWaterMark(nullptr));
+            logAndPublish(hwmMsg);
         }
     }
 }

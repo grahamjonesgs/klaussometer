@@ -38,7 +38,7 @@ void pin_init();
 void touch_init();
 void my_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
 void touch_read(lv_indev_t* indev, lv_indev_data_t* data);
-void getBatteryStatus(float batteryValue, int readingIndex, char* iconCharacterPtr, lv_color_t* colorPtr);
+void getBatteryStatus(float batteryValue, int readingIndex, char* iconChar, lv_color_t* colorPtr);
 void invalidateOldReadings();
 static void setStatusColor(lv_obj_t* label, time_t updateTime, int maxAgeSec);
 static void updateRoomDisplay();
@@ -58,9 +58,9 @@ Readings readings[]{READINGS_ARRAY};
 Preferences storage;
 extern const int numberOfReadings = sizeof(readings) / sizeof(readings[0]);
 QueueHandle_t statusMessageQueue;
-char log_topic[CHAR_LEN];
-char error_topic[CHAR_LEN];
-char chip_id[CHAR_LEN];
+char logTopic[CHAR_LEN];
+char errorTopic[CHAR_LEN];
+char chipId[CHAR_LEN];
 char macAddress[18]; // "AA:BB:CC:DD:EE:FF" + null
 
 // Status messages
@@ -92,7 +92,7 @@ int touch_last_y = 0;
 static uint32_t screenWidth = LCD_WIDTH;
 static uint32_t screenHeight = LCD_HEIGHT;
 static lv_display_t* disp = nullptr;
-static lv_color_t* disp_draw_buf;
+static lv_color_t* dispDrawBuf;
 
 // Arrays of UI objects
 static lv_obj_t** roomNames[ROOM_COUNT] = ROOM_NAME_LABELS;
@@ -122,8 +122,8 @@ void shutdown_handler(void) {
 void setup() {
     Serial.begin(115200);
     esp_log_level_set("ssl_client", ESP_LOG_WARN);
-    snprintf(chip_id, CHAR_LEN, "%04llx", ESP.getEfuseMac() & CHIP_ID_MASK);
-    Serial.printf("Starting Klaussometer Display %s\n", chip_id);
+    snprintf(chipId, CHAR_LEN, "%04llx", ESP.getEfuseMac() & CHIP_ID_MASK);
+    Serial.printf("Starting Klaussometer Display %s\n", chipId);
 
     // Log reset reason to help diagnose watchdog issues
     esp_reset_reason_t reason = esp_reset_reason();
@@ -224,8 +224,8 @@ void setup() {
 
     // Add unique topics for MQTT logging
     WiFi.macAddress().toCharArray(macAddress, sizeof(macAddress));
-    snprintf(log_topic, CHAR_LEN, "klaussometer/%s/log", chip_id);
-    snprintf(error_topic, CHAR_LEN, "klaussometer/%s/error", chip_id);
+    snprintf(logTopic, CHAR_LEN, "klaussometer/%s/log", chipId);
+    snprintf(errorTopic, CHAR_LEN, "klaussometer/%s/error", chipId);
 
     // Init Display
     pin_init();
@@ -244,12 +244,12 @@ void setup() {
     // Allocate display buffer
     size_t bufferSize = sizeof(lv_color_t) * screenWidth * DISPLAY_BUFFER_LINES;
 
-    disp_draw_buf = (lv_color_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!disp_draw_buf) {
-        disp_draw_buf = (lv_color_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    dispDrawBuf = (lv_color_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!dispDrawBuf) {
+        dispDrawBuf = (lv_color_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
 
-    if (!disp_draw_buf) {
+    if (!dispDrawBuf) {
         Serial.println("ERROR: Display buffer allocation FAILED! Restarting...");
         delay(1000);
         esp_restart();
@@ -263,7 +263,7 @@ void setup() {
         esp_restart();
     }
     lv_display_set_flush_cb(disp, my_disp_flush);
-    lv_display_set_buffers(disp, disp_draw_buf, nullptr, bufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(disp, dispDrawBuf, nullptr, bufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
     ui_init();
 
     // Set initial UI values
@@ -338,13 +338,13 @@ void setup() {
 
     // Get old battery min and max
     storage.begin("KO");
-    solar.today_battery_min = storage.getFloat("solarmin");
-    if (isnan(solar.today_battery_min)) {
-        solar.today_battery_min = 100;
+    solar.todayBatteryMin = storage.getFloat("solarmin");
+    if (isnan(solar.todayBatteryMin)) {
+        solar.todayBatteryMin = 100;
     }
-    solar.today_battery_max = storage.getFloat("solarmax");
-    if (isnan(solar.today_battery_max)) {
-        solar.today_battery_max = 0;
+    solar.todayBatteryMax = storage.getFloat("solarmax");
+    if (isnan(solar.todayBatteryMax)) {
+        solar.todayBatteryMax = 0;
     }
     storage.end();
 
@@ -455,7 +455,7 @@ static void updateUVDisplay() {
     if (uv.updateTime > 0) {
         lv_obj_clear_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
         if (weather.isDay) {
-            snprintf(tempString, CHAR_LEN, "Updated %s", uv.time_string);
+            snprintf(tempString, CHAR_LEN, "Updated %s", uv.timeString);
         } else {
             tempString[0] = '\0';
         }
@@ -463,8 +463,8 @@ static void updateUVDisplay() {
         snprintf(tempString, CHAR_LEN, "%i", uv.index);
         lv_label_set_text(ui_UVLabel, tempString);
         lv_arc_set_value(ui_UVArc, uv.index * 10);
-        lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(uv_color(uv.index)), LV_PART_INDICATOR | LV_STATE_DEFAULT);
-        lv_obj_set_style_bg_color(ui_UVArc, lv_color_hex(uv_color(uv.index)), LV_PART_KNOB | LV_STATE_DEFAULT);
+        lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(uvColor(uv.index)), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(ui_UVArc, lv_color_hex(uvColor(uv.index)), LV_PART_KNOB | LV_STATE_DEFAULT);
     }
 }
 
@@ -476,15 +476,15 @@ static void updateWeatherDisplay() {
     char tempString[CHAR_LEN];
     if (weather.updateTime > 0) {
         lv_label_set_text(ui_FCConditions, weather.description);
-        snprintf(tempString, CHAR_LEN, "Updated %s", weather.time_string);
+        snprintf(tempString, CHAR_LEN, "Updated %s", weather.timeString);
         lv_label_set_text(ui_FCUpdateTime, tempString);
         snprintf(tempString, CHAR_LEN, "Wind %2.0f km/h %s", weather.windSpeed, weather.windDir);
         lv_label_set_text(ui_FCWindSpeed, tempString);
         if (airQuality.updateTime > 0) {
-            const char* aqiRating = getAQIRating(airQuality.european_aqi);
-            snprintf(tempString, CHAR_LEN, "AQI: %d %s", airQuality.european_aqi, aqiRating);
+            const char* aqiRating = getAQIRating(airQuality.europeanAqi);
+            snprintf(tempString, CHAR_LEN, "AQI: %d %s", airQuality.europeanAqi, aqiRating);
             lv_label_set_text(ui_FCAQI, tempString);
-            snprintf(tempString, CHAR_LEN, "AQI Updated %s", airQuality.time_string);
+            snprintf(tempString, CHAR_LEN, "AQI Updated %s", airQuality.timeString);
             lv_label_set_text(ui_FCAQIUpdateTime, tempString);
         }
         lv_arc_set_value(ui_TempArcFC, weather.temperature);
@@ -544,9 +544,9 @@ static void updatePeriodicStatus(unsigned long currentMillis) {
     }
 
     if (WiFi.status() == WL_CONNECTED) {
-        snprintf(tempString, CHAR_LEN, "IP: %s | Chip ID: %s | Firmware: V%s", WiFi.localIP().toString().c_str(), chip_id, FIRMWARE_VERSION);
+        snprintf(tempString, CHAR_LEN, "IP: %s | Chip ID: %s | Firmware: V%s", WiFi.localIP().toString().c_str(), chipId, FIRMWARE_VERSION);
     } else {
-        snprintf(tempString, CHAR_LEN, "Chip ID: %s | Firmware: V%s", chip_id, FIRMWARE_VERSION);
+        snprintf(tempString, CHAR_LEN, "Chip ID: %s | Firmware: V%s", chipId, FIRMWARE_VERSION);
     }
     lv_label_set_text(ui_Version, tempString);
 }
@@ -665,25 +665,25 @@ void touch_read(lv_indev_t* indev, lv_indev_data_t* data) {
     }
 }
 
-void getBatteryStatus(float batteryValue, int readingIndex, char* iconCharacterPtr, lv_color_t* colorPtr) {
+void getBatteryStatus(float batteryValue, int readingIndex, char* iconChar, lv_color_t* colorPtr) {
     if (batteryValue > BATTERY_OK) {
         // Battery is ok
-        *iconCharacterPtr = CHAR_BATTERY_GOOD;
+        *iconChar = CHAR_BATTERY_GOOD;
         *colorPtr = lv_color_hex(COLOR_GREEN);
     } else if (batteryValue > BATTERY_BAD) {
         // Battery is ok
-        *iconCharacterPtr = CHAR_BATTERY_OK;
+        *iconChar = CHAR_BATTERY_OK;
         *colorPtr = lv_color_hex(COLOR_GREEN);
     } else if (batteryValue > BATTERY_CRITICAL) {
         // Battery is low, but not critical
-        *iconCharacterPtr = CHAR_BATTERY_BAD;
+        *iconChar = CHAR_BATTERY_BAD;
         *colorPtr = lv_color_hex(COLOR_YELLOW);
     } else if (batteryValue > 0.0) {
         // Battery is critical
-        *iconCharacterPtr = CHAR_BATTERY_CRITICAL;
+        *iconChar = CHAR_BATTERY_CRITICAL;
         *colorPtr = lv_color_hex(COLOR_RED);
     } else {
-        *iconCharacterPtr = CHAR_BLANK;
+        *iconChar = CHAR_BLANK;
         *colorPtr = lv_color_hex(COLOR_GREEN);
     }
 }

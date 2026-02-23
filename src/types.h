@@ -26,7 +26,7 @@ struct __attribute__((packed)) Readings {
     float currentValue;
     float lastValue[STORED_READING];
     ReadingState readingState;
-    bool enoughData;
+    bool hasEnoughData;
     int dataType;
     int readingIndex;
     time_t lastMessageTime;
@@ -41,22 +41,22 @@ struct __attribute__((packed)) Weather {
     time_t updateTime;
     char windDir[CHAR_LEN];
     char description[CHAR_LEN];
-    char time_string[CHAR_LEN];
+    char timeString[CHAR_LEN];
 };
 
 struct __attribute__((packed)) UV {
     int index;
     time_t updateTime;
-    char time_string[CHAR_LEN];
+    char timeString[CHAR_LEN];
 };
 
 struct __attribute__((packed)) AirQuality {
     float pm10;
-    float pm2_5;
+    float pm25; // PM2.5 particulate matter (µg/m³)
     float ozone;
-    int european_aqi;
+    int europeanAqi;
     time_t updateTime;
-    char time_string[CHAR_LEN];
+    char timeString[CHAR_LEN];
 };
 
 struct __attribute__((packed)) Solar {
@@ -69,15 +69,15 @@ struct __attribute__((packed)) Solar {
     float batteryPower;
     float solarPower;
     char time[CHAR_LEN];
-    float today_battery_min;
-    float today_battery_max;
-    bool minmax_reset;
-    float today_buy;
-    float today_use;
-    float today_generation;
-    float month_buy;
-    float month_use;
-    float month_generation;
+    float todayBatteryMin;
+    float todayBatteryMax;
+    bool isMinMaxReset;
+    float todayBuy;
+    float todayUse;
+    float todayGeneration;
+    float monthBuy;
+    float monthUse;
+    float monthGeneration;
 };
 
 // Stored separately to avoid writing 2 KB on every solar data update.
@@ -93,7 +93,7 @@ struct __attribute__((packed)) DataHeader {
 
 struct StatusMessage {
     char text[CHAR_LEN];
-    int duration_s;
+    int durationSec;
 };
 
 struct SDLogMessage {

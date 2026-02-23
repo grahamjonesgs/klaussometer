@@ -5,8 +5,8 @@
 extern QueueHandle_t statusMessageQueue;
 extern MqttClient mqttClient;
 extern SemaphoreHandle_t mqttMutex;
-extern char log_topic[CHAR_LEN];
-extern char error_topic[CHAR_LEN];
+extern char logTopic[CHAR_LEN];
+extern char errorTopic[CHAR_LEN];
 
 // Shared implementation: serial print, queued SD write, and non-blocking MQTT publish.
 static void publishMessageInternal(const char* messageBuffer, const char* filename, const char* topic, bool retained) {
@@ -34,14 +34,14 @@ static void publishMessageInternal(const char* messageBuffer, const char* filena
 }
 
 void logAndPublish(const char* messageBuffer) {
-    publishMessageInternal(messageBuffer, NORMAL_LOG_FILENAME, log_topic, false);
+    publishMessageInternal(messageBuffer, NORMAL_LOG_FILENAME, logTopic, false);
 
     StatusMessage msg;
     snprintf(msg.text, CHAR_LEN, "%s", messageBuffer);
-    msg.duration_s = STATUS_MESSAGE_TIME;
+    msg.durationSec = STATUS_MESSAGE_TIME;
     xQueueSend(statusMessageQueue, &msg, 0); // Don't block if queue is full
 }
 
 void errorPublish(const char* messageBuffer) {
-    publishMessageInternal(messageBuffer, ERROR_LOG_FILENAME, error_topic, true);
+    publishMessageInternal(messageBuffer, ERROR_LOG_FILENAME, errorTopic, true);
 }

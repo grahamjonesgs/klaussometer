@@ -5,7 +5,7 @@
 #include <ArduinoMqttClient.h>
 #include <WiFi.h>
 
-void receive_mqtt_messages_t(void* pvParams);
+void receive_mqtt_messages_t(void* pvParameters);
 void update_readings(char* recMessage, int index, int dataType);
 char* toLowercase(const char* source, char* buffer, size_t bufferSize);
 

@@ -11,7 +11,7 @@ static float lastLoggedValue[MAX_READINGS] = {0};
 static bool hasLoggedBefore[MAX_READINGS] = {false};
 
 // Get mqtt messages
-void receive_mqtt_messages_t(void* pvParams) {
+void receive_mqtt_messages_t(void* pvParameters) {
     // Subscribe this task to the watchdog
     esp_task_wdt_add(nullptr);
 
@@ -27,9 +27,9 @@ void receive_mqtt_messages_t(void* pvParams) {
 
         if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
             lastHwmLog = millis();
-            char hwm_msg[CHAR_LEN];
-            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: MQTT Receive %u words", uxTaskGetStackHighWaterMark(nullptr));
-            logAndPublish(hwm_msg);
+            char hwmMsg[CHAR_LEN];
+            snprintf(hwmMsg, CHAR_LEN, "Stack HWM: MQTT Receive %u words", uxTaskGetStackHighWaterMark(nullptr));
+            logAndPublish(hwmMsg);
         }
 
         // Reconnect if necessary
@@ -65,17 +65,17 @@ void receive_mqtt_messages_t(void* pvParams) {
                 xSemaphoreGive(mqttMutex);
 
                 if (bytesRead != messageSize) {
-                    char log_msg[CHAR_LEN];
-                    snprintf(log_msg, CHAR_LEN, "MQTT read mismatch: expected %d, got %d", messageSize, bytesRead);
-                    logAndPublish(log_msg);
+                    char logMsg[CHAR_LEN];
+                    snprintf(logMsg, CHAR_LEN, "MQTT read mismatch: expected %d, got %d", messageSize, bytesRead);
+                    logAndPublish(logMsg);
                     continue;
                 }
 
                 // Additional validation - check if message is empty or just whitespace
                 if (messageSize == 0 || recMessage[0] == '\0') {
-                    char log_msg[CHAR_LEN];
-                    snprintf(log_msg, CHAR_LEN, "Empty MQTT message on topic: %s", topicBuffer);
-                    logAndPublish(log_msg);
+                    char logMsg[CHAR_LEN];
+                    snprintf(logMsg, CHAR_LEN, "Empty MQTT message on topic: %s", topicBuffer);
+                    logAndPublish(logMsg);
                     continue;
                 }
 
@@ -106,7 +106,7 @@ void receive_mqtt_messages_t(void* pvParams) {
 void update_readings(char* recMessage, int index, int dataType) {
     float averageHistory;
     float totalHistory = 0.0;
-    const char* log_message_suffix;
+    const char* logMessage_suffix;
     const char* format_string;
 
     // Validate numeric input before conversion
@@ -118,29 +118,29 @@ void update_readings(char* recMessage, int index, int dataType) {
     // so the endptr check alone does not catch these, and NaN comparisons always return false
     // so the range checks below would not catch NaN either.
     if (endptr == recMessage || *endptr != '\0' || isnan(parsedValue) || isinf(parsedValue)) {
-        char log_msg[CHAR_LEN];
-        snprintf(log_msg, CHAR_LEN, "Invalid numeric value received: '%s' for %s", recMessage, readings[index].description);
-        logAndPublish(log_msg);
+        char logMsg[CHAR_LEN];
+        snprintf(logMsg, CHAR_LEN, "Invalid numeric value received: '%s' for %s", recMessage, readings[index].description);
+        logAndPublish(logMsg);
         return;
     }
 
     // Sanity check for reasonable sensor values
     if (dataType == DATA_TEMPERATURE && (parsedValue < TEMP_MIN_VALID || parsedValue > TEMP_MAX_VALID)) {
-        char log_msg[CHAR_LEN];
-        snprintf(log_msg, CHAR_LEN, "Temperature out of range: %.1f for %s", parsedValue, readings[index].description);
-        logAndPublish(log_msg);
+        char logMsg[CHAR_LEN];
+        snprintf(logMsg, CHAR_LEN, "Temperature out of range: %.1f for %s", parsedValue, readings[index].description);
+        logAndPublish(logMsg);
         return;
     }
     if (dataType == DATA_HUMIDITY && (parsedValue < 0.0f || parsedValue > HUMIDITY_MAX_VALID)) {
-        char log_msg[CHAR_LEN];
-        snprintf(log_msg, CHAR_LEN, "Humidity out of range: %.1f for %s", parsedValue, readings[index].description);
-        logAndPublish(log_msg);
+        char logMsg[CHAR_LEN];
+        snprintf(logMsg, CHAR_LEN, "Humidity out of range: %.1f for %s", parsedValue, readings[index].description);
+        logAndPublish(logMsg);
         return;
     }
     if (dataType == DATA_BATTERY && (parsedValue < 0.0f || parsedValue > BATTERY_MAX_VALID_V)) {
-        char log_msg[CHAR_LEN];
-        snprintf(log_msg, CHAR_LEN, "Battery voltage out of range: %.2f for %s", parsedValue, readings[index].description);
-        logAndPublish(log_msg);
+        char logMsg[CHAR_LEN];
+        snprintf(logMsg, CHAR_LEN, "Battery voltage out of range: %.2f for %s", parsedValue, readings[index].description);
+        logAndPublish(logMsg);
         return;
     }
 
@@ -172,15 +172,15 @@ void update_readings(char* recMessage, int index, int dataType) {
     switch (dataType) {
     case DATA_TEMPERATURE:
         format_string = "%2.1f";
-        log_message_suffix = "temperature";
+        logMessage_suffix = "temperature";
         break;
     case DATA_HUMIDITY:
         format_string = "%2.0f%s";
-        log_message_suffix = "humidity";
+        logMessage_suffix = "humidity";
         break;
     case DATA_BATTERY:
         format_string = "%2.1f";
-        log_message_suffix = "battery";
+        logMessage_suffix = "battery";
         break;
     default:
         // Handle unknown data type
@@ -216,12 +216,12 @@ void update_readings(char* recMessage, int index, int dataType) {
 
     if (readings[index].readingIndex == STORED_READING) {
         readings[index].readingIndex--;
-        readings[index].enoughData = true;
+        readings[index].hasEnoughData = true;
         for (int i = 0; i < STORED_READING - 1; i++) {
             readings[index].lastValue[i] = readings[index].lastValue[i + 1];
         }
     } else {
-        readings[index].enoughData = false;
+        readings[index].hasEnoughData = false;
     }
 
     readings[index].lastValue[readings[index].readingIndex] = readings[index].currentValue;
@@ -230,9 +230,9 @@ void update_readings(char* recMessage, int index, int dataType) {
     dirty_rooms = true;
 
     if (valueChanged) {
-        char log_message[CHAR_LEN];
-        snprintf(log_message, CHAR_LEN, "%s %s updated: %.1f", readings[index].description, log_message_suffix, parsedValue);
-        logAndPublish(log_message);
+        char logMessage[CHAR_LEN];
+        snprintf(logMessage, CHAR_LEN, "%s %s updated: %.1f", readings[index].description, logMessage_suffix, parsedValue);
+        logAndPublish(logMessage);
         lastLoggedValue[index] = parsedValue;
         hasLoggedBefore[index] = true;
     }

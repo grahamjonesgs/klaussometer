@@ -30,13 +30,13 @@ static void updateChargingStatus() {
         int remain_minutes_round = REMAINING_TIME_ROUND_MIN * (round(remain_minutes / REMAINING_TIME_ROUND_MIN));
 
         time_t end_time = solar.currentUpdateTime + remain_minutes_round * 60;
-        char time_buf_end[CHAR_LEN];
-        formatTimeHMS(end_time, time_buf_end, sizeof(time_buf_end));
+        char timeBuf_end[CHAR_LEN];
+        formatTimeHMS(end_time, timeBuf_end, sizeof(timeBuf_end));
 
         if ((floor(remain_hours) == 1) && (remain_minutes > 0)) {
-            snprintf(tempString, CHAR_LEN, "%2.0f hour %i mins\n remaining\n Until %s", remain_hours, remain_minutes_round % 60, time_buf_end);
+            snprintf(tempString, CHAR_LEN, "%2.0f hour %i mins\n remaining\n Until %s", remain_hours, remain_minutes_round % 60, timeBuf_end);
         } else if ((remain_minutes_round > 0) && (remain_hours < MAX_SOLAR_TIME_STATUS_HOURS)) {
-            snprintf(tempString, CHAR_LEN, "%2.0f hours %i mins\n remaining\n Until %s", remain_hours, remain_minutes_round % 60, time_buf_end);
+            snprintf(tempString, CHAR_LEN, "%2.0f hours %i mins\n remaining\n Until %s", remain_hours, remain_minutes_round % 60, timeBuf_end);
         } else {
             tempString[0] = '\0'; // Don't print for too long time
         }
@@ -72,26 +72,26 @@ static void updateChargingStatus() {
 
 // Updates grid energy totals, Rand cost and self-sufficiency percentage labels.
 static void updateGridMetrics() {
-    if (solar.today_use <= 0.0 && solar.month_use <= 0.0)
+    if (solar.todayUse <= 0.0 && solar.monthUse <= 0.0)
         return;
     char tempString[CHAR_LEN];
     char boughtTodayBuf[32];
     char boughtMonthBuf[32];
 
-    format_integer_with_commas((long long)floor(solar.today_buy * ELECTRICITY_PRICE), boughtTodayBuf, sizeof(boughtTodayBuf));
-    format_integer_with_commas((long long)floor(solar.month_buy * ELECTRICITY_PRICE), boughtMonthBuf, sizeof(boughtMonthBuf));
+    formatIntegerWithCommas((long long)floor(solar.todayBuy * ELECTRICITY_PRICE), boughtTodayBuf, sizeof(boughtTodayBuf));
+    formatIntegerWithCommas((long long)floor(solar.monthBuy * ELECTRICITY_PRICE), boughtMonthBuf, sizeof(boughtMonthBuf));
 
     // Calculate self-sufficiency percentages
-    int todaySelfSufficiency = (solar.today_use > 0.0) ? (int)(((solar.today_use - solar.today_buy) / solar.today_use) * 100) : 0;
-    int monthSelfSufficiency = (solar.month_use > 0.0) ? (int)(((solar.month_use - solar.month_buy) / solar.month_use) * 100) : 0;
+    int todaySelfSufficiency = (solar.todayUse > 0.0) ? (int)(((solar.todayUse - solar.todayBuy) / solar.todayUse) * 100) : 0;
+    int monthSelfSufficiency = (solar.monthUse > 0.0) ? (int)(((solar.monthUse - solar.monthBuy) / solar.monthUse) * 100) : 0;
     int todayGridPercentage = 100 - todaySelfSufficiency;
     int monthGridPercentage = 100 - monthSelfSufficiency;
     todayGridPercentage = todayGridPercentage > 100 ? 100 : (todayGridPercentage < 0 ? 0 : todayGridPercentage);
     monthGridPercentage = monthGridPercentage > 100 ? 100 : (monthGridPercentage < 0 ? 0 : monthGridPercentage);
 
-    snprintf(tempString, CHAR_LEN, "%.0f", solar.today_buy);
+    snprintf(tempString, CHAR_LEN, "%.0f", solar.todayBuy);
     lv_label_set_text(ui_GridTodayEnergy, tempString);
-    snprintf(tempString, CHAR_LEN, "%.0f", solar.month_buy);
+    snprintf(tempString, CHAR_LEN, "%.0f", solar.monthBuy);
     lv_label_set_text(ui_GridMonthEnergy, tempString);
     snprintf(tempString, CHAR_LEN, "R%s", boughtTodayBuf);
     lv_label_set_text(ui_GridTodayCost, tempString);
@@ -102,9 +102,9 @@ static void updateGridMetrics() {
     snprintf(tempString, CHAR_LEN, "%d%%", monthGridPercentage);
     lv_label_set_text(ui_GridMonthPercentage, tempString);
 
-    snprintf(tempString, CHAR_LEN, "%.0f", solar.today_generation);
+    snprintf(tempString, CHAR_LEN, "%.0f", solar.todayGeneration);
     lv_label_set_text(ui_SolarTodayEnergy, tempString);
-    snprintf(tempString, CHAR_LEN, "%.0f", solar.month_generation);
+    snprintf(tempString, CHAR_LEN, "%.0f", solar.monthGeneration);
     lv_label_set_text(ui_SolarMonthEnergy, tempString);
 }
 
@@ -135,12 +135,12 @@ void set_solar_values() {
 
     updateChargingStatus();
 
-    snprintf(tempString, CHAR_LEN, "Min %2.0f\nMax %2.0f", solar.today_battery_min, solar.today_battery_max);
+    snprintf(tempString, CHAR_LEN, "Min %2.0f\nMax %2.0f", solar.todayBatteryMin, solar.todayBatteryMax);
     lv_label_set_text(ui_SolarMinMax, tempString);
 
-    char time_buf[CHAR_LEN];
-    formatTimeHMS(solar.currentUpdateTime, time_buf, sizeof(time_buf));
-    snprintf(tempString, CHAR_LEN, "Values as of %s\nReceived at %s", solar.time, time_buf);
+    char timeBuf[CHAR_LEN];
+    formatTimeHMS(solar.currentUpdateTime, timeBuf, sizeof(timeBuf));
+    snprintf(tempString, CHAR_LEN, "Values as of %s\nReceived at %s", solar.time, timeBuf);
     lv_label_set_text(ui_AsofTimeLabel, tempString);
 
     updateGridMetrics();
@@ -194,14 +194,14 @@ void displayStatusMessages_t(void* pvParameters) {
     while (true) {
         if (xQueueReceive(statusMessageQueue, &receivedMsg, pdMS_TO_TICKS(STATUS_MESSAGE_QUEUE_TIMEOUT_MS)) == pdTRUE) {
             snprintf(statusMessageValue, CHAR_LEN, "%s", receivedMsg.text);
-            vTaskDelay(pdMS_TO_TICKS(receivedMsg.duration_s * 1000));
+            vTaskDelay(pdMS_TO_TICKS(receivedMsg.durationSec * 1000));
             statusMessageValue[0] = '\0';
         }
         if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
             lastHwmLog = millis();
-            char hwm_msg[CHAR_LEN];
-            snprintf(hwm_msg, CHAR_LEN, "Stack HWM: Display Status %u words", uxTaskGetStackHighWaterMark(nullptr));
-            logAndPublish(hwm_msg);
+            char hwmMsg[CHAR_LEN];
+            snprintf(hwmMsg, CHAR_LEN, "Stack HWM: Display Status %u words", uxTaskGetStackHighWaterMark(nullptr));
+            logAndPublish(hwmMsg);
         }
     }
 }

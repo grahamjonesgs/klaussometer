@@ -6,7 +6,7 @@
 //   <1  dark green (low)    1-2  green  (low)
 //   3-4  yellow (moderate)  5-6  orange (high)
 //   7-9  red (very high)    10   dark red (extreme)   11+ purple (maximum)
-int uv_color(float uv) {
+int uvColor(float uv) {
     if (uv < 1)
         return 0x658D1B;
     if (uv < 2)
@@ -130,7 +130,7 @@ const char* wmoToText(int code, bool isDay) {
 // Writes "ERR" if the buffer is too small. Handles negative numbers.
 // Works right-to-left: pre-calculates the output length (digits + commas + sign),
 // then fills the buffer from the end, inserting a comma every 3rd digit.
-void format_integer_with_commas(long long num, char* out, size_t outSize) {
+void formatIntegerWithCommas(long long num, char* out, size_t outSize) {
     char buffer[32];
     int len;
 
@@ -139,24 +139,24 @@ void format_integer_with_commas(long long num, char* out, size_t outSize) {
         return;
     }
 
-    bool is_negative = (num < 0);
-    if (is_negative)
+    bool isNegative = (num < 0);
+    if (isNegative)
         num = -num;
 
     snprintf(buffer, sizeof(buffer), "%lld", num);
     len = strlen(buffer);
 
     int commas = (len - 1) / 3;
-    int total_len = len + commas + (is_negative ? 1 : 0);
+    int totalLen = len + commas + (isNegative ? 1 : 0);
 
-    if ((size_t)total_len >= outSize) {
+    if ((size_t)totalLen >= outSize) {
         snprintf(out, outSize, "ERR");
         return;
     }
 
     // Fill from right to left, inserting a comma after every 3rd digit
-    out[total_len] = '\0';
-    int j = total_len - 1;
+    out[totalLen] = '\0';
+    int j = totalLen - 1;
     int digits = 0;
     for (int i = len - 1; i >= 0; i--) {
         out[j--] = buffer[i];
@@ -166,7 +166,7 @@ void format_integer_with_commas(long long num, char* out, size_t outSize) {
         }
     }
 
-    if (is_negative)
+    if (isNegative)
         out[0] = '-';
 }
 
@@ -197,9 +197,9 @@ void formatTimeHMS(time_t t, char* buf, size_t bufSize) {
 
 // XOR checksum over a byte range. Simple and fast; sufficient for detecting
 // accidental corruption in the small packed structs saved to SD card.
-uint8_t calculateChecksum(const void* data_ptr, size_t size) {
+uint8_t calculateChecksum(const void* dataPtr, size_t size) {
     uint8_t sum = 0;
-    const uint8_t* bytePtr = (const uint8_t*)data_ptr;
+    const uint8_t* bytePtr = (const uint8_t*)dataPtr;
     for (size_t i = 0; i < size; ++i) {
         sum ^= bytePtr[i];
     }
