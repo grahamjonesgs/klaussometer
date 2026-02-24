@@ -107,9 +107,9 @@ struct LogEntry {
 };
 
 // Dirty flags for display update groups (set by data producers, cleared by loop)
-extern std::atomic<bool> dirty_rooms;
-extern std::atomic<bool> dirty_solar;
-extern std::atomic<bool> dirty_weather;
-extern std::atomic<bool> dirty_uv;
+extern std::atomic<bool> dirtyRooms;
+extern std::atomic<bool> dirtySolar;
+extern std::atomic<bool> dirtyWeather;
+extern std::atomic<bool> dirtyUv;
 
 #endif // TYPES_H

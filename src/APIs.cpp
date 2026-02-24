@@ -66,16 +66,16 @@ char postBuffer[POST_BUFFER_SIZE] = {0};
 
 // Auto-detect Content-Length vs chunked transfer and read the payload
 static int readHttpPayload() {
-    int content_length = http.getSize();
-    if (content_length > 0) {
-        return readFixedLengthPayload(http.getStreamPtr(), payloadBuffer, JSON_PAYLOAD_SIZE, content_length);
+    int contentLength = http.getSize();
+    if (contentLength > 0) {
+        return readFixedLengthPayload(http.getStreamPtr(), payloadBuffer, JSON_PAYLOAD_SIZE, contentLength);
     }
     return readChunkedPayload(http.getStreamPtr(), payloadBuffer, JSON_PAYLOAD_SIZE);
 }
 
 // Returns true on success or non-HTTP error (no backoff needed)
 // Returns false on HTTP error (backoff should be applied)
-static bool fetch_uv() {
+static bool fetchUV() {
     if (WiFi.status() != WL_CONNECTED)
         return true;
 
@@ -83,14 +83,14 @@ static bool fetch_uv() {
     http.begin(urlBuffer);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
-        int payload_len = readHttpPayload();
-        if (payload_len > 0) {
+        int payloadLen = readHttpPayload();
+        if (payloadLen > 0) {
             JsonDocument root;
             deserializeJson(root, payloadBuffer);
             float UV = root["data"][0]["uv"];
             uv.index = UV;
             uv.updateTime = time(nullptr);
-            dirty_uv = true;
+            dirtyUv = true;
             logAndPublish("UV updated");
             strftime(uv.timeString, CHAR_LEN, "%H:%M:%S", &timeinfo);
             saveDataBlock(UV_DATA_FILENAME, &uv, sizeof(uv));
@@ -110,7 +110,7 @@ static bool fetch_uv() {
 
 // Returns true on success or non-HTTP error (no backoff needed)
 // Returns false on HTTP error (backoff should be applied)
-static bool fetch_weather() {
+static bool fetchWeather() {
     if (WiFi.status() != WL_CONNECTED)
         return true;
 
@@ -126,8 +126,8 @@ static bool fetch_weather() {
     http.begin(urlBuffer);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
-        int payload_len = readHttpPayload();
-        if (payload_len > 0) {
+        int payloadLen = readHttpPayload();
+        if (payloadLen > 0) {
             JsonDocument root;
             deserializeJson(root, payloadBuffer);
 
@@ -148,7 +148,7 @@ static bool fetch_weather() {
             snprintf(weather.windDir, CHAR_LEN, "%s", degreesToDirection(weatherWindDir));
 
             weather.updateTime = time(nullptr);
-            dirty_weather = true;
+            dirtyWeather = true;
             strftime(weather.timeString, CHAR_LEN, "%H:%M:%S", &timeinfo);
             logAndPublish("Weather updated");
             saveDataBlock(WEATHER_DATA_FILENAME, &weather, sizeof(weather));
@@ -167,7 +167,7 @@ static bool fetch_weather() {
 
 // Returns true on success or non-HTTP error (no backoff needed)
 // Returns false on HTTP error (backoff should be applied)
-static bool fetch_air_quality() {
+static bool fetchAirQuality() {
     if (WiFi.status() != WL_CONNECTED)
         return true;
 
@@ -180,8 +180,8 @@ static bool fetch_air_quality() {
     http.begin(urlBuffer);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
-        int payload_len = readHttpPayload();
-        if (payload_len > 0) {
+        int payloadLen = readHttpPayload();
+        if (payloadLen > 0) {
             JsonDocument root;
             deserializeJson(root, payloadBuffer);
 
@@ -191,7 +191,7 @@ static bool fetch_air_quality() {
             airQuality.europeanAqi = root["current"]["european_aqi"];
 
             airQuality.updateTime = time(nullptr);
-            dirty_weather = true;
+            dirtyWeather = true;
             strftime(airQuality.timeString, CHAR_LEN, "%H:%M:%S", &timeinfo);
             char logMessage[CHAR_LEN];
             snprintf(logMessage, CHAR_LEN, "Air quality updated. PM10: %.2f, PM2.5: %.2f, Ozone: %.2f, AQI: %d", airQuality.pm10, airQuality.pm25, airQuality.ozone,
@@ -213,7 +213,7 @@ static bool fetch_air_quality() {
 
 // Fetches a JWT bearer token from the Solarman API and stores it in solarToken.
 // Tokens last ~24h; api_manager_t refreshes after 12h or when a request is rejected.
-static void fetch_solar_token() {
+static void fetchSolarToken() {
     if (WiFi.status() != WL_CONNECTED)
         return;
 
@@ -222,18 +222,18 @@ static void fetch_solar_token() {
     http.addHeader("Content-Type", "application/json");
 
     snprintf(postBuffer, POST_BUFFER_SIZE, "{\n\"appSecret\" : \"%s\", \n\"email\" : \"%s\",\n\"password\" : \"%s\"\n}", SOLAR_SECRET, SOLAR_USERNAME, SOLAR_PASSHASH);
-    int httpCode_token = http.POST(postBuffer);
-    if (httpCode_token == HTTP_CODE_OK) {
-        int payload_len = readHttpPayload();
-        if (payload_len > 0) {
+    int httpCodeToken = http.POST(postBuffer);
+    if (httpCodeToken == HTTP_CODE_OK) {
+        int payloadLen = readHttpPayload();
+        if (payloadLen > 0) {
             JsonDocument root;
             deserializeJson(root, payloadBuffer);
             if (root["access_token"].is<const char*>()) {
-                const char* rec_token = root["access_token"];
-                snprintf(solarToken.token, sizeof(solarToken.token), "bearer %s", rec_token);
+                const char* recToken = root["access_token"];
+                snprintf(solarToken.token, sizeof(solarToken.token), "bearer %s", recToken);
                 solarToken.tokenTime = time(nullptr);
                 char logMessage2[CHAR_LEN];
-                snprintf(logMessage2, CHAR_LEN, "Solar token obtained, raw=%zu, stored=%zu", strlen(rec_token), strlen(solarToken.token));
+                snprintf(logMessage2, CHAR_LEN, "Solar token obtained, raw=%zu, stored=%zu", strlen(recToken), strlen(solarToken.token));
                 logAndPublish(logMessage2);
                 saveDataBlock(SOLAR_TOKEN_FILENAME, &solarToken, sizeof(solarToken));
             } else {
@@ -246,7 +246,7 @@ static void fetch_solar_token() {
         }
     } else {
         char logMessage[CHAR_LEN];
-        snprintf(logMessage, CHAR_LEN, "[HTTP] GET solar token failed, error: %s", http.errorToString(httpCode_token).c_str());
+        snprintf(logMessage, CHAR_LEN, "[HTTP] GET solar token failed, error: %s", http.errorToString(httpCodeToken).c_str());
         errorPublish(logMessage);
     }
     http.end();
@@ -255,7 +255,7 @@ static void fetch_solar_token() {
 // Fetches real-time solar data (power flows, battery SoC) from Solarman.
 // Also tracks daily battery min/max, resetting them at midnight.
 // Returns true on success or non-HTTP error, false on HTTP error.
-static bool fetch_current_solar() {
+static bool fetchCurrentSolar() {
     if (WiFi.status() != WL_CONNECTED)
         return true;
 
@@ -268,31 +268,31 @@ static bool fetch_current_solar() {
     int httpCode = http.POST(postBuffer);
 
     if (httpCode == HTTP_CODE_OK) {
-        int payload_len = readHttpPayload();
-        if (payload_len > 0) {
+        int payloadLen = readHttpPayload();
+        if (payloadLen > 0) {
             JsonDocument root;
             deserializeJson(root, payloadBuffer);
-            bool rec_success = root["success"];
-            if (rec_success == true) {
-                float rec_batteryCharge = root["batterySoc"];
-                float rec_usingPower = root["usePower"];
-                float rec_gridPower = root["wirePower"];
-                float rec_batteryPower = root["batteryPower"];
-                time_t rec_time = root["lastUpdateTime"];
-                float rec_solarPower = root["generationPower"];
+            bool recSuccess = root["success"];
+            if (recSuccess == true) {
+                float recBatteryCharge = root["batterySoc"];
+                float recUsingPower = root["usePower"];
+                float recGridPower = root["wirePower"];
+                float recBatteryPower = root["batteryPower"];
+                time_t recTime = root["lastUpdateTime"];
+                float recSolarPower = root["generationPower"];
 
                 struct tm ts;
                 char timeBuf[CHAR_LEN];
 
-                // rec_time += TIME_OFFSET;
-                localtime_r(&rec_time, &ts);
+                // recTime += TIME_OFFSET;
+                localtime_r(&recTime, &ts);
                 strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", &ts);
                 solar.currentUpdateTime = time(nullptr);
-                solar.solarPower = rec_solarPower / 1000;
-                solar.batteryPower = rec_batteryPower / 1000;
-                solar.usingPower = rec_usingPower / 1000;
-                solar.batteryCharge = rec_batteryCharge;
-                solar.gridPower = rec_gridPower / 1000;
+                solar.solarPower = recSolarPower / 1000;
+                solar.batteryPower = recBatteryPower / 1000;
+                solar.usingPower = recUsingPower / 1000;
+                solar.batteryCharge = recBatteryCharge;
+                solar.gridPower = recGridPower / 1000;
                 snprintf(solar.time, CHAR_LEN, "%s", timeBuf);
 
                 // Reset at midnight
@@ -327,7 +327,7 @@ static bool fetch_current_solar() {
                     storage.putFloat("solarmax", solar.todayBatteryMax);
                     storage.end();
                 }
-                dirty_solar = true;
+                dirtySolar = true;
                 logAndPublish("Solar status updated");
                 saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
             } else {
@@ -359,15 +359,15 @@ static bool fetch_current_solar() {
 
 // Fetches today's solar energy totals (generation, usage, grid buy) from Solarman (timeType 2).
 // Returns true on success or non-HTTP error, false on HTTP error.
-static bool fetch_daily_solar() {
+static bool fetchDailySolar() {
     if (WiFi.status() != WL_CONNECTED)
         return true;
 
     char currentDate[CHAR_LEN];
 
-    time_t now_time = time(nullptr);
+    time_t nowTime = time(nullptr);
     struct tm CurrentTimeInfo;
-    localtime_r(&now_time, &CurrentTimeInfo);
+    localtime_r(&nowTime, &CurrentTimeInfo);
 
     strftime(currentDate, sizeof(currentDate), "%Y-%m-%d", &CurrentTimeInfo);
 
@@ -382,16 +382,16 @@ static bool fetch_daily_solar() {
              currentDate);
     int httpCode = http.POST(postBuffer);
     if (httpCode == HTTP_CODE_OK) {
-        int payload_len = readHttpPayload();
-        if (payload_len > 0) {
+        int payloadLen = readHttpPayload();
+        if (payloadLen > 0) {
             JsonDocument root;
             deserializeJson(root, payloadBuffer);
-            bool rec_success = root["success"];
-            if (rec_success == true) {
+            bool recSuccess = root["success"];
+            if (recSuccess == true) {
                 solar.todayBuy = root["stationDataItems"][0]["buyValue"];
                 solar.todayUse = root["stationDataItems"][0]["useValue"];
                 solar.todayGeneration = root["stationDataItems"][0]["generationValue"];
-                dirty_solar = true;
+                dirtySolar = true;
                 logAndPublish("Solar today's values updated");
                 solar.dailyUpdateTime = time(nullptr);
                 saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
@@ -415,15 +415,15 @@ static bool fetch_daily_solar() {
 
 // Fetches this month's solar energy totals from Solarman (timeType 3).
 // Returns true on success or non-HTTP error, false on HTTP error.
-static bool fetch_monthly_solar() {
+static bool fetchMonthlySolar() {
     if (WiFi.status() != WL_CONNECTED)
         return true;
 
     char currentYearMonth[CHAR_LEN];
 
-    time_t now_time = time(nullptr);
+    time_t nowTime = time(nullptr);
     struct tm CurrentTimeInfo;
-    localtime_r(&now_time, &CurrentTimeInfo);
+    localtime_r(&nowTime, &CurrentTimeInfo);
 
     strftime(currentYearMonth, sizeof(currentYearMonth), "%Y-%m", &CurrentTimeInfo);
 
@@ -438,17 +438,17 @@ static bool fetch_monthly_solar() {
              currentYearMonth);
     int httpCode = http.POST(postBuffer);
     if (httpCode == HTTP_CODE_OK) {
-        int payload_len = readHttpPayload();
-        if (payload_len > 0) {
+        int payloadLen = readHttpPayload();
+        if (payloadLen > 0) {
             JsonDocument root;
             deserializeJson(root, payloadBuffer);
-            bool rec_success = root["success"];
-            if (rec_success == true) {
+            bool recSuccess = root["success"];
+            if (recSuccess == true) {
                 solar.monthBuy = root["stationDataItems"][0]["buyValue"];
                 solar.monthUse = root["stationDataItems"][0]["useValue"];
                 solar.monthGeneration = root["stationDataItems"][0]["generationValue"];
                 solar.monthlyUpdateTime = time(nullptr);
-                dirty_solar = true;
+                dirtySolar = true;
                 logAndPublish("Solar month's values updated");
                 saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
             }
@@ -488,7 +488,7 @@ void api_manager_t(void* pvParameters) {
         // Solar token - fetch if empty or expired (tokens last ~24h, refresh after 12h)
         if (strlen(solarToken.token) == 0 || (solarToken.tokenTime > 0 && (now - solarToken.tokenTime) > SOLAR_TOKEN_REFRESH_SEC)) {
             solarToken.token[0] = '\0';
-            fetch_solar_token();
+            fetchSolarToken();
         }
 
         // UV - special nighttime handling
@@ -497,11 +497,11 @@ void api_manager_t(void* pvParameters) {
             if (weather.updateTime > 0) {
                 uv.updateTime = time(nullptr);
             }
-            dirty_uv = true;
+            dirtyUv = true;
             strftime(uv.timeString, CHAR_LEN, "%H:%M:%S", &timeinfo);
             saveDataBlock(UV_DATA_FILENAME, &uv, sizeof(uv));
         } else if (canRetry(uvBackoff) && (now - uv.updateTime > UV_UPDATE_INTERVAL_SEC)) {
-            if (fetch_uv()) {
+            if (fetchUV()) {
                 resetBackoff(uvBackoff);
             } else {
                 applyBackoff(uvBackoff);
@@ -510,7 +510,7 @@ void api_manager_t(void* pvParameters) {
 
         // Weather
         if (canRetry(weatherBackoff) && (now - weather.updateTime > WEATHER_UPDATE_INTERVAL_SEC)) {
-            if (fetch_weather()) {
+            if (fetchWeather()) {
                 resetBackoff(weatherBackoff);
             } else {
                 applyBackoff(weatherBackoff);
@@ -519,7 +519,7 @@ void api_manager_t(void* pvParameters) {
 
         // Air Quality
         if (canRetry(airQualityBackoff) && (now - airQuality.updateTime > AIR_QUALITY_UPDATE_INTERVAL_SEC)) {
-            if (fetch_air_quality()) {
+            if (fetchAirQuality()) {
                 resetBackoff(airQualityBackoff);
             } else {
                 applyBackoff(airQualityBackoff);
@@ -530,7 +530,7 @@ void api_manager_t(void* pvParameters) {
         if (strlen(solarToken.token) > 0) {
             // Current Solar
             if (canRetry(solarCurrentBackoff) && (now - solar.currentUpdateTime > SOLAR_CURRENT_UPDATE_INTERVAL_SEC)) {
-                if (fetch_current_solar()) {
+                if (fetchCurrentSolar()) {
                     resetBackoff(solarCurrentBackoff);
                 } else {
                     applyBackoff(solarCurrentBackoff);
@@ -539,7 +539,7 @@ void api_manager_t(void* pvParameters) {
 
             // Daily Solar
             if (canRetry(solarDailyBackoff) && (now - solar.dailyUpdateTime > SOLAR_DAILY_UPDATE_INTERVAL_SEC)) {
-                if (fetch_daily_solar()) {
+                if (fetchDailySolar()) {
                     resetBackoff(solarDailyBackoff);
                 } else {
                     applyBackoff(solarDailyBackoff);
@@ -548,7 +548,7 @@ void api_manager_t(void* pvParameters) {
 
             // Monthly Solar
             if (canRetry(solarMonthlyBackoff) && (now - solar.monthlyUpdateTime > SOLAR_MONTHLY_UPDATE_INTERVAL_SEC)) {
-                if (fetch_monthly_solar()) {
+                if (fetchMonthlySolar()) {
                     resetBackoff(solarMonthlyBackoff);
                 } else {
                     applyBackoff(solarMonthlyBackoff);
@@ -568,21 +568,21 @@ void api_manager_t(void* pvParameters) {
 // Reads a chunked-transfer-encoded HTTP body into buffer.
 // Each chunk is preceded by its size as a hex string followed by CRLF.
 // Returns total bytes read, or -1 if the buffer would overflow.
-int readChunkedPayload(WiFiClient* stream, char* buffer, size_t buffer_size) {
-    size_t total_read = 0;
+int readChunkedPayload(WiFiClient* stream, char* buffer, size_t bufferSize) {
+    size_t totalRead = 0;
 
-    while (stream->connected() && (total_read < buffer_size - 1)) {
+    while (stream->connected() && (totalRead < bufferSize - 1)) {
         // Read the chunk size line
         char sizeLineBuffer[16];
-        int bytes_read = stream->readBytesUntil('\n', sizeLineBuffer, sizeof(sizeLineBuffer) - 1);
-        if (bytes_read <= 0)
+        int bytesRead = stream->readBytesUntil('\n', sizeLineBuffer, sizeof(sizeLineBuffer) - 1);
+        if (bytesRead <= 0)
             break;
 
-        sizeLineBuffer[bytes_read] = '\0';
+        sizeLineBuffer[bytesRead] = '\0';
 
         // Trim any trailing carriage return
-        if (bytes_read > 0 && sizeLineBuffer[bytes_read - 1] == '\r') {
-            sizeLineBuffer[bytes_read - 1] = '\0';
+        if (bytesRead > 0 && sizeLineBuffer[bytesRead - 1] == '\r') {
+            sizeLineBuffer[bytesRead - 1] = '\0';
         }
 
         // Convert the hex string to an integer
@@ -591,7 +591,7 @@ int readChunkedPayload(WiFiClient* stream, char* buffer, size_t buffer_size) {
             break; // End of chunks
 
         // Check for buffer overflow
-        if (total_read + chunkSize >= buffer_size) {
+        if (totalRead + chunkSize >= bufferSize) {
             // Read and discard the rest of the stream to avoid issues on next request
             while (stream->available()) {
                 stream->read();
@@ -600,26 +600,26 @@ int readChunkedPayload(WiFiClient* stream, char* buffer, size_t buffer_size) {
         }
 
         // Read the chunk data
-        size_t data_read = stream->readBytes(buffer + total_read, chunkSize);
-        if (data_read != chunkSize) {
+        size_t dataRead = stream->readBytes(buffer + totalRead, chunkSize);
+        if (dataRead != chunkSize) {
             // Handle incomplete read if necessary, though it's unlikely with a valid stream
         }
-        total_read += data_read;
+        totalRead += dataRead;
 
         // Read and discard the trailing \r\n
         stream->read();
         stream->read();
     }
 
-    buffer[total_read] = '\0';
-    return total_read;
+    buffer[totalRead] = '\0';
+    return totalRead;
 }
 
 // Reads exactly content_length bytes from stream into buffer (Content-Length style).
 // Returns bytes read, or -1 if content_length >= buffer_size.
-int readFixedLengthPayload(WiFiClient* stream, char* buffer, size_t buffer_size, size_t content_length) {
+int readFixedLengthPayload(WiFiClient* stream, char* buffer, size_t bufferSize, size_t contentLength) {
     // Check for buffer overflow before starting the read
-    if (content_length >= buffer_size) {
+    if (contentLength >= bufferSize) {
         // Discard the entire body to free the stream
         while (stream->available()) {
             stream->read();
@@ -628,10 +628,10 @@ int readFixedLengthPayload(WiFiClient* stream, char* buffer, size_t buffer_size,
     }
 
     // Read the exact number of bytes specified by Content-Length
-    size_t bytes_read = stream->readBytes(buffer, content_length);
+    size_t bytesRead = stream->readBytes(buffer, contentLength);
 
     // Terminate the buffer with a null character
-    buffer[bytes_read] = '\0';
+    buffer[bytesRead] = '\0';
 
-    return bytes_read;
+    return bytesRead;
 }

@@ -9,7 +9,7 @@
 #include <WiFi.h>
 
 void api_manager_t(void* pvParameters);
-int readChunkedPayload(WiFiClient* stream, char* buffer, size_t buffer_size);
-int readFixedLengthPayload(WiFiClient* stream, char* buffer, size_t buffer_size, size_t content_length);
+int readChunkedPayload(WiFiClient* stream, char* buffer, size_t bufferSize);
+int readFixedLengthPayload(WiFiClient* stream, char* buffer, size_t bufferSize, size_t contentLength);
 
 #endif // APIS_H

@@ -211,19 +211,19 @@ void setup_web_server() {
 // Returns a human-readable uptime string, e.g. "3 days, 04:22:15".
 // Based on millis() which rolls over after ~49 days, but that's fine for this device.
 String getUptime() {
-    unsigned long uptime_ms = millis();
-    unsigned long seconds = uptime_ms / 1000;
+    unsigned long uptimeMs = millis();
+    unsigned long seconds = uptimeMs / 1000;
 
     unsigned long days = seconds / (24 * 3600);
     unsigned long hours = (seconds % (24 * 3600)) / 3600;
     unsigned long minutes = (seconds % 3600) / 60;
-    unsigned long remaining_seconds = seconds % 60;
+    unsigned long remainingSeconds = seconds % 60;
 
-    const char* day_label = (days == 1) ? " day" : " days";
+    const char* dayLabel = (days == 1) ? " day" : " days";
 
     char buffer[64];
 
-    snprintf(buffer, sizeof(buffer), "%lu%s, %02lu:%02lu:%02lu", days, day_label, hours, minutes, remaining_seconds);
+    snprintf(buffer, sizeof(buffer), "%lu%s, %02lu:%02lu:%02lu", days, dayLabel, hours, minutes, remainingSeconds);
 
     // Convert the char array back to a String and return
     return String(buffer);

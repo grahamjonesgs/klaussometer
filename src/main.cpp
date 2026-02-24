@@ -34,10 +34,10 @@ static const int HTTP_TIMEOUT_MS = 10000; // 10 second timeout for API calls
 SemaphoreHandle_t mqttMutex;
 
 // Forward declarations for functions defined later in this file
-void pin_init();
-void touch_init();
-void my_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
-void touch_read(lv_indev_t* indev, lv_indev_data_t* data);
+void pinInit();
+void touchInit();
+void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
+void touchRead(lv_indev_t* indev, lv_indev_data_t* data);
 void getBatteryStatus(float batteryValue, int readingIndex, char* iconChar, lv_color_t* colorPtr);
 void invalidateOldReadings();
 static void setStatusColor(lv_obj_t* label, time_t updateTime, int maxAgeSec);
@@ -67,10 +67,10 @@ char macAddress[18]; // "AA:BB:CC:DD:EE:FF" + null
 char statusMessageValue[CHAR_LEN];
 
 // Dirty flags for display update groups (set by producers, cleared by loop)
-std::atomic<bool> dirty_rooms(true);
-std::atomic<bool> dirty_solar(true);
-std::atomic<bool> dirty_weather(true);
-std::atomic<bool> dirty_uv(true);
+std::atomic<bool> dirtyRooms(true);
+std::atomic<bool> dirtySolar(true);
+std::atomic<bool> dirtyWeather(true);
+std::atomic<bool> dirtyUv(true);
 
 const int MAX_DUTY_CYCLE = (int)(pow(2, PWMResolution) - 1);
 const float DAYTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MAX_BRIGHTNESS);
@@ -85,8 +85,8 @@ Arduino_RGB_Display* gfx = new Arduino_RGB_Display(LCD_WIDTH, LCD_HEIGHT, rgbpan
 
 // Touch config
 TAMC_GT911 ts = TAMC_GT911(I2C_SDA_PIN, I2C_SCL_PIN, TOUCH_INT, TOUCH_RST, LCD_WIDTH, LCD_HEIGHT);
-int touch_last_x = 0;
-int touch_last_y = 0;
+int touchLastX = 0;
+int touchLastY = 0;
 
 // Screen setting
 static uint32_t screenWidth = LCD_WIDTH;
@@ -103,7 +103,7 @@ static lv_obj_t** directionLabels[ROOM_COUNT] = DIRECTION_LABELS;
 static lv_obj_t** humidityLabels[ROOM_COUNT] = HUMIDITY_LABELS;
 
 // Shutdown handler to log reboot to SD card
-void shutdown_handler(void) {
+void shutdownHandler(void) {
     // Write directly to SD card (can't use queue as system is shutting down)
     File logFile = SD_MMC.open(ERROR_LOG_FILENAME, FILE_APPEND);
     if (logFile) {
@@ -228,7 +228,7 @@ void setup() {
     snprintf(errorTopic, CHAR_LEN, "klaussometer/%s/error", chipId);
 
     // Init Display
-    pin_init();
+    pinInit();
 
     // Init Display Hardware
     gfx->begin();
@@ -262,7 +262,7 @@ void setup() {
         delay(1000);
         esp_restart();
     }
-    lv_display_set_flush_cb(disp, my_disp_flush);
+    lv_display_set_flush_cb(disp, dispFlush);
     lv_display_set_buffers(disp, dispDrawBuf, nullptr, bufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
     ui_init();
 
@@ -353,13 +353,13 @@ void setup() {
     http.setReuse(false);                   // Disable keep-alive - single task calls different hosts/protocols
 
     // Register shutdown handler to log reboots (including watchdog timeouts)
-    esp_register_shutdown_handler(shutdown_handler);
+    esp_register_shutdown_handler(shutdownHandler);
 
     // Configure and enable the Task Watchdog Timer for the loop task
     // 60 second timeout - will reboot if loop hangs for this long
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
-    esp_task_wdt_config_t wdt_config = {.timeout_ms = 60000, .idle_core_mask = 0, .trigger_panic = true};
-    esp_task_wdt_reconfigure(&wdt_config);
+    esp_task_wdtConfig_t wdtConfig = {.timeout_ms = 60000, .idle_core_mask = 0, .trigger_panic = true};
+    esp_task_wdt_reconfigure(&wdtConfig);
 #else
     esp_task_wdt_init(60, true);
 #endif
@@ -395,8 +395,8 @@ void loop() {
     updateUVDisplay();
     updateWeatherDisplay();
 
-    if (dirty_solar) {
-        dirty_solar = false;
+    if (dirtySolar) {
+        dirtySolar = false;
         set_solar_values();
     }
 
@@ -415,12 +415,12 @@ static void setStatusColor(lv_obj_t* label, time_t updateTime, int maxAgeSec) {
 
 // Updates room temperature, humidity, trend arrows and sensor battery icons.
 static void updateRoomDisplay() {
-    if (!dirty_rooms)
+    if (!dirtyRooms)
         return;
-    dirty_rooms = false;
+    dirtyRooms = false;
     char tempString[CHAR_LEN];
     char batteryIcon;
-    lv_color_t batteryColour;
+    lv_color_t batteryColor;
     for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
         lv_arc_set_value(*tempArcs[i], readings[i].currentValue);
         lv_label_set_text(*tempLabels[i], readings[i].output);
@@ -439,18 +439,18 @@ static void updateRoomDisplay() {
         lv_label_set_text(*humidityLabels[i], readings[i + ROOM_COUNT].output);
     }
     for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
-        getBatteryStatus(readings[i + 2 * ROOM_COUNT].currentValue, readings[i + 2 * ROOM_COUNT].readingIndex, &batteryIcon, &batteryColour);
+        getBatteryStatus(readings[i + 2 * ROOM_COUNT].currentValue, readings[i + 2 * ROOM_COUNT].readingIndex, &batteryIcon, &batteryColor);
         snprintf(tempString, CHAR_LEN, "%c", batteryIcon);
         lv_label_set_text(*batteryLabels[i], tempString);
-        lv_obj_set_style_text_color(*batteryLabels[i], batteryColour, LV_PART_MAIN);
+        lv_obj_set_style_text_color(*batteryLabels[i], batteryColor, LV_PART_MAIN);
     }
 }
 
 // Updates the UV arc, label and update-time label.
 static void updateUVDisplay() {
-    if (!dirty_uv)
+    if (!dirtyUv)
         return;
-    dirty_uv = false;
+    dirtyUv = false;
     char tempString[CHAR_LEN];
     if (uv.updateTime > 0) {
         lv_obj_clear_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
@@ -470,9 +470,9 @@ static void updateUVDisplay() {
 
 // Updates weather forecast labels, the temperature arc and the AQI display.
 static void updateWeatherDisplay() {
-    if (!dirty_weather)
+    if (!dirtyWeather)
         return;
-    dirty_weather = false;
+    dirtyWeather = false;
     char tempString[CHAR_LEN];
     if (weather.updateTime > 0) {
         lv_label_set_text(ui_FCConditions, weather.description);
@@ -557,7 +557,7 @@ static void adjustDayNightMode() {
     if (weather.isDay == lastIsDay)
         return;
     lastIsDay = weather.isDay;
-    dirty_rooms = true; // Re-apply stale label colours after set_basic_text_color resets them
+    dirtyRooms = true; // Re-apply stale label colours after set_basic_text_color resets them
     if (!weather.isDay) {
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
         ledcWrite(TFT_BL, NIGHTTIME_DUTY);
@@ -592,33 +592,33 @@ void invalidateOldReadings() {
                 readings[i].readingState = ReadingState::NO_DATA;
                 snprintf(readings[i].output, sizeof(readings[i].output), NO_READING);
                 readings[i].currentValue = 0.0;
-                dirty_rooms = true;
+                dirtyRooms = true;
             } else if (age > MAX_NO_MESSAGE_STALE_SEC && readings[i].readingState != ReadingState::STALE && readings[i].readingState != ReadingState::NO_DATA) {
                 readings[i].readingState = ReadingState::STALE;
-                dirty_rooms = true;
+                dirtyRooms = true;
             }
         }
     }
 }
 
 // Flush function for LVGL
-void my_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
+void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
-    lv_color_t* color_p = (lv_color_t*)px_map;
+    lv_color_t* colorPtr = (lv_color_t*)px_map;
 
 #if (LV_COLOR_16_SWAP != 0)
-    gfx->draw16bitBeRGBBitmap(area->x1, area->y1, (uint16_t*)color_p, w, h);
+    gfx->draw16bitBeRGBBitmap(area->x1, area->y1, (uint16_t*)colorPtr, w, h);
 #else
-    gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t*)color_p, w, h);
+    gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t*)colorPtr, w, h);
 #endif
 
     lv_display_flush_ready(disp);
 }
 
 // Initialise pins for touch and backlight
-void pin_init() {
+void pinInit() {
     pinMode(TFT_BL, OUTPUT);
     // pinMode(TOUCH_RST, OUTPUT);
 
@@ -643,24 +643,24 @@ void pin_init() {
 }
 
 // Initialise touch screen
-void touch_init(void) {
+void touchInit(void) {
     Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     ts.begin();
     ts.setRotation(ROTATION_INVERTED);
 }
 
-void touch_read(lv_indev_t* indev, lv_indev_data_t* data) {
+void touchRead(lv_indev_t* indev, lv_indev_data_t* data) {
     ts.read();
     if (ts.isTouched) {
-        touch_last_x = map(ts.points[0].x, 0, 1024, 0, LCD_WIDTH);
-        touch_last_y = map(ts.points[0].y, 0, 750, 0, LCD_HEIGHT);
-        data->point.x = touch_last_x;
-        data->point.y = touch_last_y;
+        touchLastX = map(ts.points[0].x, 0, 1024, 0, LCD_WIDTH);
+        touchLastY = map(ts.points[0].y, 0, 750, 0, LCD_HEIGHT);
+        data->point.x = touchLastX;
+        data->point.y = touchLastY;
         data->state = LV_INDEV_STATE_PRESSED; // Note: renamed constant
 
         ts.isTouched = false;
     } else {
-        data->point.x = touch_last_x;
+        data->point.x = touchLastX;
         data->state = LV_INDEV_STATE_RELEASED; // Note: renamed constant
     }
 }

@@ -84,7 +84,7 @@ void receive_mqtt_messages_t(void* pvParameters) {
                     if (strcmp(topicBuffer, readings[i].topic) == 0) {
                         index = i;
                         if (readings[i].dataType == DATA_TEMPERATURE || readings[i].dataType == DATA_HUMIDITY || readings[i].dataType == DATA_BATTERY) {
-                            update_readings(recMessage, index, readings[i].dataType);
+                            updateReadings(recMessage, index, readings[i].dataType);
                             messageProcessed = true;
                         }
                         break; // Found matching topic, no need to continue loop
@@ -103,11 +103,11 @@ void receive_mqtt_messages_t(void* pvParameters) {
     }
 }
 
-void update_readings(char* recMessage, int index, int dataType) {
+void updateReadings(char* recMessage, int index, int dataType) {
     float averageHistory;
     float totalHistory = 0.0;
-    const char* logMessage_suffix;
-    const char* format_string;
+    const char* logMessageSuffix;
+    const char* formatString;
 
     // Validate numeric input before conversion
     char* endptr;
@@ -171,16 +171,16 @@ void update_readings(char* recMessage, int index, int dataType) {
     // Set format string and log suffix based on data type
     switch (dataType) {
     case DATA_TEMPERATURE:
-        format_string = "%2.1f";
-        logMessage_suffix = "temperature";
+        formatString = "%2.1f";
+        logMessageSuffix = "temperature";
         break;
     case DATA_HUMIDITY:
-        format_string = "%2.0f%s";
-        logMessage_suffix = "humidity";
+        formatString = "%2.0f%s";
+        logMessageSuffix = "humidity";
         break;
     case DATA_BATTERY:
-        format_string = "%2.1f";
-        logMessage_suffix = "battery";
+        formatString = "%2.1f";
+        logMessageSuffix = "battery";
         break;
     default:
         // Handle unknown data type
@@ -188,9 +188,9 @@ void update_readings(char* recMessage, int index, int dataType) {
     }
 
     if (dataType == DATA_HUMIDITY) {
-        snprintf(readings[index].output, sizeof(readings[index].output), format_string, readings[index].currentValue, "%");
+        snprintf(readings[index].output, sizeof(readings[index].output), formatString, readings[index].currentValue, "%");
     } else {
-        snprintf(readings[index].output, sizeof(readings[index].output), format_string, readings[index].currentValue);
+        snprintf(readings[index].output, sizeof(readings[index].output), formatString, readings[index].currentValue);
     }
 
     if (readings[index].readingIndex == 0) {
@@ -227,11 +227,11 @@ void update_readings(char* recMessage, int index, int dataType) {
     readings[index].lastValue[readings[index].readingIndex] = readings[index].currentValue;
     readings[index].readingIndex++;
     readings[index].lastMessageTime = time(nullptr);
-    dirty_rooms = true;
+    dirtyRooms = true;
 
     if (valueChanged) {
         char logMessage[CHAR_LEN];
-        snprintf(logMessage, CHAR_LEN, "%s %s updated: %.1f", readings[index].description, logMessage_suffix, parsedValue);
+        snprintf(logMessage, CHAR_LEN, "%s %s updated: %.1f", readings[index].description, logMessageSuffix, parsedValue);
         logAndPublish(logMessage);
         lastLoggedValue[index] = parsedValue;
         hasLoggedBefore[index] = true;

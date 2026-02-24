@@ -25,18 +25,18 @@ static void updateChargingStatus() {
 
         // Time remaining = usable capacity left / current draw rate
         // Usable capacity = (SoC% - min%) * total kWh; power is in kW
-        float remain_hours = (solar.batteryCharge / 100.0 - BATTERY_MIN) * BATTERY_CAPACITY / solar.batteryPower;
-        int remain_minutes = 60.0 * remain_hours;
-        int remain_minutes_round = REMAINING_TIME_ROUND_MIN * (round(remain_minutes / REMAINING_TIME_ROUND_MIN));
+        float remainHours = (solar.batteryCharge / 100.0 - BATTERY_MIN) * BATTERY_CAPACITY / solar.batteryPower;
+        int remainMinutes = 60.0 * remainHours;
+        int remainMinutesRound = REMAINING_TIME_ROUND_MIN * (round(remainMinutes / REMAINING_TIME_ROUND_MIN));
 
-        time_t end_time = solar.currentUpdateTime + remain_minutes_round * 60;
-        char timeBuf_end[CHAR_LEN];
-        formatTimeHMS(end_time, timeBuf_end, sizeof(timeBuf_end));
+        time_t endTime = solar.currentUpdateTime + remainMinutesRound * 60;
+        char timeBufEnd[CHAR_LEN];
+        formatTimeHMS(endTime, timeBufEnd, sizeof(timeBufEnd));
 
-        if ((floor(remain_hours) == 1) && (remain_minutes > 0)) {
-            snprintf(tempString, CHAR_LEN, "%2.0f hour %i mins\n remaining\n Until %s", remain_hours, remain_minutes_round % 60, timeBuf_end);
-        } else if ((remain_minutes_round > 0) && (remain_hours < MAX_SOLAR_TIME_STATUS_HOURS)) {
-            snprintf(tempString, CHAR_LEN, "%2.0f hours %i mins\n remaining\n Until %s", remain_hours, remain_minutes_round % 60, timeBuf_end);
+        if ((floor(remainHours) == 1) && (remainMinutes > 0)) {
+            snprintf(tempString, CHAR_LEN, "%2.0f hour %i mins\n remaining\n Until %s", remainHours, remainMinutesRound % 60, timeBufEnd);
+        } else if ((remainMinutesRound > 0) && (remainHours < MAX_SOLAR_TIME_STATUS_HOURS)) {
+            snprintf(tempString, CHAR_LEN, "%2.0f hours %i mins\n remaining\n Until %s", remainHours, remainMinutesRound % 60, timeBufEnd);
         } else {
             tempString[0] = '\0'; // Don't print for too long time
         }
@@ -47,16 +47,16 @@ static void updateChargingStatus() {
         lv_label_set_text(ui_ChargingLabel, tempString);
 
         // Time to full = remaining capacity to fill / charge rate (batteryPower is negative when charging)
-        float remain_hours = -(BATTERY_CHARGE_FULL_THRESHOLD - solar.batteryCharge / 100) * BATTERY_CAPACITY / solar.batteryPower;
-        int remain_minutes = 60.0 * remain_hours;
-        int remain_minutes_round = REMAINING_TIME_ROUND_MIN * (round(remain_minutes / REMAINING_TIME_ROUND_MIN));
+        float remainHours = -(BATTERY_CHARGE_FULL_THRESHOLD - solar.batteryCharge / 100) * BATTERY_CAPACITY / solar.batteryPower;
+        int remainMinutes = 60.0 * remainHours;
+        int remainMinutesRound = REMAINING_TIME_ROUND_MIN * (round(remainMinutes / REMAINING_TIME_ROUND_MIN));
 
-        if (remain_minutes == 0) {
+        if (remainMinutes == 0) {
             tempString[0] = '\0';
-        } else if ((floor(remain_hours) == 1) && (remain_minutes > 0)) {
-            snprintf(tempString, CHAR_LEN, "%2.0f hour %i mins to\n fully charged", remain_hours, remain_minutes_round % 60);
-        } else if ((remain_minutes_round > 0) && (remain_hours < MAX_SOLAR_TIME_STATUS_HOURS)) {
-            snprintf(tempString, CHAR_LEN, "%2.0f hours %i mins to\n fully charged", remain_hours, remain_minutes_round % 60);
+        } else if ((floor(remainHours) == 1) && (remainMinutes > 0)) {
+            snprintf(tempString, CHAR_LEN, "%2.0f hour %i mins to\n fully charged", remainHours, remainMinutesRound % 60);
+        } else if ((remainMinutesRound > 0) && (remainHours < MAX_SOLAR_TIME_STATUS_HOURS)) {
+            snprintf(tempString, CHAR_LEN, "%2.0f hours %i mins to\n fully charged", remainHours, remainMinutesRound % 60);
         } else {
             tempString[0] = '\0'; // Don't print for too long time
         }
