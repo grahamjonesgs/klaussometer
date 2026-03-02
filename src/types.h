@@ -59,6 +59,20 @@ struct __attribute__((packed)) AirQuality {
     char timeString[CHAR_LEN];
 };
 
+// Indoor air quality from inside sensor (SCD41 CO2 + PMS5003 particulates)
+struct __attribute__((packed)) InsideAirQuality {
+    float co2;  // ppm from SCD41
+    float pm1;  // µg/m³ from PMS5003
+    float pm25; // µg/m³ from PMS5003
+    float pm10; // µg/m³ from PMS5003
+    time_t co2LastMessageTime; // last message from SCD41
+    time_t pmLastMessageTime;  // last message from PMS5003
+    ReadingState co2State;
+    ReadingState pm1State;
+    ReadingState pm25State;
+    ReadingState pm10State;
+};
+
 struct __attribute__((packed)) Solar {
     time_t currentUpdateTime;
     time_t dailyUpdateTime;
@@ -111,5 +125,6 @@ extern std::atomic<bool> dirtyRooms;
 extern std::atomic<bool> dirtySolar;
 extern std::atomic<bool> dirtyWeather;
 extern std::atomic<bool> dirtyUv;
+extern std::atomic<bool> dirtyInsideAQ;
 
 #endif // TYPES_H

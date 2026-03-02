@@ -5,10 +5,17 @@ extern MqttClient mqttClient;
 extern SemaphoreHandle_t mqttMutex;
 extern Readings readings[];
 extern const int numberOfReadings;
+extern InsideAirQuality insideAirQuality;
 
 // Track last logged value per reading (compared against to detect meaningful changes)
 static float lastLoggedValue[MAX_READINGS] = {0};
 static bool hasLoggedBefore[MAX_READINGS] = {false};
+
+// Track last logged values for inside air quality sensors
+static float lastLoggedInsideCO2  = 0.0f; static bool hasLoggedInsideCO2  = false;
+static float lastLoggedInsidePM1  = 0.0f; static bool hasLoggedInsidePM1  = false;
+static float lastLoggedInsidePM25 = 0.0f; static bool hasLoggedInsidePM25 = false;
+static float lastLoggedInsidePM10 = 0.0f; static bool hasLoggedInsidePM10 = false;
 
 // Get mqtt messages
 void receive_mqtt_messages_t(void* pvParameters) {
@@ -93,6 +100,11 @@ void receive_mqtt_messages_t(void* pvParameters) {
 
                 if (messageProcessed) {
                     saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings);
+                } else if (strcmp(topicBuffer, MQTT_INSIDE_CO2_TOPIC) == 0 ||
+                           strcmp(topicBuffer, MQTT_INSIDE_PM1_TOPIC) == 0 ||
+                           strcmp(topicBuffer, MQTT_INSIDE_PM25_TOPIC) == 0 ||
+                           strcmp(topicBuffer, MQTT_INSIDE_PM10_TOPIC) == 0) {
+                    updateInsideAirQuality(topicBuffer, recMessage);
                 }
             } else {
                 // No message
@@ -236,4 +248,77 @@ void updateReadings(char* recMessage, int index, int dataType) {
         lastLoggedValue[index] = parsedValue;
         hasLoggedBefore[index] = true;
     }
+}
+
+void updateInsideAirQuality(const char* topic, char* recMessage) {
+    char* endptr;
+    float parsedValue = strtof(recMessage, &endptr);
+
+    if (endptr == recMessage || *endptr != '\0' || isnan(parsedValue) || isinf(parsedValue)) {
+        char logMsg[CHAR_LEN];
+        snprintf(logMsg, CHAR_LEN, "Invalid inside AQ value: '%s' on %s", recMessage, topic);
+        logAndPublish(logMsg);
+        return;
+    }
+
+    time_t now = time(nullptr);
+    char logMsg[CHAR_LEN];
+    bool valueChanged = false;
+
+    if (strcmp(topic, MQTT_INSIDE_CO2_TOPIC) == 0) {
+        if (parsedValue < CO2_MIN_VALID || parsedValue > CO2_MAX_VALID) {
+            snprintf(logMsg, CHAR_LEN, "Inside CO2 out of range: %.0f ppm", parsedValue);
+            logAndPublish(logMsg);
+            return;
+        }
+        insideAirQuality.co2 = parsedValue;
+        insideAirQuality.co2State = ReadingState::FIRST_READING;
+        insideAirQuality.co2LastMessageTime = now;
+        snprintf(logMsg, CHAR_LEN, "Inside CO2: %.0f ppm", parsedValue);
+        valueChanged = !hasLoggedInsideCO2 || fabsf(parsedValue - lastLoggedInsideCO2) >= LOG_CHANGE_THRESHOLD_CO2;
+        if (valueChanged) { lastLoggedInsideCO2 = parsedValue; hasLoggedInsideCO2 = true; }
+    } else if (strcmp(topic, MQTT_INSIDE_PM1_TOPIC) == 0) {
+        if (parsedValue < 0.0f || parsedValue > PM_MAX_VALID) {
+            snprintf(logMsg, CHAR_LEN, "Inside PM1 out of range: %.1f ug/m3", parsedValue);
+            logAndPublish(logMsg);
+            return;
+        }
+        insideAirQuality.pm1 = parsedValue;
+        insideAirQuality.pm1State = ReadingState::FIRST_READING;
+        insideAirQuality.pmLastMessageTime = now;
+        snprintf(logMsg, CHAR_LEN, "Inside PM1: %.1f ug/m3", parsedValue);
+        valueChanged = !hasLoggedInsidePM1 || fabsf(parsedValue - lastLoggedInsidePM1) >= LOG_CHANGE_THRESHOLD_PM;
+        if (valueChanged) { lastLoggedInsidePM1 = parsedValue; hasLoggedInsidePM1 = true; }
+    } else if (strcmp(topic, MQTT_INSIDE_PM25_TOPIC) == 0) {
+        if (parsedValue < 0.0f || parsedValue > PM_MAX_VALID) {
+            snprintf(logMsg, CHAR_LEN, "Inside PM2.5 out of range: %.1f ug/m3", parsedValue);
+            logAndPublish(logMsg);
+            return;
+        }
+        insideAirQuality.pm25 = parsedValue;
+        insideAirQuality.pm25State = ReadingState::FIRST_READING;
+        insideAirQuality.pmLastMessageTime = now;
+        snprintf(logMsg, CHAR_LEN, "Inside PM2.5: %.1f ug/m3", parsedValue);
+        valueChanged = !hasLoggedInsidePM25 || fabsf(parsedValue - lastLoggedInsidePM25) >= LOG_CHANGE_THRESHOLD_PM;
+        if (valueChanged) { lastLoggedInsidePM25 = parsedValue; hasLoggedInsidePM25 = true; }
+    } else if (strcmp(topic, MQTT_INSIDE_PM10_TOPIC) == 0) {
+        if (parsedValue < 0.0f || parsedValue > PM_MAX_VALID) {
+            snprintf(logMsg, CHAR_LEN, "Inside PM10 out of range: %.1f ug/m3", parsedValue);
+            logAndPublish(logMsg);
+            return;
+        }
+        insideAirQuality.pm10 = parsedValue;
+        insideAirQuality.pm10State = ReadingState::FIRST_READING;
+        insideAirQuality.pmLastMessageTime = now;
+        snprintf(logMsg, CHAR_LEN, "Inside PM10: %.1f ug/m3", parsedValue);
+        valueChanged = !hasLoggedInsidePM10 || fabsf(parsedValue - lastLoggedInsidePM10) >= LOG_CHANGE_THRESHOLD_PM;
+        if (valueChanged) { lastLoggedInsidePM10 = parsedValue; hasLoggedInsidePM10 = true; }
+    } else {
+        return;
+    }
+    if (valueChanged) {
+        logAndPublish(logMsg);
+    }
+    dirtyInsideAQ = true;
+    saveDataBlock(INSIDE_AIR_QUALITY_DATA_FILENAME, &insideAirQuality, sizeof(insideAirQuality));
 }

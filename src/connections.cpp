@@ -60,6 +60,17 @@ void mqtt_connect() {
             errorPublish(messageBuffer);
         }
     }
+    const char* insideTopics[] = {
+        MQTT_INSIDE_CO2_TOPIC, MQTT_INSIDE_PM1_TOPIC,
+        MQTT_INSIDE_PM25_TOPIC, MQTT_INSIDE_PM10_TOPIC
+    };
+    for (const char* topic : insideTopics) {
+        if (!mqttClient.subscribe(topic)) {
+            char messageBuffer[CHAR_LEN];
+            snprintf(messageBuffer, CHAR_LEN, "MQTT subscribe failed for topic: %s", topic);
+            errorPublish(messageBuffer);
+        }
+    }
 }
 
 void time_init() {

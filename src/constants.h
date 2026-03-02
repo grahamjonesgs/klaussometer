@@ -46,7 +46,7 @@ static constexpr int ROOM_COUNT = 5;
     &ui_TextKlaussometer, &ui_SolarMinMax,         &ui_GridBought,           &ui_GridTodayEnergy,      &ui_GridMonthEnergy,  \
     &ui_GridTodayCost,    &ui_GridMonthCost,       &ui_GridTodayPercentage,  &ui_GridMonthPercentage,  &ui_GridTitlekWh,     \
     &ui_GridTitleCost,    &ui_GridTitlePercentage, &ui_FCMin,                &ui_FCMax,                                      \
-    &ui_SolarTodayEnergy, &ui_SolarMonthEnergy,                                                                               \
+    &ui_SolarTodayEnergy, &ui_SolarMonthEnergy,    &ui_GridTitleSolar,                                                                         \
     &ui_Direction1,       &ui_Direction2,          &ui_Direction3,           &ui_Direction4,           &ui_Direction5,       \
     &ui_Version,                                                                                                             \
 }
@@ -97,7 +97,7 @@ enum class ReadingState : uint8_t {
     TRENDING_UP = 2,   // Current value is above the historical average
     TRENDING_DOWN = 3, // Current value is below the historical average
     STABLE = 4,        // Current value equals the historical average
-    STALE = 5          // No message for >30 min — value still shown but coloured red; direction hidden
+    STALE = 5          // No message for >30 min — value still shown but coloured grey; direction hidden
 };
 
 // Returns the glyph character for the given reading state.
@@ -124,6 +124,21 @@ static const float TEMP_MIN_VALID = -50.0f;     // Minimum plausible temperature
 static const float TEMP_MAX_VALID = 100.0f;     // Maximum plausible temperature (°C)
 static const float HUMIDITY_MAX_VALID = 100.0f; // Maximum plausible humidity (%)
 static const float BATTERY_MAX_VALID_V = 5.0f;  // Maximum plausible sensor battery voltage (V)
+static const float CO2_MIN_VALID = 400.0f;      // SCD41 minimum reading (ppm)
+static const float CO2_MAX_VALID = 40000.0f;    // SCD41 maximum reading (ppm)
+static const float PM_MAX_VALID = 1000.0f;      // Maximum plausible particulate reading (µg/m³)
+
+// Inside air quality display thresholds (colour coding on labels)
+static const float CO2_THRESHOLD_YELLOW  = 800.0f;  // CO2 ppm: above this shows yellow
+static const float CO2_THRESHOLD_RED     = 1200.0f; // CO2 ppm: above this shows red
+static const float PM25_THRESHOLD_YELLOW = 12.0f;   // PM2.5 µg/m³: above this shows yellow (WHO guideline)
+static const float PM25_THRESHOLD_RED    = 35.0f;   // PM2.5 µg/m³: above this shows red
+
+// Inside sensor MQTT topics (full broker path)
+static const char* const MQTT_INSIDE_CO2_TOPIC  = "kitchen/co2/set";
+static const char* const MQTT_INSIDE_PM1_TOPIC  = "kitchen/pm1/set";
+static const char* const MQTT_INSIDE_PM25_TOPIC = "kitchen/pm25/set";
+static const char* const MQTT_INSIDE_PM10_TOPIC = "kitchen/pm10/set";
 
 // Data type definition for array
 static const int DATA_TEMPERATURE = 0;
@@ -136,11 +151,13 @@ static const int DATA_BATTERY = 4;
 static const float LOG_CHANGE_THRESHOLD_TEMP = 0.5f;     // °C
 static const float LOG_CHANGE_THRESHOLD_HUMIDITY = 2.0f; // %
 static const float LOG_CHANGE_THRESHOLD_BATTERY = 0.1f;  // V
+static const float LOG_CHANGE_THRESHOLD_CO2 = 50.0f;     // ppm
+static const float LOG_CHANGE_THRESHOLD_PM = 0.1f;       // µg/m³ — any meaningful change
 
 // Define constants used
 static const time_t TIME_SYNC_THRESHOLD = 1577836800; // 2020-01-01: used to detect unsynced/zero time
 
-static const int MAX_NO_MESSAGE_STALE_SEC = 1800;         // Seconds without a message before a reading turns red (ReadingState::STALE)
+static const int MAX_NO_MESSAGE_STALE_SEC = 1800;         // Seconds without a message before a reading turns grey (ReadingState::STALE)
 static const int MAX_NO_MESSAGE_BLANK_SEC = 3600;         // Seconds without a message before a reading is blanked (ReadingState::NO_DATA)
 static const int TIME_RETRIES = 100;                      // Number of time to retry getting the time during setup
 static const int WEATHER_UPDATE_INTERVAL_SEC = 300;       // Interval between weather updates
@@ -203,6 +220,8 @@ static const int PIN_SD_D0 = 13;
 
 static const int COLOR_RED = 0xFA0000;
 static const int COLOR_YELLOW = 0xF7EA48;
+static const int COLOR_AMBER = 0xE08000;  // Warning: visible on both white and black backgrounds
+static const int COLOR_STALE = 0x808080;  // Grey: sensor offline / data too old
 static const int COLOR_GREEN = 0x205602;
 static const int COLOR_BLACK = 0x000000;
 static const int COLOR_WHITE = 0xFFFFFF;
@@ -269,6 +288,7 @@ static const char* const WEATHER_DATA_FILENAME = "/weather_data.bin";
 static const char* const UV_DATA_FILENAME = "/uv_data.bin";
 static const char* const READINGS_DATA_FILENAME = "/readings_data.bin";
 static const char* const AIR_QUALITY_DATA_FILENAME = "/air_quality_data.bin";
+static const char* const INSIDE_AIR_QUALITY_DATA_FILENAME = "/inside_aq_data.bin";
 static const char* const NORMAL_LOG_FILENAME = "/normal_log.txt";
 static const char* const ERROR_LOG_FILENAME = "/error_log.txt";
 

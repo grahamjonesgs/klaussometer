@@ -1,0 +1,17 @@
+{
+  "codename": "MDWiFi",
+  "ttf_path": "/assets/materialdesignicons-webfont.ttf",
+  "bin_path": "/assets/ui_font_MDWiFi.bin",
+  "c_path": "/assets/ui_font_MDWiFi.c",
+  "cfg_path": "/assets/ui_font_MDWiFi.fcfg",
+  "size": 32,
+  "bpp": 1,
+  "letters": 0,
+  "ranges": [
+    "0xF091F-0xF0930",
+    " 0xF0079-0xF0090"
+  ],
+  "symbols": "",
+  "customparams": "--no-compress --no-prefilter",
+  "uploaded": false
+}

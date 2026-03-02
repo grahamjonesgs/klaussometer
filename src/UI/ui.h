@@ -38,8 +38,10 @@ LV_FONT_DECLARE( ui_font_Arrows_ADF_big);
 LV_FONT_DECLARE( ui_font_Battery);
 LV_FONT_DECLARE( ui_font_Battery2);
 LV_FONT_DECLARE( ui_font_Epicycles);
+LV_FONT_DECLARE( ui_font_MDWiFi);
 LV_FONT_DECLARE( ui_font_Monserrat_Bold_18);
 LV_FONT_DECLARE( ui_font_Monserrat_Bold_32);
+LV_FONT_DECLARE( ui_font_Monserrat_bold_32);
 LV_FONT_DECLARE( ui_font_Montserrat_Bold_16);
 LV_FONT_DECLARE( ui_font_Phosphor48);
 

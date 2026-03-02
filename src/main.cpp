@@ -40,10 +40,12 @@ void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
 void touchRead(lv_indev_t* indev, lv_indev_data_t* data);
 void getBatteryStatus(float batteryValue, int readingIndex, char* iconChar, lv_color_t* colorPtr);
 void invalidateOldReadings();
+void invalidateInsideAirQuality();
 static void setStatusColor(lv_obj_t* label, time_t updateTime, int maxAgeSec);
 static void updateRoomDisplay();
 static void updateUVDisplay();
 static void updateWeatherDisplay();
+static void updateInsideAQDisplay();
 static void updatePeriodicStatus(unsigned long currentMillis);
 static void adjustDayNightMode();
 
@@ -54,6 +56,7 @@ UV uv = {0, 0, "--:--:--"};
 Solar solar = {0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, "--:--:--", 100, 0, false, 0.0, 0.0};
 SolarToken solarToken = {};
 AirQuality airQuality = {0.0, 0.0, 0.0, 0, 0, "--:--:--"};
+InsideAirQuality insideAirQuality = {};
 Readings readings[]{READINGS_ARRAY};
 Preferences storage;
 extern const int numberOfReadings = sizeof(readings) / sizeof(readings[0]);
@@ -71,6 +74,7 @@ std::atomic<bool> dirtyRooms(true);
 std::atomic<bool> dirtySolar(true);
 std::atomic<bool> dirtyWeather(true);
 std::atomic<bool> dirtyUv(true);
+std::atomic<bool> dirtyInsideAQ(false);
 
 const int MAX_DUTY_CYCLE = (int)(pow(2, PWMResolution) - 1);
 const float DAYTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MAX_BRIGHTNESS);
@@ -220,6 +224,12 @@ void setup() {
         } else {
             logAndPublish("Air quality state restore failed");
         }
+        if (loadDataBlock(INSIDE_AIR_QUALITY_DATA_FILENAME, &insideAirQuality, sizeof(insideAirQuality))) {
+            logAndPublish("Inside air quality state restored OK");
+            invalidateInsideAirQuality(); // Mark stale if data is old
+        } else {
+            logAndPublish("Inside air quality state restore failed");
+        }
     }
 
     // Add unique topics for MQTT logging
@@ -289,6 +299,8 @@ void setup() {
     lv_label_set_text(ui_UVUpdateTime, "");
     lv_label_set_text(ui_TempLabelFC, "--");
     lv_label_set_text(ui_UVLabel, "--");
+    lv_label_set_text(ui_InsideAirQualityCO2, "CO2: --");
+    lv_label_set_text(ui_InsideAirQualityPM25, "PM2.5: --");
 
     lv_obj_add_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
@@ -394,6 +406,7 @@ void loop() {
     updateRoomDisplay();
     updateUVDisplay();
     updateWeatherDisplay();
+    updateInsideAQDisplay();
 
     if (dirtySolar) {
         dirtySolar = false;
@@ -405,6 +418,7 @@ void loop() {
 
     lv_label_set_text(ui_StatusMessage, statusMessageValue);
     invalidateOldReadings();
+    invalidateInsideAirQuality();
 }
 
 // Colors a status indicator green if data is fresh, red if it exceeds maxAgeSec.
@@ -425,7 +439,7 @@ static void updateRoomDisplay() {
         lv_arc_set_value(*tempArcs[i], readings[i].currentValue);
         lv_label_set_text(*tempLabels[i], readings[i].output);
         if (readings[i].readingState == ReadingState::STALE) {
-            lv_obj_set_style_text_color(*tempLabels[i], lv_color_hex(COLOR_RED), LV_PART_MAIN);
+            lv_obj_set_style_text_color(*tempLabels[i], lv_color_hex(COLOR_STALE), LV_PART_MAIN);
             lv_obj_clear_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
         } else if (readings[i].readingState != ReadingState::NO_DATA) {
             lv_color_t normalColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
@@ -502,6 +516,57 @@ static void updateWeatherDisplay() {
         lv_label_set_text(ui_FCMax, tempString);
         lv_obj_clear_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
         lv_arc_set_range(ui_TempArcFC, weather.minTemp, weather.maxTemp);
+    }
+}
+
+// Updates CO2 and PM2.5 labels with colour coding based on air quality thresholds.
+static void updateInsideAQDisplay() {
+    if (!dirtyInsideAQ)
+        return;
+    dirtyInsideAQ = false;
+
+    char tempString[CHAR_LEN];
+    lv_color_t defaultColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
+    lv_color_t color;
+
+    // CO2 label
+    if (insideAirQuality.co2State == ReadingState::NO_DATA) {
+        lv_label_set_text(ui_InsideAirQualityCO2, "CO2: --");
+        lv_obj_set_style_text_color(ui_InsideAirQualityCO2, defaultColor, LV_PART_MAIN);
+    } else {
+        char co2Buf[32];
+        formatIntegerWithCommas((long long)insideAirQuality.co2, co2Buf, sizeof(co2Buf));
+        snprintf(tempString, CHAR_LEN, "CO2: %s", co2Buf);
+        lv_label_set_text(ui_InsideAirQualityCO2, tempString);
+        if (insideAirQuality.co2State == ReadingState::STALE) {
+            color = lv_color_hex(COLOR_STALE);
+        } else if (insideAirQuality.co2 >= CO2_THRESHOLD_RED) {
+            color = lv_color_hex(COLOR_RED);
+        } else if (insideAirQuality.co2 >= CO2_THRESHOLD_YELLOW) {
+            color = lv_color_hex(COLOR_AMBER);
+        } else {
+            color = lv_color_hex(COLOR_GREEN);
+        }
+        lv_obj_set_style_text_color(ui_InsideAirQualityCO2, color, LV_PART_MAIN);
+    }
+
+    // PM2.5 label
+    if (insideAirQuality.pm25State == ReadingState::NO_DATA) {
+        lv_label_set_text(ui_InsideAirQualityPM25, "PM2.5: --");
+        lv_obj_set_style_text_color(ui_InsideAirQualityPM25, defaultColor, LV_PART_MAIN);
+    } else {
+        snprintf(tempString, CHAR_LEN, "PM2.5: %.1f", insideAirQuality.pm25);
+        lv_label_set_text(ui_InsideAirQualityPM25, tempString);
+        if (insideAirQuality.pm25State == ReadingState::STALE) {
+            color = lv_color_hex(COLOR_STALE);
+        } else if (insideAirQuality.pm25 >= PM25_THRESHOLD_RED) {
+            color = lv_color_hex(COLOR_RED);
+        } else if (insideAirQuality.pm25 >= PM25_THRESHOLD_YELLOW) {
+            color = lv_color_hex(COLOR_AMBER);
+        } else {
+            color = lv_color_hex(COLOR_GREEN);
+        }
+        lv_obj_set_style_text_color(ui_InsideAirQualityPM25, color, LV_PART_MAIN);
     }
 }
 
@@ -597,6 +662,35 @@ void invalidateOldReadings() {
                 readings[i].readingState = ReadingState::STALE;
                 dirtyRooms = true;
             }
+        }
+    }
+}
+
+void invalidateInsideAirQuality() {
+    if (time(nullptr) <= TIME_SYNC_THRESHOLD) return;
+    time_t now = time(nullptr);
+
+    // SCD41 — CO2 sensor
+    if (insideAirQuality.co2LastMessageTime != 0) {
+        time_t age = now - insideAirQuality.co2LastMessageTime;
+        if (age > MAX_NO_MESSAGE_BLANK_SEC) {
+            if (insideAirQuality.co2State != ReadingState::NO_DATA) { insideAirQuality.co2State = ReadingState::NO_DATA; insideAirQuality.co2 = 0.0f; dirtyInsideAQ = true; }
+        } else if (age > MAX_NO_MESSAGE_STALE_SEC) {
+            if (insideAirQuality.co2State != ReadingState::STALE && insideAirQuality.co2State != ReadingState::NO_DATA) { insideAirQuality.co2State = ReadingState::STALE; dirtyInsideAQ = true; }
+        }
+    }
+
+    // PMS5003 — particulate sensor
+    if (insideAirQuality.pmLastMessageTime != 0) {
+        time_t age = now - insideAirQuality.pmLastMessageTime;
+        if (age > MAX_NO_MESSAGE_BLANK_SEC) {
+            if (insideAirQuality.pm1State != ReadingState::NO_DATA) { insideAirQuality.pm1State = ReadingState::NO_DATA; insideAirQuality.pm1 = 0.0f; dirtyInsideAQ = true; }
+            if (insideAirQuality.pm25State != ReadingState::NO_DATA) { insideAirQuality.pm25State = ReadingState::NO_DATA; insideAirQuality.pm25 = 0.0f; dirtyInsideAQ = true; }
+            if (insideAirQuality.pm10State != ReadingState::NO_DATA) { insideAirQuality.pm10State = ReadingState::NO_DATA; insideAirQuality.pm10 = 0.0f; dirtyInsideAQ = true; }
+        } else if (age > MAX_NO_MESSAGE_STALE_SEC) {
+            if (insideAirQuality.pm1State != ReadingState::STALE && insideAirQuality.pm1State != ReadingState::NO_DATA) { insideAirQuality.pm1State = ReadingState::STALE; dirtyInsideAQ = true; }
+            if (insideAirQuality.pm25State != ReadingState::STALE && insideAirQuality.pm25State != ReadingState::NO_DATA) { insideAirQuality.pm25State = ReadingState::STALE; dirtyInsideAQ = true; }
+            if (insideAirQuality.pm10State != ReadingState::STALE && insideAirQuality.pm10State != ReadingState::NO_DATA) { insideAirQuality.pm10State = ReadingState::STALE; dirtyInsideAQ = true; }
         }
     }
 }
