@@ -3119,7 +3119,7 @@
                 "flags": 17,
                 "strtype": "OBJECT/Position",
                 "intarray": [
-                  752,
+                  830,
                   -241
                 ],
                 "InheritedType": 7
@@ -3984,7 +3984,7 @@
                 "strtype": "OBJECT/Position",
                 "intarray": [
                   3,
-                  -265
+                  -245
                 ],
                 "InheritedType": 7
               },
@@ -4129,7 +4129,7 @@
                 "strtype": "OBJECT/Position",
                 "intarray": [
                   3,
-                  -245
+                  -225
                 ],
                 "InheritedType": 7
               },
@@ -6543,7 +6543,7 @@
                       {
                         "nid": 1307986453,
                         "strtype": "_style/Text_Font",
-                        "strval": "Monserrat_Bold_32",
+                        "strval": "montserrat_32",
                         "InheritedType": 3
                       },
                       {
@@ -6606,7 +6606,7 @@
                 "flags": 17,
                 "strtype": "OBJECT/Position",
                 "intarray": [
-                  400,
+                  440,
                   -280
                 ],
                 "InheritedType": 7
@@ -6751,7 +6751,7 @@
                 "flags": 17,
                 "strtype": "OBJECT/Position",
                 "intarray": [
-                  350,
+                  390,
                   -280
                 ],
                 "InheritedType": 7
@@ -6896,7 +6896,7 @@
                 "flags": 17,
                 "strtype": "OBJECT/Position",
                 "intarray": [
-                  280,
+                  330,
                   -280
                 ],
                 "InheritedType": 7
@@ -7041,7 +7041,7 @@
                 "flags": 17,
                 "strtype": "OBJECT/Position",
                 "intarray": [
-                  210,
+                  270,
                   -280
                 ],
                 "InheritedType": 7
@@ -12646,7 +12646,7 @@
                 "flags": 17,
                 "strtype": "OBJECT/Position",
                 "intarray": [
-                  3,
+                  200,
                   -225
                 ],
                 "InheritedType": 7
@@ -12740,7 +12740,7 @@
               {
                 "nid": 1995524405,
                 "strtype": "LABEL/Text",
-                "strval": "21: Poor",
+                "strval": "Outside AQI 21: Poor",
                 "InheritedType": 10
               },
               {
@@ -13434,8 +13434,8 @@
                 "flags": 17,
                 "strtype": "OBJECT/Position",
                 "intarray": [
-                  -400,
-                  243
+                  160,
+                  -245
                 ],
                 "InheritedType": 7
               },
@@ -13528,7 +13528,7 @@
               {
                 "nid": -645365461,
                 "strtype": "LABEL/Text",
-                "strval": "CO2: xxxx",
+                "strval": "CO2: 10,000",
                 "InheritedType": 10
               },
               {
@@ -13579,8 +13579,8 @@
                 "flags": 17,
                 "strtype": "OBJECT/Position",
                 "intarray": [
-                  -200,
-                  243
+                  245,
+                  -245
                 ],
                 "InheritedType": 7
               },
@@ -13673,7 +13673,7 @@
               {
                 "nid": -645365461,
                 "strtype": "LABEL/Text",
-                "strval": "PM2.5: xxxx",
+                "strval": "PM2.5: 0.0",
                 "InheritedType": 10
               },
               {
@@ -13866,7 +13866,7 @@
     "custom_variable_prefix": "uic",
     "separate_screen_save": false,
     "hierarchy_state_save": false,
-    "backup_cnt": 1660,
+    "backup_cnt": 1671,
     "autosave_cnt": 0,
     "group_color_cnt": 0,
     "imagebytearrayprefix": null,

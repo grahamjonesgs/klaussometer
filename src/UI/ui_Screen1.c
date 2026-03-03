@@ -197,7 +197,7 @@ lv_label_set_text(ui_HumidLabel2,"Text");
 ui_Time = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_Time, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_Time, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_Time, 752 );
+lv_obj_set_x( ui_Time, 830 );
 lv_obj_set_y( ui_Time, -241 );
 lv_obj_set_align( ui_Time, LV_ALIGN_LEFT_MID );
 lv_label_set_text(ui_Time,"00:00:00");
@@ -250,7 +250,7 @@ ui_FCConditions = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_FCConditions, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_FCConditions, LV_SIZE_CONTENT);   /// 1
 lv_obj_set_x( ui_FCConditions, 3 );
-lv_obj_set_y( ui_FCConditions, -265 );
+lv_obj_set_y( ui_FCConditions, -245 );
 lv_obj_set_align( ui_FCConditions, LV_ALIGN_CENTER );
 lv_label_set_text(ui_FCConditions,"Weather Conditions");
 
@@ -258,7 +258,7 @@ ui_FCWindSpeed = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_FCWindSpeed, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_FCWindSpeed, LV_SIZE_CONTENT);   /// 1
 lv_obj_set_x( ui_FCWindSpeed, 3 );
-lv_obj_set_y( ui_FCWindSpeed, -245 );
+lv_obj_set_y( ui_FCWindSpeed, -225 );
 lv_obj_set_align( ui_FCWindSpeed, LV_ALIGN_CENTER );
 lv_label_set_text(ui_FCWindSpeed,"23 kmh");
 
@@ -397,14 +397,14 @@ lv_obj_set_x( ui_TextKlaussometer, 10 );
 lv_obj_set_y( ui_TextKlaussometer, -270 );
 lv_obj_set_align( ui_TextKlaussometer, LV_ALIGN_LEFT_MID );
 lv_label_set_text(ui_TextKlaussometer,"Klaussometer");
-lv_obj_set_style_text_font(ui_TextKlaussometer, &ui_font_Monserrat_Bold_32, LV_PART_MAIN| LV_STATE_DEFAULT);
+lv_obj_set_style_text_font(ui_TextKlaussometer, &lv_font_montserrat_32, LV_PART_MAIN| LV_STATE_DEFAULT);
 lv_obj_set_style_shadow_color(ui_TextKlaussometer, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT );
 lv_obj_set_style_shadow_opa(ui_TextKlaussometer, 255, LV_PART_MAIN| LV_STATE_DEFAULT);
 
 ui_WiFiStatus = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_WiFiStatus, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_WiFiStatus, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_WiFiStatus, 400 );
+lv_obj_set_x( ui_WiFiStatus, 440 );
 lv_obj_set_y( ui_WiFiStatus, -280 );
 lv_obj_set_align( ui_WiFiStatus, LV_ALIGN_CENTER );
 lv_label_set_text(ui_WiFiStatus,"WiFi");
@@ -412,7 +412,7 @@ lv_label_set_text(ui_WiFiStatus,"WiFi");
 ui_ServerStatus = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_ServerStatus, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_ServerStatus, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_ServerStatus, 350 );
+lv_obj_set_x( ui_ServerStatus, 390 );
 lv_obj_set_y( ui_ServerStatus, -280 );
 lv_obj_set_align( ui_ServerStatus, LV_ALIGN_CENTER );
 lv_label_set_text(ui_ServerStatus,"Server");
@@ -420,7 +420,7 @@ lv_label_set_text(ui_ServerStatus,"Server");
 ui_WeatherStatus = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_WeatherStatus, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_WeatherStatus, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_WeatherStatus, 280 );
+lv_obj_set_x( ui_WeatherStatus, 330 );
 lv_obj_set_y( ui_WeatherStatus, -280 );
 lv_obj_set_align( ui_WeatherStatus, LV_ALIGN_CENTER );
 lv_label_set_text(ui_WeatherStatus,"Weather");
@@ -428,7 +428,7 @@ lv_label_set_text(ui_WeatherStatus,"Weather");
 ui_SolarStatus = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_SolarStatus, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_SolarStatus, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_SolarStatus, 210 );
+lv_obj_set_x( ui_SolarStatus, 270 );
 lv_obj_set_y( ui_SolarStatus, -280 );
 lv_obj_set_align( ui_SolarStatus, LV_ALIGN_CENTER );
 lv_label_set_text(ui_SolarStatus,"Solar");
@@ -769,10 +769,10 @@ lv_obj_set_style_text_font(ui_GridTitlePercentage, &ui_font_Montserrat_Bold_16, 
 ui_FCAQI = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_FCAQI, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_FCAQI, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_FCAQI, 3 );
+lv_obj_set_x( ui_FCAQI, 200 );
 lv_obj_set_y( ui_FCAQI, -225 );
 lv_obj_set_align( ui_FCAQI, LV_ALIGN_CENTER );
-lv_label_set_text(ui_FCAQI,"21: Poor");
+lv_label_set_text(ui_FCAQI,"Outside AQI 21: Poor");
 
 ui_FCAQIUpdateTime = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_FCAQIUpdateTime, LV_SIZE_CONTENT);  /// 1
@@ -818,18 +818,18 @@ lv_obj_set_style_text_font(ui_SolarMonthEnergy, &lv_font_montserrat_16, LV_PART_
 ui_InsideAirQualityCO2 = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_InsideAirQualityCO2, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_InsideAirQualityCO2, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_InsideAirQualityCO2, -400 );
-lv_obj_set_y( ui_InsideAirQualityCO2, 243 );
+lv_obj_set_x( ui_InsideAirQualityCO2, 160 );
+lv_obj_set_y( ui_InsideAirQualityCO2, -245 );
 lv_obj_set_align( ui_InsideAirQualityCO2, LV_ALIGN_CENTER );
-lv_label_set_text(ui_InsideAirQualityCO2,"CO2: xxxx");
+lv_label_set_text(ui_InsideAirQualityCO2,"CO2: 10,000");
 
 ui_InsideAirQualityPM25 = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_InsideAirQualityPM25, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_InsideAirQualityPM25, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_InsideAirQualityPM25, -200 );
-lv_obj_set_y( ui_InsideAirQualityPM25, 243 );
+lv_obj_set_x( ui_InsideAirQualityPM25, 245 );
+lv_obj_set_y( ui_InsideAirQualityPM25, -245 );
 lv_obj_set_align( ui_InsideAirQualityPM25, LV_ALIGN_CENTER );
-lv_label_set_text(ui_InsideAirQualityPM25,"PM2.5: xxxx");
+lv_label_set_text(ui_InsideAirQualityPM25,"PM2.5: 0.0");
 
 }
 

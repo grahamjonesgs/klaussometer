@@ -125,6 +125,9 @@ void shutdownHandler(void) {
 
 void setup() {
     Serial.begin(115200);
+    while (!Serial) {
+        delay(10);
+    }
     esp_log_level_set("ssl_client", ESP_LOG_WARN);
     snprintf(chipId, CHAR_LEN, "%04llx", ESP.getEfuseMac() & CHIP_ID_MASK);
     Serial.printf("Starting Klaussometer Display %s\n", chipId);
@@ -227,6 +230,7 @@ void setup() {
         if (loadDataBlock(INSIDE_AIR_QUALITY_DATA_FILENAME, &insideAirQuality, sizeof(insideAirQuality))) {
             logAndPublish("Inside air quality state restored OK");
             invalidateInsideAirQuality(); // Mark stale if data is old
+            dirtyInsideAQ = true;         // Trigger display update with restored values
         } else {
             logAndPublish("Inside air quality state restore failed");
         }
@@ -496,7 +500,7 @@ static void updateWeatherDisplay() {
         lv_label_set_text(ui_FCWindSpeed, tempString);
         if (airQuality.updateTime > 0) {
             const char* aqiRating = getAQIRating(airQuality.europeanAqi);
-            snprintf(tempString, CHAR_LEN, "AQI: %d %s", airQuality.europeanAqi, aqiRating);
+            snprintf(tempString, CHAR_LEN, "Reported AQI: %d %s", airQuality.europeanAqi, aqiRating);
             lv_label_set_text(ui_FCAQI, tempString);
             snprintf(tempString, CHAR_LEN, "AQI Updated %s", airQuality.timeString);
             lv_label_set_text(ui_FCAQIUpdateTime, tempString);
