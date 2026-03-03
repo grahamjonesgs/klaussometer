@@ -772,7 +772,7 @@ lv_obj_set_height( ui_FCAQI, LV_SIZE_CONTENT);   /// 1
 lv_obj_set_x( ui_FCAQI, 200 );
 lv_obj_set_y( ui_FCAQI, -225 );
 lv_obj_set_align( ui_FCAQI, LV_ALIGN_CENTER );
-lv_label_set_text(ui_FCAQI,"Outside AQI 21: Poor");
+lv_label_set_text(ui_FCAQI,"AQI: 21 - Poor");
 
 ui_FCAQIUpdateTime = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_FCAQIUpdateTime, LV_SIZE_CONTENT);  /// 1
@@ -818,7 +818,7 @@ lv_obj_set_style_text_font(ui_SolarMonthEnergy, &lv_font_montserrat_16, LV_PART_
 ui_InsideAirQualityCO2 = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_InsideAirQualityCO2, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_InsideAirQualityCO2, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_InsideAirQualityCO2, 160 );
+lv_obj_set_x( ui_InsideAirQualityCO2, 200 );
 lv_obj_set_y( ui_InsideAirQualityCO2, -245 );
 lv_obj_set_align( ui_InsideAirQualityCO2, LV_ALIGN_CENTER );
 lv_label_set_text(ui_InsideAirQualityCO2,"CO2: 10,000");
@@ -826,8 +826,8 @@ lv_label_set_text(ui_InsideAirQualityCO2,"CO2: 10,000");
 ui_InsideAirQualityPM25 = lv_label_create(ui_Screen1);
 lv_obj_set_width( ui_InsideAirQualityPM25, LV_SIZE_CONTENT);  /// 1
 lv_obj_set_height( ui_InsideAirQualityPM25, LV_SIZE_CONTENT);   /// 1
-lv_obj_set_x( ui_InsideAirQualityPM25, 245 );
-lv_obj_set_y( ui_InsideAirQualityPM25, -245 );
+lv_obj_set_x( ui_InsideAirQualityPM25, 200 );
+lv_obj_set_y( ui_InsideAirQualityPM25, -265 );
 lv_obj_set_align( ui_InsideAirQualityPM25, LV_ALIGN_CENTER );
 lv_label_set_text(ui_InsideAirQualityPM25,"PM2.5: 0.0");
 

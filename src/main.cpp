@@ -500,7 +500,7 @@ static void updateWeatherDisplay() {
         lv_label_set_text(ui_FCWindSpeed, tempString);
         if (airQuality.updateTime > 0) {
             const char* aqiRating = getAQIRating(airQuality.europeanAqi);
-            snprintf(tempString, CHAR_LEN, "Reported AQI: %d %s", airQuality.europeanAqi, aqiRating);
+            snprintf(tempString, CHAR_LEN, "AQI %d - %s", airQuality.europeanAqi, aqiRating);
             lv_label_set_text(ui_FCAQI, tempString);
             snprintf(tempString, CHAR_LEN, "AQI Updated %s", airQuality.timeString);
             lv_label_set_text(ui_FCAQIUpdateTime, tempString);

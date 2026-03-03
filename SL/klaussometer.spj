@@ -12740,7 +12740,7 @@
               {
                 "nid": 1995524405,
                 "strtype": "LABEL/Text",
-                "strval": "Outside AQI 21: Poor",
+                "strval": "AQI: 21 - Poor",
                 "InheritedType": 10
               },
               {
@@ -13434,7 +13434,7 @@
                 "flags": 17,
                 "strtype": "OBJECT/Position",
                 "intarray": [
-                  160,
+                  200,
                   -245
                 ],
                 "InheritedType": 7
@@ -13579,8 +13579,8 @@
                 "flags": 17,
                 "strtype": "OBJECT/Position",
                 "intarray": [
-                  245,
-                  -245
+                  200,
+                  -265
                 ],
                 "InheritedType": 7
               },
@@ -13866,7 +13866,7 @@
     "custom_variable_prefix": "uic",
     "separate_screen_save": false,
     "hierarchy_state_save": false,
-    "backup_cnt": 1671,
+    "backup_cnt": 1672,
     "autosave_cnt": 0,
     "group_color_cnt": 0,
     "imagebytearrayprefix": null,
