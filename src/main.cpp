@@ -444,6 +444,7 @@ void setup() {
     xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_SMALL, nullptr, 1, nullptr, 1);
     xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_SMALL, nullptr, 1, nullptr, 1);
     xTaskCreatePinnedToCore(api_manager_t, "API Manager", TASK_STACK_MEDIUM, nullptr, 1, nullptr, 1); // HTTPS - replaces 7 API tasks + OTA check
+    
 }
 
 void loop() {

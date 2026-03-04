@@ -65,7 +65,8 @@ void waveshare_backlight_set(int percent) {
         expander_set_bit(WS_IO_BACKLIGHT, 0);
         expander_write(WS_EXPANDER_REG_PWM, 0);
     } else {
+        // PWM register is inverted: 0 = full brightness, 97 = minimum/off
         expander_set_bit(WS_IO_BACKLIGHT, 1);
-        expander_write(WS_EXPANDER_REG_PWM, (uint8_t)percent);
+        expander_write(WS_EXPANDER_REG_PWM, (uint8_t)(97 - percent));
     }
 }
