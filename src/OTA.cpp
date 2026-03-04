@@ -1,15 +1,20 @@
-#include "globals.h"
+#include "OTA.h"
+#include "SDCard.h"
 #include "html.h"
+#include "utils.h"
 
 extern WebServer webServer;
-extern String macAddress;
-extern unsigned long lastOTAUpdateCheck;
+extern char macAddress[18];
+unsigned long lastOTAUpdateCheck = 0;
 extern HTTPClient http;
-extern char chip_id[CHAR_LEN];
+extern char chipId[CHAR_LEN];
 
-// Called from api_manager_t - no longer a standalone task
+// Fetches the version file from the OTA server and compares it to FIRMWARE_VERSION.
+// If the server has a newer version, calls updateFirmware() immediately.
+// Called periodically from api_manager_t (not a standalone task).
 void checkForUpdates() {
-    if (WiFi.status() != WL_CONNECTED) return;
+    if (WiFi.status() != WL_CONNECTED)
+        return;
 
     char url[CHAR_LEN];
     snprintf(url, CHAR_LEN, "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_VERSION_PATH);
@@ -21,14 +26,14 @@ void checkForUpdates() {
         http.end();
         lastOTAUpdateCheck = time(NULL);
         if (compareVersions(serverVersion, FIRMWARE_VERSION) > 0) {
-            char log_message[CHAR_LEN];
-            snprintf(log_message, CHAR_LEN, "New firmware version available: %s (current: %s)", serverVersion.c_str(), FIRMWARE_VERSION);
-            logAndPublish(log_message);
+            char logMessage[CHAR_LEN];
+            snprintf(logMessage, CHAR_LEN, "New firmware version available: %s (current: %s)", serverVersion.c_str(), FIRMWARE_VERSION);
+            logAndPublish(logMessage);
             updateFirmware();
         } else {
-            char log_message[CHAR_LEN];
-            snprintf(log_message, CHAR_LEN, "Firmware version %s is up to date", FIRMWARE_VERSION);
-            logAndPublish(log_message);
+            char logMessage[CHAR_LEN];
+            snprintf(logMessage, CHAR_LEN, "Firmware version %s is up to date", FIRMWARE_VERSION);
+            logAndPublish(logMessage);
         }
     } else {
         logAndPublish("Error fetching version file");
@@ -37,6 +42,9 @@ void checkForUpdates() {
     }
 }
 
+// Downloads the firmware binary from the OTA server and flashes it via the ESP Update library.
+// Logs progress every 10% and resets the watchdog during the download loop.
+// Restarts the device on success.
 void updateFirmware() {
     char binUrl[CHAR_LEN];
     snprintf(binUrl, CHAR_LEN, "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_BIN_PATH);
@@ -51,7 +59,7 @@ void updateFirmware() {
             WiFiClient& client = http.getStream();
 
             // Manual chunked download with watchdog resets
-            uint8_t buff[128];
+            uint8_t buff[OTA_BUFFER_SIZE];
             size_t written = 0;
             int lastProgress = -1;
 
@@ -66,32 +74,32 @@ void updateFirmware() {
                         esp_task_wdt_reset();
 
                         int progress = (written * 100) / contentLength;
-                        if (progress != lastProgress && progress % 10 == 0) {
-                            char log_message[CHAR_LEN];
-                            snprintf(log_message, CHAR_LEN, "Download Progress: %d%%", progress);
-                            logAndPublish(log_message);
+                        if (progress != lastProgress && progress % OTA_LOG_INTERVAL_PERCENT == 0) {
+                            char logMessage[CHAR_LEN];
+                            snprintf(logMessage, CHAR_LEN, "Download Progress: %d%%", progress);
+                            logAndPublish(logMessage);
                             lastProgress = progress;
                         }
                     }
                 }
-                vTaskDelay(pdMS_TO_TICKS(1)); // Allow other tasks to run
+                vTaskDelay(pdMS_TO_TICKS(OTA_YIELD_DELAY_MS)); // Allow other tasks to run
             }
 
             if (written == contentLength) {
                 logAndPublish("OTA update written successfully");
             } else {
-                char log_message[CHAR_LEN];
-                snprintf(log_message, CHAR_LEN, "OTA incomplete: %d/%d bytes", written, contentLength);
-                logAndPublish(log_message);
+                char logMessage[CHAR_LEN];
+                snprintf(logMessage, CHAR_LEN, "OTA incomplete: %d/%d bytes", written, contentLength);
+                logAndPublish(logMessage);
             }
 
             if (Update.end()) {
                 logAndPublish("Update finished successfully. Restarting");
                 ESP.restart();
             } else {
-                char log_message[CHAR_LEN];
-                snprintf(log_message, CHAR_LEN, "Update failed. Error: %s", Update.errorString());
-                logAndPublish(log_message);
+                char logMessage[CHAR_LEN];
+                snprintf(logMessage, CHAR_LEN, "Update failed. Error: %s", Update.errorString());
+                logAndPublish(logMessage);
             }
         } else {
             logAndPublish("Not enough space to start OTA update");
@@ -108,6 +116,9 @@ void getLogsJSON(const char* logFilename) {
     webServer.send(200, "application/json", jsonOutput);
 }
 
+// Registers all HTTP endpoints and starts the web server.
+// Endpoints: / (board info), /logs (log viewer), /api/logs/normal|error (JSON),
+//            /reboot (POST), /update GET (OTA upload page), /update POST (firmware upload).
 void setup_web_server() {
 
     webServer.on("/api/logs/normal", HTTP_GET, []() {
@@ -125,7 +136,7 @@ void setup_web_server() {
     webServer.on("/reboot", HTTP_POST, []() {
         logAndPublish("Reboot requested via web interface");
         webServer.send(200, "text/plain", "Rebooting...");
-        delay(1000);  // Give time for response to be sent
+        delay(1000); // Give time for response to be sent
         ESP.restart();
     });
 
@@ -136,10 +147,10 @@ void setup_web_server() {
                          String(FIRMWARE_VERSION) +
                          "</td></tr>"
                          "<tr><td><b>MAC Address:</b></td><td>" +
-                         macAddress +
+                         String(macAddress) +
                          "</td></tr>"
                          "<tr><td><b>Chip ID:</b></td><td>" +
-                         String(chip_id) +
+                         String(chipId) +
                          "</td></tr>"
                          "<tr><td><b>IP Address:</b></td><td>" +
                          WiFi.localIP().toString() +
@@ -197,43 +208,28 @@ void setup_web_server() {
     webServer.begin();
 }
 
+// Returns a human-readable uptime string, e.g. "3 days, 04:22:15".
+// Based on millis() which rolls over after ~49 days, but that's fine for this device.
 String getUptime() {
-    unsigned long uptime_ms = millis();
-    unsigned long seconds = uptime_ms / 1000;
+    unsigned long uptimeMs = millis();
+    unsigned long seconds = uptimeMs / 1000;
 
     unsigned long days = seconds / (24 * 3600);
     unsigned long hours = (seconds % (24 * 3600)) / 3600;
     unsigned long minutes = (seconds % 3600) / 60;
-    unsigned long remaining_seconds = seconds % 60;
+    unsigned long remainingSeconds = seconds % 60;
 
-    const char* day_label = (days == 1) ? " day" : " days";
+    const char* dayLabel = (days == 1) ? " day" : " days";
 
     char buffer[64];
 
-    snprintf(buffer, sizeof(buffer), "%lu%s, %02lu:%02lu:%02lu", days, day_label, hours, minutes, remaining_seconds);
+    snprintf(buffer, sizeof(buffer), "%lu%s, %02lu:%02lu:%02lu", days, dayLabel, hours, minutes, remainingSeconds);
 
     // Convert the char array back to a String and return
     return String(buffer);
 }
 
+// Arduino String wrapper around compareVersionsStr() for use within OTA.cpp.
 int compareVersions(const String& v1, const String& v2) {
-    int i = 0, j = 0;
-    while (i < v1.length() || j < v2.length()) {
-        int num1 = 0, num2 = 0;
-        while (i < v1.length() && v1[i] != '.') {
-            num1 = num1 * 10 + (v1[i] - '0');
-            i++;
-        }
-        while (j < v2.length() && v2[j] != '.') {
-            num2 = num2 * 10 + (v2[j] - '0');
-            j++;
-        }
-        if (num1 > num2)
-            return 1;
-        if (num1 < num2)
-            return -1;
-        i++;
-        j++;
-    }
-    return 0;
+    return compareVersionsStr(v1.c_str(), v2.c_str());
 }

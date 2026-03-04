@@ -12,7 +12,20 @@ Events Core 1
 Arduino Core 0
 */
 
-#include "globals.h"
+// Display hardware — only used by main.cpp
+#include "board_config.h"
+#include "board_waveshare.h"
+#include "APIs.h"
+#include "OTA.h"
+#include "SDCard.h"
+#include "ScreenUpdates.h"
+#include "connections.h"
+#include "mqtt.h"
+#include "types.h"
+#include <Arduino_GFX_Library.h>
+#include <SPI.h>
+#include <TAMC_GT911.h>
+#include <Wire.h>
 
 // Create network objects
 WiFiClient espClient;
@@ -21,56 +34,74 @@ WebServer webServer(80);
 HTTPClient http;
 static const int HTTP_TIMEOUT_MS = 10000; // 10 second timeout for API calls
 SemaphoreHandle_t mqttMutex;
-SemaphoreHandle_t sdMutex;
+
+// Forward declarations for functions defined later in this file
+void pinInit();
+void touchInit();
+void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
+void touchRead(lv_indev_t* indev, lv_indev_data_t* data);
+bool detectWaveshare();
+void setBacklight(bool day);
+void getBatteryStatus(float batteryValue, int readingIndex, char* iconChar, lv_color_t* colorPtr);
+void invalidateOldReadings();
+void invalidateInsideAirQuality();
+static void setStatusColor(lv_obj_t* label, time_t updateTime, int maxAgeSec);
+static void updateRoomDisplay();
+static void updateUVDisplay();
+static void updateWeatherDisplay();
+static void updateInsideAQDisplay();
+static void updatePeriodicStatus(unsigned long currentMillis);
+static void adjustDayNightMode();
 
 // Global variables
 struct tm timeinfo;
-// void touch_read(lv_indev_drv_t* indev_driver, lv_indev_data_t* data);
 Weather weather = {0.0, 0.0, 0.0, 0.0, false, 0, "", "", "--:--:--"};
 UV uv = {0, 0, "--:--:--"};
 Solar solar = {0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, "--:--:--", 100, 0, false, 0.0, 0.0};
+SolarToken solarToken = {};
 AirQuality airQuality = {0.0, 0.0, 0.0, 0, 0, "--:--:--"};
+InsideAirQuality insideAirQuality = {};
 Readings readings[]{READINGS_ARRAY};
 Preferences storage;
-int numberOfReadings = sizeof(readings) / sizeof(readings[0]);
+extern const int numberOfReadings = sizeof(readings) / sizeof(readings[0]);
 QueueHandle_t statusMessageQueue;
-QueueHandle_t sdLogQueue;
-char log_topic[CHAR_LEN];
-char error_topic[CHAR_LEN];
-char chip_id[CHAR_LEN];
-String macAddress;
-unsigned long lastOTAUpdateCheck = 0;
+char logTopic[CHAR_LEN];
+char errorTopic[CHAR_LEN];
+char chipId[CHAR_LEN];
+char macAddress[18]; // "AA:BB:CC:DD:EE:FF" + null
 
 // Status messages
 char statusMessageValue[CHAR_LEN];
 
 // Dirty flags for display update groups (set by producers, cleared by loop)
-volatile bool dirty_rooms = true;
-volatile bool dirty_solar = true;
-volatile bool dirty_weather = true;
-volatile bool dirty_uv = true;
+std::atomic<bool> dirtyRooms(true);
+std::atomic<bool> dirtySolar(true);
+std::atomic<bool> dirtyWeather(true);
+std::atomic<bool> dirtyUv(true);
+std::atomic<bool> dirtyInsideAQ(false);
 
 const int MAX_DUTY_CYCLE = (int)(pow(2, PWMResolution) - 1);
 const float DAYTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MAX_BRIGHTNESS);
 const float NIGHTTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MIN_BRIGHTNESS);
 
-// Screen config
-Arduino_ESP32RGBPanel* rgbpanel = new Arduino_ESP32RGBPanel(LCD_DE_PIN, LCD_VSYNC_PIN, LCD_HSYNC_PIN, LCD_PCLK_PIN, LCD_R0_PIN, LCD_R1_PIN, LCD_R2_PIN, LCD_R3_PIN, LCD_R4_PIN,
-                                                            LCD_G0_PIN, LCD_G1_PIN, LCD_G2_PIN, LCD_G3_PIN, LCD_G4_PIN, LCD_G5_PIN, LCD_B0_PIN, LCD_B1_PIN, LCD_B2_PIN, LCD_B3_PIN,
-                                                            LCD_B4_PIN, LCD_HSYNC_POLARITY, LCD_HSYNC_FRONT_PORCH, LCD_HSYNC_PULSE_WIDTH, LCD_HSYNC_BACK_PORCH, LCD_VSYNC_POLARITY,
-                                                            LCD_VSYNC_FRONT_PORCH, LCD_VSYNC_PULSE_WIDTH, LCD_VSYNC_BACK_PORCH, LCD_PCLK_ACTIVE_NEG, LCD_PREFER_SPEED);
-Arduino_RGB_Display* gfx = new Arduino_RGB_Display(LCD_WIDTH, LCD_HEIGHT, rgbpanel);
+// Board detection — set in setup() before any hardware init
+bool isWaveshare = false;
+const BoardConfig* board = nullptr;
 
-// Touch config
-TAMC_GT911 ts = TAMC_GT911(I2C_SDA_PIN, I2C_SCL_PIN, TOUCH_INT, TOUCH_RST, LCD_WIDTH, LCD_HEIGHT);
-int touch_last_x = 0;
-int touch_last_y = 0;
+// Screen config — initialized in setup() after board detection
+Arduino_ESP32RGBPanel* rgbpanel = nullptr;
+Arduino_RGB_Display* gfx = nullptr;
+
+// Touch config — initialized in setup() after board detection
+TAMC_GT911* ts = nullptr;
+int touchLastX = 0;
+int touchLastY = 0;
 
 // Screen setting
 static uint32_t screenWidth = LCD_WIDTH;
 static uint32_t screenHeight = LCD_HEIGHT;
-static lv_display_t* disp = NULL;
-static lv_color_t* disp_draw_buf;
+static lv_display_t* disp = nullptr;
+static lv_color_t* dispDrawBuf;
 
 // Arrays of UI objects
 static lv_obj_t** roomNames[ROOM_COUNT] = ROOM_NAME_LABELS;
@@ -80,12 +111,38 @@ static lv_obj_t** batteryLabels[ROOM_COUNT] = BATTERY_LABELS;
 static lv_obj_t** directionLabels[ROOM_COUNT] = DIRECTION_LABELS;
 static lv_obj_t** humidityLabels[ROOM_COUNT] = HUMIDITY_LABELS;
 
+// Probes GPIO 8/9 for the Waveshare TCA9554 I2C expander at address 0x24.
+// Returns true if found (Waveshare board), false otherwise (Matouch board).
+// GPIO 8/9 are safe to probe at boot — they are LCD data pins on Matouch but
+// are not driven by the RGB panel until gfx->begin() is called.
+bool detectWaveshare() {
+    Wire.begin(8, 9, 400000);
+    Wire.beginTransmission(0x24);
+    bool found = (Wire.endTransmission() == 0);
+    Wire.end();
+    return found;
+}
+
+// Sets screen backlight to day (full) or night (dim) brightness.
+void setBacklight(bool day) {
+    if (isWaveshare) {
+        waveshare_backlight_set(day ? WS_BACKLIGHT_DAY_PERCENT : WS_BACKLIGHT_NIGHT_PERCENT);
+    } else {
+        float duty = day ? DAYTIME_DUTY : NIGHTTIME_DUTY;
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+        ledcWrite(board->tftBl, duty);
+#else
+        ledcWrite(PWMChannel, duty);
+#endif
+    }
+}
+
 // Shutdown handler to log reboot to SD card
-void shutdown_handler(void) {
+void shutdownHandler(void) {
     // Write directly to SD card (can't use queue as system is shutting down)
     File logFile = SD_MMC.open(ERROR_LOG_FILENAME, FILE_APPEND);
     if (logFile) {
-        time_t now = time(NULL);
+        time_t now = time(nullptr);
         char logLine[CHAR_LEN + 50];
         snprintf(logLine, sizeof(logLine), "%ld|SYSTEM REBOOT - Watchdog or manual reboot triggered\n", now);
         logFile.print(logLine);
@@ -99,11 +156,27 @@ void shutdown_handler(void) {
 
 void setup() {
     Serial.begin(115200);
-    // Suppress cosmetic SSL teardown errors (connection reset during close_notify)
+
+    // Auto-detect board type by probing I2C on GPIO 8/9 for the Waveshare expander at 0x24
+    isWaveshare = detectWaveshare();
+    board = isWaveshare ? &BOARD_CFG_WAVESHARE : &BOARD_CFG_MATOUCH;
+    Serial.printf("Board: %s\n", isWaveshare ? "Waveshare" : "Matouch");
+
+    if (isWaveshare) {
+        // On Waveshare, Serial goes to USB CDC (the "USB" port). ESP-IDF logs go to UART0
+        // by default. Redirect them to Serial so all output appears on the same USB port.
+        // Note: ROM bootloader output at the very start of boot always goes to UART only.
+        delay(500); // Give the USB host time to enumerate the CDC port
+        esp_log_set_vprintf([](const char* fmt, va_list args) -> int {
+            char buf[256];
+            int len = vsnprintf(buf, sizeof(buf), fmt, args);
+            Serial.write((const uint8_t*)buf, len);
+            return len;
+        });
+    }
     esp_log_level_set("ssl_client", ESP_LOG_WARN);
-    // delay one second to enabling monitoring
-    snprintf(chip_id, CHAR_LEN, "%04llx", ESP.getEfuseMac() & 0xffff);
-    Serial.printf("Starting Klaussometer Display %s\n", chip_id);
+    snprintf(chipId, CHAR_LEN, "%04llx", ESP.getEfuseMac() & CHIP_ID_MASK);
+    Serial.printf("Starting Klaussometer Display %s\n", chipId);
 
     // Log reset reason to help diagnose watchdog issues
     esp_reset_reason_t reason = esp_reset_reason();
@@ -140,30 +213,18 @@ void setup() {
     Serial.printf("Reset reason: %s (%d)\n", reasonStr, reason);
 
     // Setup queues and mutexes
-    statusMessageQueue = xQueueCreate(20, sizeof(StatusMessage));
-    sdLogQueue = xQueueCreate(20, sizeof(SDLogMessage)); // Queue for SD card logging
+    statusMessageQueue = xQueueCreate(STATUS_MESSAGE_QUEUE_SIZE, sizeof(StatusMessage));
     mqttMutex = xSemaphoreCreateMutex();
-    sdMutex = xSemaphoreCreateMutex();
+    sdcard_init();
 
-    // Check if the queue was created successfully
-    if (statusMessageQueue == NULL) {
+    if (statusMessageQueue == nullptr) {
         Serial.println("Error: Failed to create status message queue");
     }
-    if (sdLogQueue == NULL) {
-        Serial.println("Error: Failed to create SD log queue");
-    }
-    if (mqttMutex == NULL) {
+    if (mqttMutex == nullptr) {
         Serial.println("Error: Failed to create MQTT mutex! Restarting...");
         delay(1000);
         esp_restart();
     }
-    if (sdMutex == NULL) {
-        Serial.println("Error: Failed to create SD mutex! Restarting...");
-        delay(1000);
-        esp_restart();
-    }
-
-    // SD card-based logging is used (no memory buffers needed)
 
     // Initialize the SD card
     SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0);
@@ -176,7 +237,7 @@ void setup() {
         File errorLog = SD_MMC.open(ERROR_LOG_FILENAME, FILE_APPEND);
         if (errorLog) {
             char logLine[CHAR_LEN + 50];
-            snprintf(logLine, sizeof(logLine), "%ld|BOOT - Reset reason: %s (%d)\n", time(NULL), reasonStr, reason);
+            snprintf(logLine, sizeof(logLine), "%ld|BOOT - Reset reason: %s (%d)\n", time(nullptr), reasonStr, reason);
             errorLog.print(logLine);
             errorLog.close();
         }
@@ -185,6 +246,11 @@ void setup() {
             logAndPublish("Solar state restored OK");
         } else {
             logAndPublish("Solar state restore failed");
+        }
+        if (loadDataBlock(SOLAR_TOKEN_FILENAME, &solarToken, sizeof(solarToken))) {
+            logAndPublish("Solar token restored OK");
+        } else {
+            logAndPublish("Solar token restore failed");
         }
         if (loadDataBlock(WEATHER_DATA_FILENAME, &weather, sizeof(weather))) {
             logAndPublish("Weather state restored OK");
@@ -207,15 +273,34 @@ void setup() {
         } else {
             logAndPublish("Air quality state restore failed");
         }
+        if (loadDataBlock(INSIDE_AIR_QUALITY_DATA_FILENAME, &insideAirQuality, sizeof(insideAirQuality))) {
+            logAndPublish("Inside air quality state restored OK");
+            invalidateInsideAirQuality(); // Mark stale if data is old
+            dirtyInsideAQ = true;         // Trigger display update with restored values
+        } else {
+            logAndPublish("Inside air quality state restore failed");
+        }
     }
 
     // Add unique topics for MQTT logging
-    macAddress = WiFi.macAddress();
-    snprintf(log_topic, CHAR_LEN, "klaussometer/%s/log", chip_id);
-    snprintf(error_topic, CHAR_LEN, "klaussometer/%s/error", chip_id);
+    WiFi.macAddress().toCharArray(macAddress, sizeof(macAddress));
+    snprintf(logTopic, CHAR_LEN, "klaussometer/%s/log", chipId);
+    snprintf(errorTopic, CHAR_LEN, "klaussometer/%s/error", chipId);
+
+    // Create display and touch objects now that board config is known
+    rgbpanel = new Arduino_ESP32RGBPanel(
+        board->lcdDe, board->lcdVsync, board->lcdHsync, board->lcdPclk,
+        board->lcdR[0], board->lcdR[1], board->lcdR[2], board->lcdR[3], board->lcdR[4],
+        board->lcdG[0], board->lcdG[1], board->lcdG[2], board->lcdG[3], board->lcdG[4], board->lcdG[5],
+        board->lcdB[0], board->lcdB[1], board->lcdB[2], board->lcdB[3], board->lcdB[4],
+        board->hsyncPolarity, board->hsyncFront, board->hsyncPulse, board->hsyncBack,
+        board->vsyncPolarity, board->vsyncFront, board->vsyncPulse, board->vsyncBack,
+        board->pclkActiveNeg, board->preferSpeed);
+    gfx = new Arduino_RGB_Display(LCD_WIDTH, LCD_HEIGHT, rgbpanel);
+    ts = new TAMC_GT911(board->i2cSda, board->i2cScl, board->touchInt, board->touchRst, LCD_WIDTH, LCD_HEIGHT);
 
     // Init Display
-    pin_init();
+    pinInit();
 
     // Init Display Hardware
     gfx->begin();
@@ -229,14 +314,14 @@ void setup() {
     screenHeight = gfx->height();
 
     // Allocate display buffer
-    size_t bufferSize = sizeof(lv_color_t) * screenWidth * 10;
+    size_t bufferSize = sizeof(lv_color_t) * screenWidth * DISPLAY_BUFFER_LINES;
 
-    disp_draw_buf = (lv_color_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!disp_draw_buf) {
-        disp_draw_buf = (lv_color_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    dispDrawBuf = (lv_color_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!dispDrawBuf) {
+        dispDrawBuf = (lv_color_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
 
-    if (!disp_draw_buf) {
+    if (!dispDrawBuf) {
         Serial.println("ERROR: Display buffer allocation FAILED! Restarting...");
         delay(1000);
         esp_restart();
@@ -249,8 +334,8 @@ void setup() {
         delay(1000);
         esp_restart();
     }
-    lv_display_set_flush_cb(disp, my_disp_flush);
-    lv_display_set_buffers(disp, disp_draw_buf, NULL, bufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_flush_cb(disp, dispFlush);
+    lv_display_set_buffers(disp, dispDrawBuf, nullptr, bufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
     ui_init();
 
     // Set initial UI values
@@ -276,6 +361,8 @@ void setup() {
     lv_label_set_text(ui_UVUpdateTime, "");
     lv_label_set_text(ui_TempLabelFC, "--");
     lv_label_set_text(ui_UVLabel, "--");
+    lv_label_set_text(ui_InsideAirQualityCO2, "CO2: --");
+    lv_label_set_text(ui_InsideAirQualityPM25, "PM2.5: --");
 
     lv_obj_add_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
@@ -300,11 +387,7 @@ void setup() {
     lv_obj_set_style_text_color(ui_SolarStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
 
     // Set to night settings at first (until we determine if it's daytime)
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-    ledcWrite(TFT_BL, NIGHTTIME_DUTY);
-#else
-    ledcWrite(PWMChannel, NIGHTTIME_DUTY);
-#endif
+    setBacklight(false);
     set_basic_text_color(lv_color_hex(COLOR_WHITE));
     set_arc_night_mode(true);
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
@@ -314,6 +397,8 @@ void setup() {
     lv_label_set_text(ui_GridBought, "\nToday:\nThis month:");
     lv_label_set_text(ui_GridTodayEnergy, "Pending");
     lv_label_set_text(ui_GridMonthEnergy, "Pending");
+    lv_label_set_text(ui_SolarTodayEnergy, "Pending");
+    lv_label_set_text(ui_SolarMonthEnergy, "Pending");
     lv_label_set_text(ui_GridTodayCost, "");
     lv_label_set_text(ui_GridMonthCost, "");
     lv_label_set_text(ui_GridTodayPercentage, "");
@@ -323,435 +408,430 @@ void setup() {
 
     // Get old battery min and max
     storage.begin("KO");
-    solar.today_battery_min = storage.getFloat("solarmin");
-    if (isnan(solar.today_battery_min)) {
-        solar.today_battery_min = 100;
+    solar.todayBatteryMin = storage.getFloat("solarmin");
+    if (isnan(solar.todayBatteryMin)) {
+        solar.todayBatteryMin = 100;
     }
-    solar.today_battery_max = storage.getFloat("solarmax");
-    if (isnan(solar.today_battery_max)) {
-        solar.today_battery_max = 0;
+    solar.todayBatteryMax = storage.getFloat("solarmax");
+    if (isnan(solar.todayBatteryMax)) {
+        solar.todayBatteryMax = 0;
     }
     storage.end();
 
     configTime(TIME_OFFSET, 0, NTP_SERVER); // Setup as used to display time from stored values
-    http.setTimeout(HTTP_TIMEOUT_MS); // Set read timeout for all API calls
-    http.setReuse(false);              // Disable keep-alive - single task calls different hosts/protocols
+    http.setTimeout(HTTP_TIMEOUT_MS);       // Set read timeout for all API calls
+    http.setReuse(false);                   // Disable keep-alive - single task calls different hosts/protocols
 
     // Register shutdown handler to log reboots (including watchdog timeouts)
-    esp_register_shutdown_handler(shutdown_handler);
+    esp_register_shutdown_handler(shutdownHandler);
 
     // Configure and enable the Task Watchdog Timer for the loop task
     // 60 second timeout - will reboot if loop hangs for this long
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
-    esp_task_wdt_config_t wdt_config = {
-        .timeout_ms = 60000,
-        .idle_core_mask = 0,
-        .trigger_panic = true
-    };
-    esp_task_wdt_reconfigure(&wdt_config);
+    esp_task_wdtConfig_t wdtConfig = {.timeout_ms = 60000, .idle_core_mask = 0, .trigger_panic = true};
+    esp_task_wdt_reconfigure(&wdtConfig);
 #else
     esp_task_wdt_init(60, true);
 #endif
-    esp_task_wdt_add(NULL);      // Add current task (loop task) to watchdog
+    esp_task_wdt_add(nullptr); // Add current task (loop task) to watchdog
 
     // Start tasks
     // Priority guide: Arduino loop() runs at priority 1 on core 1 (loopTask)
     // Keep background tasks at low priority to avoid starving the display loop
-    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, NULL, 0, NULL, 1);             // Core 1, priority 0 (lowest)
-    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_SMALL, NULL, 2, NULL, 1);  // Core 1, priority 2
-    xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_SMALL, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_SMALL, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(api_manager_t, "API Manager", TASK_STACK_MEDIUM, NULL, 1, NULL, 1);           // HTTPS - replaces 7 API tasks + OTA check
+    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, nullptr, 0, nullptr, 1); // Core 1, priority 0 (lowest)
+    xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_MEDIUM, nullptr, 2, nullptr,
+                            1); // Core 1, priority 2 - MEDIUM needed: update_readings() has deep call chain + multiple char[255] buffers
+    xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_SMALL, nullptr, 1, nullptr, 1);
+    xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_SMALL, nullptr, 1, nullptr, 1);
+    xTaskCreatePinnedToCore(api_manager_t, "API Manager", TASK_STACK_MEDIUM, nullptr, 1, nullptr, 1); // HTTPS - replaces 7 API tasks + OTA check
 }
 
 void loop() {
-    // Feed the watchdog at the start of each loop iteration
     esp_task_wdt_reset();
-
-    char tempString[CHAR_LEN];
-    char batteryIcon = CHAR_BLANK;
-    lv_color_t batteryColour;
 
     static unsigned long lastTick = 0;
     unsigned long currentMillis = millis();
     unsigned long elapsed = currentMillis - lastTick;
-
     if (elapsed > 0) {
-        lv_tick_inc(elapsed); // Tell LVGL how much time passed
+        lv_tick_inc(elapsed);
         lastTick = currentMillis;
     }
 
     lv_timer_handler(); // Run GUI - do this BEFORE delays
     webServer.handleClient();
+    vTaskDelay(pdMS_TO_TICKS(LOOP_DELAY_MS));
 
-    vTaskDelay(pdMS_TO_TICKS(20));
+    updateRoomDisplay();
+    updateUVDisplay();
+    updateWeatherDisplay();
+    updateInsideAQDisplay();
 
-    // Room sensors and battery - only update when MQTT data changes or readings expire
-    if (dirty_rooms) {
-        dirty_rooms = false;
-        for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
-            lv_arc_set_value(*tempArcs[i], readings[i].currentValue);
-            lv_label_set_text(*tempLabels[i], readings[i].output);
-            if (readings[i].changeChar != CHAR_NO_MESSAGE) {
-                lv_obj_clear_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
-            } else {
-                lv_obj_add_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
-            }
-            if (readings[i].changeChar == CHAR_NO_MESSAGE) {
-                snprintf(tempString, CHAR_LEN, "%c", CHAR_SAME);
-            } else {
-                snprintf(tempString, CHAR_LEN, "%c", readings[i].changeChar);
-            }
-            lv_label_set_text(*directionLabels[i], tempString);
-            lv_label_set_text(*humidityLabels[i], readings[i + ROOM_COUNT].output);
-        }
-        for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
-            getBatteryStatus(readings[i + 2 * ROOM_COUNT].currentValue, readings[i + 2 * ROOM_COUNT].readingIndex, &batteryIcon, &batteryColour);
-            snprintf(tempString, CHAR_LEN, "%c", batteryIcon);
-            lv_label_set_text(*batteryLabels[i], tempString);
-            lv_obj_set_style_text_color(*batteryLabels[i], batteryColour, LV_PART_MAIN);
-        }
-    }
-
-    // UV - only update when API data arrives
-    if (dirty_uv) {
-        dirty_uv = false;
-        if (uv.updateTime > 0) {
-            lv_obj_clear_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
-            if (weather.isDay) {
-                snprintf(tempString, CHAR_LEN, "Updated %s", uv.time_string);
-            } else {
-                tempString[0] = '\0';
-            }
-            lv_label_set_text(ui_UVUpdateTime, tempString);
-            snprintf(tempString, CHAR_LEN, "%i", uv.index);
-            lv_label_set_text(ui_UVLabel, tempString);
-            lv_arc_set_value(ui_UVArc, uv.index * 10);
-            lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(uv_color(uv.index)),
-                                       LV_PART_INDICATOR | LV_STATE_DEFAULT);
-            lv_obj_set_style_bg_color(ui_UVArc, lv_color_hex(uv_color(uv.index)),
-                                      LV_PART_KNOB | LV_STATE_DEFAULT);
-        }
-    }
-
-    // Weather and air quality - only update when API data arrives
-    if (dirty_weather) {
-        dirty_weather = false;
-        if (weather.updateTime > 0) {
-            lv_label_set_text(ui_FCConditions, weather.description);
-            snprintf(tempString, CHAR_LEN, "Updated %s", weather.time_string);
-            lv_label_set_text(ui_FCUpdateTime, tempString);
-            snprintf(tempString, CHAR_LEN, "Wind %2.0f km/h %s", weather.windSpeed, weather.windDir);
-            lv_label_set_text(ui_FCWindSpeed, tempString);
-            if (airQuality.updateTime > 0) {
-                const char* aqiRating = airQuality.european_aqi <= 20 ? "Good" :
-                                        airQuality.european_aqi <= 40 ? "Fair" :
-                                        airQuality.european_aqi <= 60 ? "Moderate" :
-                                        airQuality.european_aqi <= 80 ? "Poor" :
-                                        airQuality.european_aqi <= 100 ? "Very Poor" : "Hazardous";
-                snprintf(tempString, CHAR_LEN, "AQI: %d %s", airQuality.european_aqi, aqiRating);
-                lv_label_set_text(ui_FCAQI, tempString);
-                snprintf(tempString, CHAR_LEN, "AQI Updated %s", airQuality.time_string);
-                lv_label_set_text(ui_FCAQIUpdateTime, tempString);
-            }
-            lv_arc_set_value(ui_TempArcFC, weather.temperature);
-            snprintf(tempString, CHAR_LEN, "%2.0f", weather.temperature);
-            lv_label_set_text(ui_TempLabelFC, tempString);
-            if (weather.temperature < weather.minTemp) {
-                weather.minTemp = weather.temperature;
-            }
-            if (weather.temperature > weather.maxTemp) {
-                weather.maxTemp = weather.temperature;
-            }
-            snprintf(tempString, CHAR_LEN, "%2.0f°C", weather.minTemp);
-            lv_label_set_text(ui_FCMin, tempString);
-            snprintf(tempString, CHAR_LEN, "%2.0f°C", weather.maxTemp);
-            lv_label_set_text(ui_FCMax, tempString);
-            lv_obj_clear_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
-            lv_arc_set_range(ui_TempArcFC, weather.minTemp, weather.maxTemp);
-        }
-    }
-
-    // Solar - only update when API data arrives
-    if (dirty_solar) {
-        dirty_solar = false;
+    if (dirtySolar) {
+        dirtySolar = false;
         set_solar_values();
     }
 
-    // Periodic updates once per second: connectivity status, time, version, stale-data indicators
-    static unsigned long lastPeriodicMs = 0;
-    if (currentMillis - lastPeriodicMs >= 1000) {
-        lastPeriodicMs = currentMillis;
+    updatePeriodicStatus(currentMillis);
+    adjustDayNightMode();
 
-        if (time(NULL) - solar.currentUpdateTime > 2 * SOLAR_CURRENT_UPDATE_INTERVAL_SEC) {
-            lv_obj_set_style_text_color(ui_SolarStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-        } else {
-            lv_obj_set_style_text_color(ui_SolarStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
-        }
-        if (time(NULL) - weather.updateTime > 2 * WEATHER_UPDATE_INTERVAL_SEC) {
-            lv_obj_set_style_text_color(ui_WeatherStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-        } else {
-            lv_obj_set_style_text_color(ui_WeatherStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
-        }
-
-        if (WiFi.status() == WL_CONNECTED) {
-            lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
-            lv_color_t wifiIconColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
-            int rssi = WiFi.RSSI();
-            if (rssi > WIFI_RSSI_HIGH) {
-                lv_label_set_text(ui_WiFiIcon, WIFI_HIGH);
-            } else if (rssi > WIFI_RSSI_MEDIUM) {
-                lv_label_set_text(ui_WiFiIcon, WIFI_MEDIUM);
-            } else if (rssi > WIFI_RSSI_LOW) {
-                lv_label_set_text(ui_WiFiIcon, WIFI_LOW);
-            } else {
-                lv_label_set_text(ui_WiFiIcon, WIFI_NONE);
-            }
-            lv_obj_set_style_text_color(ui_WiFiIcon, wifiIconColor, LV_PART_MAIN);
-        } else {
-            lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-            lv_label_set_text(ui_WiFiIcon, WIFI_X);
-            lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-        }
-
-        if (mqttClient.connected()) {
-            lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
-        } else {
-            lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-        }
-
-        if (!getLocalTime(&timeinfo)) {
-            lv_label_set_text(ui_Time, "Syncing");
-        } else {
-            char timeString[CHAR_LEN];
-            strftime(timeString, sizeof(timeString), "%H:%M:%S", &timeinfo);
-            lv_label_set_text(ui_Time, timeString);
-        }
-
-        if (WiFi.status() == WL_CONNECTED) {
-            snprintf(tempString, CHAR_LEN, "IP: %s | Chip ID: %s | Firmware Version: V%s", WiFi.localIP().toString().c_str(), chip_id, FIRMWARE_VERSION);
-        } else {
-            snprintf(tempString, CHAR_LEN, "Chip ID: %s | Firmware Version: V%s", chip_id, FIRMWARE_VERSION);
-        }
-        lv_label_set_text(ui_Version, tempString);
-    }
-
-    // Adjust brightness and colors based on day/night (only when state changes)
-    static bool lastIsDay = false;
-    if (weather.isDay != lastIsDay) {
-        lastIsDay = weather.isDay;
-        if (!weather.isDay) {
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-            ledcWrite(TFT_BL, NIGHTTIME_DUTY);
-#else
-            ledcWrite(PWMChannel, NIGHTTIME_DUTY);
-#endif
-            set_basic_text_color(lv_color_hex(COLOR_WHITE));
-            set_arc_night_mode(true);
-            lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
-            lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-            lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-        } else {
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-            ledcWrite(TFT_BL, DAYTIME_DUTY);
-#else
-            ledcWrite(PWMChannel, DAYTIME_DUTY);
-#endif
-            set_basic_text_color(lv_color_hex(COLOR_BLACK));
-            set_arc_night_mode(false);
-            lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-            lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
-            lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
-        }
-    }
-
-    // Update status message
     lv_label_set_text(ui_StatusMessage, statusMessageValue);
-
-    // Invalidate readings if too old
     invalidateOldReadings();
+    invalidateInsideAirQuality();
+}
+
+// Colors a status indicator green if data is fresh, red if it exceeds maxAgeSec.
+static void setStatusColor(lv_obj_t* label, time_t updateTime, int maxAgeSec) {
+    bool stale = (time(nullptr) - updateTime) > maxAgeSec;
+    lv_obj_set_style_text_color(label, lv_color_hex(stale ? COLOR_RED : COLOR_GREEN), LV_PART_MAIN);
+}
+
+// Updates room temperature, humidity, trend arrows and sensor battery icons.
+static void updateRoomDisplay() {
+    if (!dirtyRooms)
+        return;
+    dirtyRooms = false;
+    char tempString[CHAR_LEN];
+    char batteryIcon;
+    lv_color_t batteryColor;
+    for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
+        lv_arc_set_value(*tempArcs[i], readings[i].currentValue);
+        lv_label_set_text(*tempLabels[i], readings[i].output);
+        if (readings[i].readingState == ReadingState::STALE) {
+            lv_obj_set_style_text_color(*tempLabels[i], lv_color_hex(COLOR_STALE), LV_PART_MAIN);
+            lv_obj_clear_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
+        } else if (readings[i].readingState != ReadingState::NO_DATA) {
+            lv_color_t normalColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
+            lv_obj_set_style_text_color(*tempLabels[i], normalColor, LV_PART_MAIN);
+            lv_obj_clear_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        snprintf(tempString, CHAR_LEN, "%c", readingStateGlyph(readings[i].readingState));
+        lv_label_set_text(*directionLabels[i], tempString);
+        lv_label_set_text(*humidityLabels[i], readings[i + ROOM_COUNT].output);
+    }
+    for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
+        getBatteryStatus(readings[i + 2 * ROOM_COUNT].currentValue, readings[i + 2 * ROOM_COUNT].readingIndex, &batteryIcon, &batteryColor);
+        snprintf(tempString, CHAR_LEN, "%c", batteryIcon);
+        lv_label_set_text(*batteryLabels[i], tempString);
+        lv_obj_set_style_text_color(*batteryLabels[i], batteryColor, LV_PART_MAIN);
+    }
+}
+
+// Updates the UV arc, label and update-time label.
+static void updateUVDisplay() {
+    if (!dirtyUv)
+        return;
+    dirtyUv = false;
+    char tempString[CHAR_LEN];
+    if (uv.updateTime > 0) {
+        lv_obj_clear_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
+        if (weather.isDay) {
+            snprintf(tempString, CHAR_LEN, "Updated %s", uv.timeString);
+        } else {
+            tempString[0] = '\0';
+        }
+        lv_label_set_text(ui_UVUpdateTime, tempString);
+        snprintf(tempString, CHAR_LEN, "%i", uv.index);
+        lv_label_set_text(ui_UVLabel, tempString);
+        lv_arc_set_value(ui_UVArc, uv.index * 10);
+        lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(uvColor(uv.index)), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(ui_UVArc, lv_color_hex(uvColor(uv.index)), LV_PART_KNOB | LV_STATE_DEFAULT);
+    }
+}
+
+// Updates weather forecast labels, the temperature arc and the AQI display.
+static void updateWeatherDisplay() {
+    if (!dirtyWeather)
+        return;
+    dirtyWeather = false;
+    char tempString[CHAR_LEN];
+    if (weather.updateTime > 0) {
+        lv_label_set_text(ui_FCConditions, weather.description);
+        snprintf(tempString, CHAR_LEN, "Updated %s", weather.timeString);
+        lv_label_set_text(ui_FCUpdateTime, tempString);
+        snprintf(tempString, CHAR_LEN, "Wind %2.0f km/h %s", weather.windSpeed, weather.windDir);
+        lv_label_set_text(ui_FCWindSpeed, tempString);
+        if (airQuality.updateTime > 0) {
+            const char* aqiRating = getAQIRating(airQuality.europeanAqi);
+            snprintf(tempString, CHAR_LEN, "AQI %d - %s", airQuality.europeanAqi, aqiRating);
+            lv_label_set_text(ui_FCAQI, tempString);
+            snprintf(tempString, CHAR_LEN, "AQI Updated %s", airQuality.timeString);
+            lv_label_set_text(ui_FCAQIUpdateTime, tempString);
+        }
+        lv_arc_set_value(ui_TempArcFC, weather.temperature);
+        snprintf(tempString, CHAR_LEN, "%2.0f", weather.temperature);
+        lv_label_set_text(ui_TempLabelFC, tempString);
+        if (weather.temperature < weather.minTemp) {
+            weather.minTemp = weather.temperature;
+        }
+        if (weather.temperature > weather.maxTemp) {
+            weather.maxTemp = weather.temperature;
+        }
+        snprintf(tempString, CHAR_LEN, "%2.0f°C", weather.minTemp);
+        lv_label_set_text(ui_FCMin, tempString);
+        snprintf(tempString, CHAR_LEN, "%2.0f°C", weather.maxTemp);
+        lv_label_set_text(ui_FCMax, tempString);
+        lv_obj_clear_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
+        lv_arc_set_range(ui_TempArcFC, weather.minTemp, weather.maxTemp);
+    }
+}
+
+// Updates CO2 and PM2.5 labels; red when stale, default text colour otherwise.
+static void updateInsideAQDisplay() {
+    if (!dirtyInsideAQ)
+        return;
+    dirtyInsideAQ = false;
+
+    char tempString[CHAR_LEN];
+    lv_color_t defaultColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
+
+    // CO2 label
+    if (insideAirQuality.co2State == ReadingState::NO_DATA) {
+        lv_label_set_text(ui_InsideAirQualityCO2, "CO2: --");
+    } else {
+        char co2Buf[32];
+        formatIntegerWithCommas((long long)insideAirQuality.co2, co2Buf, sizeof(co2Buf));
+        snprintf(tempString, CHAR_LEN, "CO2: %s", co2Buf);
+        lv_label_set_text(ui_InsideAirQualityCO2, tempString);
+    }
+    lv_obj_set_style_text_color(ui_InsideAirQualityCO2, insideAirQuality.co2State == ReadingState::STALE ? lv_color_hex(COLOR_RED) : defaultColor, LV_PART_MAIN);
+
+    // PM2.5 label
+    if (insideAirQuality.pm25State == ReadingState::NO_DATA) {
+        lv_label_set_text(ui_InsideAirQualityPM25, "PM2.5: --");
+    } else {
+        snprintf(tempString, CHAR_LEN, "PM2.5: %.1f", insideAirQuality.pm25);
+        lv_label_set_text(ui_InsideAirQualityPM25, tempString);
+    }
+    lv_obj_set_style_text_color(ui_InsideAirQualityPM25, insideAirQuality.pm25State == ReadingState::STALE ? lv_color_hex(COLOR_RED) : defaultColor, LV_PART_MAIN);
+}
+
+// Updates status indicators, clock, WiFi icon and version string once per second.
+static void updatePeriodicStatus(unsigned long currentMillis) {
+    static unsigned long lastPeriodicMs = 0;
+    if (currentMillis - lastPeriodicMs < PERIODIC_STATUS_INTERVAL_MS)
+        return;
+    lastPeriodicMs = currentMillis;
+
+    char tempString[CHAR_LEN];
+
+    setStatusColor(ui_SolarStatus, solar.currentUpdateTime, 2 * SOLAR_CURRENT_UPDATE_INTERVAL_SEC);
+    setStatusColor(ui_WeatherStatus, weather.updateTime, 2 * WEATHER_UPDATE_INTERVAL_SEC);
+
+    if (WiFi.status() == WL_CONNECTED) {
+        lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
+        lv_color_t wifiIconColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
+        int rssi = WiFi.RSSI();
+        lv_label_set_text(ui_WiFiIcon, getWiFiIcon(rssi));
+        lv_obj_set_style_text_color(ui_WiFiIcon, wifiIconColor, LV_PART_MAIN);
+    } else {
+        lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
+        lv_label_set_text(ui_WiFiIcon, WIFI_X);
+        lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_RED), LV_PART_MAIN);
+    }
+
+    if (mqttClient.connected()) {
+        lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
+    } else {
+        lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
+    }
+
+    if (!getLocalTime(&timeinfo)) {
+        lv_label_set_text(ui_Time, "Syncing");
+    } else {
+        char timeString[CHAR_LEN];
+        strftime(timeString, sizeof(timeString), "%H:%M:%S", &timeinfo);
+        lv_label_set_text(ui_Time, timeString);
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        snprintf(tempString, CHAR_LEN, "IP: %s | Chip ID: %s | Firmware: V%s", WiFi.localIP().toString().c_str(), chipId, FIRMWARE_VERSION);
+    } else {
+        snprintf(tempString, CHAR_LEN, "Chip ID: %s | Firmware: V%s", chipId, FIRMWARE_VERSION);
+    }
+    lv_label_set_text(ui_Version, tempString);
+}
+
+// Adjusts screen brightness and text/arc colours when the day/night state changes.
+static void adjustDayNightMode() {
+    static bool lastIsDay = false;
+    if (weather.isDay == lastIsDay)
+        return;
+    lastIsDay = weather.isDay;
+    dirtyRooms = true;    // Re-apply stale label colours after set_basic_text_color resets them
+    dirtyInsideAQ = true; // Re-apply stale/default colour with new day/night defaultColor
+    if (!weather.isDay) {
+        setBacklight(false);
+        set_basic_text_color(lv_color_hex(COLOR_WHITE));
+        set_arc_night_mode(true);
+        lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
+        lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
+        lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
+    } else {
+        setBacklight(true);
+        set_basic_text_color(lv_color_hex(COLOR_BLACK));
+        set_arc_night_mode(false);
+        lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
+        lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
+        lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
+    }
 }
 
 void invalidateOldReadings() {
-    if (time(NULL) > TIME_SYNC_THRESHOLD) {
+    if (time(nullptr) > TIME_SYNC_THRESHOLD) {
+        time_t now = time(nullptr);
         for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
-            if ((time(NULL) > readings[i].lastMessageTime + (MAX_NO_MESSAGE_SEC)) && (readings[i].changeChar != CHAR_NO_MESSAGE)) {
-                readings[i].changeChar = CHAR_NO_MESSAGE;
+            time_t age = now - readings[i].lastMessageTime;
+            if (age > MAX_NO_MESSAGE_BLANK_SEC && readings[i].readingState != ReadingState::NO_DATA) {
+                readings[i].readingState = ReadingState::NO_DATA;
                 snprintf(readings[i].output, sizeof(readings[i].output), NO_READING);
                 readings[i].currentValue = 0.0;
-                dirty_rooms = true;
+                dirtyRooms = true;
+            } else if (age > MAX_NO_MESSAGE_STALE_SEC && readings[i].readingState != ReadingState::STALE && readings[i].readingState != ReadingState::NO_DATA) {
+                readings[i].readingState = ReadingState::STALE;
+                dirtyRooms = true;
+            }
+        }
+    }
+}
+
+void invalidateInsideAirQuality() {
+    if (time(nullptr) <= TIME_SYNC_THRESHOLD)
+        return;
+    time_t now = time(nullptr);
+
+    // SCD41 — CO2 sensor
+    if (insideAirQuality.co2LastMessageTime != 0) {
+        time_t age = now - insideAirQuality.co2LastMessageTime;
+        if (age > MAX_NO_MESSAGE_BLANK_SEC) {
+            if (insideAirQuality.co2State != ReadingState::NO_DATA) {
+                insideAirQuality.co2State = ReadingState::NO_DATA;
+                insideAirQuality.co2 = 0.0f;
+                dirtyInsideAQ = true;
+            }
+        } else if (age > MAX_NO_MESSAGE_STALE_SEC) {
+            if (insideAirQuality.co2State != ReadingState::STALE && insideAirQuality.co2State != ReadingState::NO_DATA) {
+                insideAirQuality.co2State = ReadingState::STALE;
+                dirtyInsideAQ = true;
+            }
+        }
+    }
+
+    // PMS5003 — particulate sensor
+    if (insideAirQuality.pmLastMessageTime != 0) {
+        time_t age = now - insideAirQuality.pmLastMessageTime;
+        if (age > MAX_NO_MESSAGE_BLANK_SEC) {
+            if (insideAirQuality.pm1State != ReadingState::NO_DATA) {
+                insideAirQuality.pm1State = ReadingState::NO_DATA;
+                insideAirQuality.pm1 = 0.0f;
+                dirtyInsideAQ = true;
+            }
+            if (insideAirQuality.pm25State != ReadingState::NO_DATA) {
+                insideAirQuality.pm25State = ReadingState::NO_DATA;
+                insideAirQuality.pm25 = 0.0f;
+                dirtyInsideAQ = true;
+            }
+            if (insideAirQuality.pm10State != ReadingState::NO_DATA) {
+                insideAirQuality.pm10State = ReadingState::NO_DATA;
+                insideAirQuality.pm10 = 0.0f;
+                dirtyInsideAQ = true;
+            }
+        } else if (age > MAX_NO_MESSAGE_STALE_SEC) {
+            if (insideAirQuality.pm1State != ReadingState::STALE && insideAirQuality.pm1State != ReadingState::NO_DATA) {
+                insideAirQuality.pm1State = ReadingState::STALE;
+                dirtyInsideAQ = true;
+            }
+            if (insideAirQuality.pm25State != ReadingState::STALE && insideAirQuality.pm25State != ReadingState::NO_DATA) {
+                insideAirQuality.pm25State = ReadingState::STALE;
+                dirtyInsideAQ = true;
+            }
+            if (insideAirQuality.pm10State != ReadingState::STALE && insideAirQuality.pm10State != ReadingState::NO_DATA) {
+                insideAirQuality.pm10State = ReadingState::STALE;
+                dirtyInsideAQ = true;
             }
         }
     }
 }
 
 // Flush function for LVGL
-void my_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
+void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
-    lv_color_t* color_p = (lv_color_t*)px_map;
+    lv_color_t* colorPtr = (lv_color_t*)px_map;
 
 #if (LV_COLOR_16_SWAP != 0)
-    gfx->draw16bitBeRGBBitmap(area->x1, area->y1, (uint16_t*)color_p, w, h);
+    gfx->draw16bitBeRGBBitmap(area->x1, area->y1, (uint16_t*)colorPtr, w, h);
 #else
-    gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t*)color_p, w, h);
+    gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t*)colorPtr, w, h);
 #endif
 
     lv_display_flush_ready(disp);
 }
 
 // Initialise pins for touch and backlight
-void pin_init() {
-    pinMode(TFT_BL, OUTPUT);
-    // pinMode(TOUCH_RST, OUTPUT);
-
+void pinInit() {
+    if (isWaveshare) {
+        // Waveshare: backlight and LCD/touch reset are all behind the TCA9554 I2C expander.
+        // waveshare_expander_init() initialises Wire, resets the LCD panel and GT911, and
+        // leaves the backlight off until after display init.
+        waveshare_expander_init();
+    } else {
+        pinMode(board->tftBl, OUTPUT);
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
-    ledcAttachChannel(TFT_BL, PWMFreq, PWMResolution, PWMChannel);
-    ledcWrite(TFT_BL, NIGHTTIME_DUTY); // Start dim
+        ledcAttachChannel(board->tftBl, PWMFreq, PWMResolution, PWMChannel);
+        ledcWrite(board->tftBl, NIGHTTIME_DUTY); // Start dim
 #else
-    ledcSetup(PWMChannel, PWMFreq, PWMResolution);
-    ledcAttachPin(TFT_BL, PWMChannel);
-    ledcWrite(PWMChannel, NIGHTTIME_DUTY); // Start dim
+        ledcSetup(PWMChannel, PWMFreq, PWMResolution);
+        ledcAttachPin(board->tftBl, PWMChannel);
+        ledcWrite(PWMChannel, NIGHTTIME_DUTY); // Start dim
 #endif
-
-    /*vTaskDelay(pdMS_TO_TICKS(100));
-    digitalWrite(TOUCH_RST, LOW);
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    digitalWrite(TOUCH_RST, HIGH);
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    digitalWrite(TOUCH_RST, LOW);
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    digitalWrite(TOUCH_RST, HIGH);
-    vTaskDelay(pdMS_TO_TICKS(1000));*/
+    }
 }
 
 // Initialise touch screen
-void touch_init(void) {
-    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-    ts.begin();
-    ts.setRotation(ROTATION_INVERTED);
+void touchInit(void) {
+    Wire.begin(board->i2cSda, board->i2cScl);
+    ts->begin();
+    ts->setRotation(ROTATION_INVERTED);
 }
 
-void touch_read(lv_indev_t* indev, lv_indev_data_t* data) {
-    ts.read();
-    if (ts.isTouched) {
-        touch_last_x = map(ts.points[0].x, 0, 1024, 0, LCD_WIDTH);
-        touch_last_y = map(ts.points[0].y, 0, 750, 0, LCD_HEIGHT);
-        data->point.x = touch_last_x;
-        data->point.y = touch_last_y;
-        data->state = LV_INDEV_STATE_PRESSED; // Note: renamed constant
+void touchRead(lv_indev_t* indev, lv_indev_data_t* data) {
+    ts->read();
+    if (ts->isTouched) {
+        touchLastX = map(ts->points[0].x, 0, 1024, 0, LCD_WIDTH);
+        touchLastY = map(ts->points[0].y, 0, board->touchRawMaxY, 0, LCD_HEIGHT);
+        data->point.x = touchLastX;
+        data->point.y = touchLastY;
+        data->state = LV_INDEV_STATE_PRESSED;
 
-        ts.isTouched = false;
+        ts->isTouched = false;
     } else {
-        data->point.x = touch_last_x;
-        data->state = LV_INDEV_STATE_RELEASED; // Note: renamed constant
+        data->point.x = touchLastX;
+        data->state = LV_INDEV_STATE_RELEASED;
     }
 }
 
-void getBatteryStatus(float batteryValue, int readingIndex, char* iconCharacterPtr, lv_color_t* colorPtr) {
+void getBatteryStatus(float batteryValue, int readingIndex, char* iconChar, lv_color_t* colorPtr) {
     if (batteryValue > BATTERY_OK) {
         // Battery is ok
-        *iconCharacterPtr = CHAR_BATTERY_GOOD;
+        *iconChar = CHAR_BATTERY_GOOD;
         *colorPtr = lv_color_hex(COLOR_GREEN);
     } else if (batteryValue > BATTERY_BAD) {
         // Battery is ok
-        *iconCharacterPtr = CHAR_BATTERY_OK;
+        *iconChar = CHAR_BATTERY_OK;
         *colorPtr = lv_color_hex(COLOR_GREEN);
     } else if (batteryValue > BATTERY_CRITICAL) {
         // Battery is low, but not critical
-        *iconCharacterPtr = CHAR_BATTERY_BAD;
+        *iconChar = CHAR_BATTERY_BAD;
         *colorPtr = lv_color_hex(COLOR_YELLOW);
     } else if (batteryValue > 0.0) {
         // Battery is critical
-        *iconCharacterPtr = CHAR_BATTERY_CRITICAL;
+        *iconChar = CHAR_BATTERY_CRITICAL;
         *colorPtr = lv_color_hex(COLOR_RED);
     } else {
-        *iconCharacterPtr = CHAR_BLANK;
+        *iconChar = CHAR_BLANK;
         *colorPtr = lv_color_hex(COLOR_GREEN);
-    }
-}
-
-void displayStatusMessages_t(void* pvParameters) {
-    StatusMessage receivedMsg;
-
-    while (true) {
-        if (xQueueReceive(statusMessageQueue, &receivedMsg, portMAX_DELAY) == pdTRUE) {
-            snprintf(statusMessageValue, CHAR_LEN, "%s", receivedMsg.text);
-            // Wait for the specified duration before clearing the message.
-            vTaskDelay(pdMS_TO_TICKS(receivedMsg.duration_s * 1000));
-            // Clear the label after the duration has passed.
-            statusMessageValue[0] = '\0';
-        }
-    }
-}
-
-void logAndPublish(const char* messageBuffer) {
-
-    // Print to the serial console
-    Serial.println(messageBuffer);
-
-    // Queue SD card write (non-blocking)
-    if (sdLogQueue != NULL) {
-        SDLogMessage logMsg;
-        snprintf(logMsg.message, CHAR_LEN, "%s", messageBuffer);
-        snprintf(logMsg.filename, sizeof(logMsg.filename), "%s", NORMAL_LOG_FILENAME);
-        xQueueSend(sdLogQueue, &logMsg, 0); // Don't block if queue is full
-    }
-
-    // Try to send to MQTT without blocking - if mutex isn't available, skip it
-    if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) {
-        esp_task_wdt_reset();
-        if (mqttClient.connected()) {
-            mqttClient.beginMessage(log_topic);
-            mqttClient.print(messageBuffer);
-            mqttClient.endMessage();
-        }
-        xSemaphoreGive(mqttMutex);
-    }
-    // If we can't get the mutex immediately, just skip MQTT (log still goes to SD/Serial)
-
-    StatusMessage msg;
-    snprintf(msg.text, CHAR_LEN, "%s", messageBuffer);
-    msg.duration_s = STATUS_MESSAGE_TIME;
-    xQueueSend(statusMessageQueue, &msg,
-               0); // Use 0 if queue is full
-}
-
-void errorPublish(const char* messageBuffer) {
-
-    Serial.println(messageBuffer);
-
-    // Queue SD card write (non-blocking)
-    if (sdLogQueue != NULL) {
-        SDLogMessage logMsg;
-        snprintf(logMsg.message, CHAR_LEN, "%s", messageBuffer);
-        snprintf(logMsg.filename, sizeof(logMsg.filename), "%s", ERROR_LOG_FILENAME);
-        xQueueSend(sdLogQueue, &logMsg, 0); // Don't block if queue is full
-    }
-
-    // Try to send to MQTT without blocking - if mutex isn't available, skip it
-    if (xSemaphoreTake(mqttMutex, 0) == pdTRUE) {
-        esp_task_wdt_reset();
-        if (mqttClient.connected()) {
-            mqttClient.beginMessage(error_topic, true);
-            mqttClient.print(messageBuffer);
-            mqttClient.endMessage();
-        }
-        xSemaphoreGive(mqttMutex);
-    }
-    // If we can't get the mutex immediately, just skip MQTT (log still goes to SD/Serial)
-}
-
-// SD card logger task - runs at lowest priority to avoid blocking other tasks
-void sdcard_logger_t(void* pvParameters) {
-    SDLogMessage logMsg;
-
-    while (true) {
-        // Wait for log messages (blocks until available)
-        if (xQueueReceive(sdLogQueue, &logMsg, portMAX_DELAY) == pdTRUE) {
-            // Write to SD card (this may take time, but doesn't block main loop)
-            addLogToSDCard(logMsg.message, logMsg.filename);
-        }
     }
 }

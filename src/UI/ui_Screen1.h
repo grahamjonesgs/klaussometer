@@ -93,6 +93,11 @@ extern lv_obj_t *ui_GridTitleCost;
 extern lv_obj_t *ui_GridTitlePercentage;
 extern lv_obj_t *ui_FCAQI;
 extern lv_obj_t *ui_FCAQIUpdateTime;
+extern lv_obj_t *ui_GridTitleSolar;
+extern lv_obj_t *ui_SolarTodayEnergy;
+extern lv_obj_t *ui_SolarMonthEnergy;
+extern lv_obj_t *ui_InsideAirQualityCO2;
+extern lv_obj_t *ui_InsideAirQualityPM25;
 // CUSTOM VARIABLES
 
 #ifdef __cplusplus
