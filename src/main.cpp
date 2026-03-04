@@ -13,6 +13,8 @@ Arduino Core 0
 */
 
 // Display hardware — only used by main.cpp
+#include "board_config.h"
+#include "board_waveshare.h"
 #include "APIs.h"
 #include "OTA.h"
 #include "SDCard.h"
@@ -38,6 +40,8 @@ void pinInit();
 void touchInit();
 void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map);
 void touchRead(lv_indev_t* indev, lv_indev_data_t* data);
+bool detectWaveshare();
+void setBacklight(bool day);
 void getBatteryStatus(float batteryValue, int readingIndex, char* iconChar, lv_color_t* colorPtr);
 void invalidateOldReadings();
 void invalidateInsideAirQuality();
@@ -80,15 +84,16 @@ const int MAX_DUTY_CYCLE = (int)(pow(2, PWMResolution) - 1);
 const float DAYTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MAX_BRIGHTNESS);
 const float NIGHTTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MIN_BRIGHTNESS);
 
-// Screen config
-Arduino_ESP32RGBPanel* rgbpanel = new Arduino_ESP32RGBPanel(LCD_DE_PIN, LCD_VSYNC_PIN, LCD_HSYNC_PIN, LCD_PCLK_PIN, LCD_R0_PIN, LCD_R1_PIN, LCD_R2_PIN, LCD_R3_PIN, LCD_R4_PIN,
-                                                            LCD_G0_PIN, LCD_G1_PIN, LCD_G2_PIN, LCD_G3_PIN, LCD_G4_PIN, LCD_G5_PIN, LCD_B0_PIN, LCD_B1_PIN, LCD_B2_PIN, LCD_B3_PIN,
-                                                            LCD_B4_PIN, LCD_HSYNC_POLARITY, LCD_HSYNC_FRONT_PORCH, LCD_HSYNC_PULSE_WIDTH, LCD_HSYNC_BACK_PORCH, LCD_VSYNC_POLARITY,
-                                                            LCD_VSYNC_FRONT_PORCH, LCD_VSYNC_PULSE_WIDTH, LCD_VSYNC_BACK_PORCH, LCD_PCLK_ACTIVE_NEG, LCD_PREFER_SPEED);
-Arduino_RGB_Display* gfx = new Arduino_RGB_Display(LCD_WIDTH, LCD_HEIGHT, rgbpanel);
+// Board detection — set in setup() before any hardware init
+bool isWaveshare = false;
+const BoardConfig* board = nullptr;
 
-// Touch config
-TAMC_GT911 ts = TAMC_GT911(I2C_SDA_PIN, I2C_SCL_PIN, TOUCH_INT, TOUCH_RST, LCD_WIDTH, LCD_HEIGHT);
+// Screen config — initialized in setup() after board detection
+Arduino_ESP32RGBPanel* rgbpanel = nullptr;
+Arduino_RGB_Display* gfx = nullptr;
+
+// Touch config — initialized in setup() after board detection
+TAMC_GT911* ts = nullptr;
 int touchLastX = 0;
 int touchLastY = 0;
 
@@ -105,6 +110,32 @@ static lv_obj_t** tempLabels[ROOM_COUNT] = TEMP_LABELS;
 static lv_obj_t** batteryLabels[ROOM_COUNT] = BATTERY_LABELS;
 static lv_obj_t** directionLabels[ROOM_COUNT] = DIRECTION_LABELS;
 static lv_obj_t** humidityLabels[ROOM_COUNT] = HUMIDITY_LABELS;
+
+// Probes GPIO 8/9 for the Waveshare TCA9554 I2C expander at address 0x24.
+// Returns true if found (Waveshare board), false otherwise (Matouch board).
+// GPIO 8/9 are safe to probe at boot — they are LCD data pins on Matouch but
+// are not driven by the RGB panel until gfx->begin() is called.
+bool detectWaveshare() {
+    Wire.begin(8, 9, 400000);
+    Wire.beginTransmission(0x24);
+    bool found = (Wire.endTransmission() == 0);
+    Wire.end();
+    return found;
+}
+
+// Sets screen backlight to day (full) or night (dim) brightness.
+void setBacklight(bool day) {
+    if (isWaveshare) {
+        waveshare_backlight_set(day ? WS_BACKLIGHT_DAY_PERCENT : WS_BACKLIGHT_NIGHT_PERCENT);
+    } else {
+        float duty = day ? DAYTIME_DUTY : NIGHTTIME_DUTY;
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+        ledcWrite(board->tftBl, duty);
+#else
+        ledcWrite(PWMChannel, duty);
+#endif
+    }
+}
 
 // Shutdown handler to log reboot to SD card
 void shutdownHandler(void) {
@@ -125,8 +156,23 @@ void shutdownHandler(void) {
 
 void setup() {
     Serial.begin(115200);
-    while (!Serial) {
-        delay(10);
+
+    // Auto-detect board type by probing I2C on GPIO 8/9 for the Waveshare expander at 0x24
+    isWaveshare = detectWaveshare();
+    board = isWaveshare ? &BOARD_CFG_WAVESHARE : &BOARD_CFG_MATOUCH;
+    Serial.printf("Board: %s\n", isWaveshare ? "Waveshare" : "Matouch");
+
+    if (isWaveshare) {
+        // On Waveshare, Serial goes to USB CDC (the "USB" port). ESP-IDF logs go to UART0
+        // by default. Redirect them to Serial so all output appears on the same USB port.
+        // Note: ROM bootloader output at the very start of boot always goes to UART only.
+        delay(500); // Give the USB host time to enumerate the CDC port
+        esp_log_set_vprintf([](const char* fmt, va_list args) -> int {
+            char buf[256];
+            int len = vsnprintf(buf, sizeof(buf), fmt, args);
+            Serial.write((const uint8_t*)buf, len);
+            return len;
+        });
     }
     esp_log_level_set("ssl_client", ESP_LOG_WARN);
     snprintf(chipId, CHAR_LEN, "%04llx", ESP.getEfuseMac() & CHIP_ID_MASK);
@@ -241,6 +287,18 @@ void setup() {
     snprintf(logTopic, CHAR_LEN, "klaussometer/%s/log", chipId);
     snprintf(errorTopic, CHAR_LEN, "klaussometer/%s/error", chipId);
 
+    // Create display and touch objects now that board config is known
+    rgbpanel = new Arduino_ESP32RGBPanel(
+        board->lcdDe, board->lcdVsync, board->lcdHsync, board->lcdPclk,
+        board->lcdR[0], board->lcdR[1], board->lcdR[2], board->lcdR[3], board->lcdR[4],
+        board->lcdG[0], board->lcdG[1], board->lcdG[2], board->lcdG[3], board->lcdG[4], board->lcdG[5],
+        board->lcdB[0], board->lcdB[1], board->lcdB[2], board->lcdB[3], board->lcdB[4],
+        board->hsyncPolarity, board->hsyncFront, board->hsyncPulse, board->hsyncBack,
+        board->vsyncPolarity, board->vsyncFront, board->vsyncPulse, board->vsyncBack,
+        board->pclkActiveNeg, board->preferSpeed);
+    gfx = new Arduino_RGB_Display(LCD_WIDTH, LCD_HEIGHT, rgbpanel);
+    ts = new TAMC_GT911(board->i2cSda, board->i2cScl, board->touchInt, board->touchRst, LCD_WIDTH, LCD_HEIGHT);
+
     // Init Display
     pinInit();
 
@@ -329,11 +387,7 @@ void setup() {
     lv_obj_set_style_text_color(ui_SolarStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
 
     // Set to night settings at first (until we determine if it's daytime)
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-    ledcWrite(TFT_BL, NIGHTTIME_DUTY);
-#else
-    ledcWrite(PWMChannel, NIGHTTIME_DUTY);
-#endif
+    setBacklight(false);
     set_basic_text_color(lv_color_hex(COLOR_WHITE));
     set_arc_night_mode(true);
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
@@ -523,7 +577,7 @@ static void updateWeatherDisplay() {
     }
 }
 
-// Updates CO2 and PM2.5 labels with colour coding based on air quality thresholds.
+// Updates CO2 and PM2.5 labels; red when stale, default text colour otherwise.
 static void updateInsideAQDisplay() {
     if (!dirtyInsideAQ)
         return;
@@ -531,47 +585,26 @@ static void updateInsideAQDisplay() {
 
     char tempString[CHAR_LEN];
     lv_color_t defaultColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
-    lv_color_t color;
 
     // CO2 label
     if (insideAirQuality.co2State == ReadingState::NO_DATA) {
         lv_label_set_text(ui_InsideAirQualityCO2, "CO2: --");
-        lv_obj_set_style_text_color(ui_InsideAirQualityCO2, defaultColor, LV_PART_MAIN);
     } else {
         char co2Buf[32];
         formatIntegerWithCommas((long long)insideAirQuality.co2, co2Buf, sizeof(co2Buf));
         snprintf(tempString, CHAR_LEN, "CO2: %s", co2Buf);
         lv_label_set_text(ui_InsideAirQualityCO2, tempString);
-        if (insideAirQuality.co2State == ReadingState::STALE) {
-            color = lv_color_hex(COLOR_STALE);
-        } else if (insideAirQuality.co2 >= CO2_THRESHOLD_RED) {
-            color = lv_color_hex(COLOR_RED);
-        } else if (insideAirQuality.co2 >= CO2_THRESHOLD_YELLOW) {
-            color = lv_color_hex(COLOR_AMBER);
-        } else {
-            color = lv_color_hex(COLOR_GREEN);
-        }
-        lv_obj_set_style_text_color(ui_InsideAirQualityCO2, color, LV_PART_MAIN);
     }
+    lv_obj_set_style_text_color(ui_InsideAirQualityCO2, insideAirQuality.co2State == ReadingState::STALE ? lv_color_hex(COLOR_RED) : defaultColor, LV_PART_MAIN);
 
     // PM2.5 label
     if (insideAirQuality.pm25State == ReadingState::NO_DATA) {
         lv_label_set_text(ui_InsideAirQualityPM25, "PM2.5: --");
-        lv_obj_set_style_text_color(ui_InsideAirQualityPM25, defaultColor, LV_PART_MAIN);
     } else {
         snprintf(tempString, CHAR_LEN, "PM2.5: %.1f", insideAirQuality.pm25);
         lv_label_set_text(ui_InsideAirQualityPM25, tempString);
-        if (insideAirQuality.pm25State == ReadingState::STALE) {
-            color = lv_color_hex(COLOR_STALE);
-        } else if (insideAirQuality.pm25 >= PM25_THRESHOLD_RED) {
-            color = lv_color_hex(COLOR_RED);
-        } else if (insideAirQuality.pm25 >= PM25_THRESHOLD_YELLOW) {
-            color = lv_color_hex(COLOR_AMBER);
-        } else {
-            color = lv_color_hex(COLOR_GREEN);
-        }
-        lv_obj_set_style_text_color(ui_InsideAirQualityPM25, color, LV_PART_MAIN);
     }
+    lv_obj_set_style_text_color(ui_InsideAirQualityPM25, insideAirQuality.pm25State == ReadingState::STALE ? lv_color_hex(COLOR_RED) : defaultColor, LV_PART_MAIN);
 }
 
 // Updates status indicators, clock, WiFi icon and version string once per second.
@@ -626,24 +659,17 @@ static void adjustDayNightMode() {
     if (weather.isDay == lastIsDay)
         return;
     lastIsDay = weather.isDay;
-    dirtyRooms = true; // Re-apply stale label colours after set_basic_text_color resets them
+    dirtyRooms = true;    // Re-apply stale label colours after set_basic_text_color resets them
+    dirtyInsideAQ = true; // Re-apply stale/default colour with new day/night defaultColor
     if (!weather.isDay) {
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-        ledcWrite(TFT_BL, NIGHTTIME_DUTY);
-#else
-        ledcWrite(PWMChannel, NIGHTTIME_DUTY);
-#endif
+        setBacklight(false);
         set_basic_text_color(lv_color_hex(COLOR_WHITE));
         set_arc_night_mode(true);
         lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
         lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
         lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
     } else {
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-        ledcWrite(TFT_BL, DAYTIME_DUTY);
-#else
-        ledcWrite(PWMChannel, DAYTIME_DUTY);
-#endif
+        setBacklight(true);
         set_basic_text_color(lv_color_hex(COLOR_BLACK));
         set_arc_night_mode(false);
         lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
@@ -671,16 +697,24 @@ void invalidateOldReadings() {
 }
 
 void invalidateInsideAirQuality() {
-    if (time(nullptr) <= TIME_SYNC_THRESHOLD) return;
+    if (time(nullptr) <= TIME_SYNC_THRESHOLD)
+        return;
     time_t now = time(nullptr);
 
     // SCD41 — CO2 sensor
     if (insideAirQuality.co2LastMessageTime != 0) {
         time_t age = now - insideAirQuality.co2LastMessageTime;
         if (age > MAX_NO_MESSAGE_BLANK_SEC) {
-            if (insideAirQuality.co2State != ReadingState::NO_DATA) { insideAirQuality.co2State = ReadingState::NO_DATA; insideAirQuality.co2 = 0.0f; dirtyInsideAQ = true; }
+            if (insideAirQuality.co2State != ReadingState::NO_DATA) {
+                insideAirQuality.co2State = ReadingState::NO_DATA;
+                insideAirQuality.co2 = 0.0f;
+                dirtyInsideAQ = true;
+            }
         } else if (age > MAX_NO_MESSAGE_STALE_SEC) {
-            if (insideAirQuality.co2State != ReadingState::STALE && insideAirQuality.co2State != ReadingState::NO_DATA) { insideAirQuality.co2State = ReadingState::STALE; dirtyInsideAQ = true; }
+            if (insideAirQuality.co2State != ReadingState::STALE && insideAirQuality.co2State != ReadingState::NO_DATA) {
+                insideAirQuality.co2State = ReadingState::STALE;
+                dirtyInsideAQ = true;
+            }
         }
     }
 
@@ -688,13 +722,34 @@ void invalidateInsideAirQuality() {
     if (insideAirQuality.pmLastMessageTime != 0) {
         time_t age = now - insideAirQuality.pmLastMessageTime;
         if (age > MAX_NO_MESSAGE_BLANK_SEC) {
-            if (insideAirQuality.pm1State != ReadingState::NO_DATA) { insideAirQuality.pm1State = ReadingState::NO_DATA; insideAirQuality.pm1 = 0.0f; dirtyInsideAQ = true; }
-            if (insideAirQuality.pm25State != ReadingState::NO_DATA) { insideAirQuality.pm25State = ReadingState::NO_DATA; insideAirQuality.pm25 = 0.0f; dirtyInsideAQ = true; }
-            if (insideAirQuality.pm10State != ReadingState::NO_DATA) { insideAirQuality.pm10State = ReadingState::NO_DATA; insideAirQuality.pm10 = 0.0f; dirtyInsideAQ = true; }
+            if (insideAirQuality.pm1State != ReadingState::NO_DATA) {
+                insideAirQuality.pm1State = ReadingState::NO_DATA;
+                insideAirQuality.pm1 = 0.0f;
+                dirtyInsideAQ = true;
+            }
+            if (insideAirQuality.pm25State != ReadingState::NO_DATA) {
+                insideAirQuality.pm25State = ReadingState::NO_DATA;
+                insideAirQuality.pm25 = 0.0f;
+                dirtyInsideAQ = true;
+            }
+            if (insideAirQuality.pm10State != ReadingState::NO_DATA) {
+                insideAirQuality.pm10State = ReadingState::NO_DATA;
+                insideAirQuality.pm10 = 0.0f;
+                dirtyInsideAQ = true;
+            }
         } else if (age > MAX_NO_MESSAGE_STALE_SEC) {
-            if (insideAirQuality.pm1State != ReadingState::STALE && insideAirQuality.pm1State != ReadingState::NO_DATA) { insideAirQuality.pm1State = ReadingState::STALE; dirtyInsideAQ = true; }
-            if (insideAirQuality.pm25State != ReadingState::STALE && insideAirQuality.pm25State != ReadingState::NO_DATA) { insideAirQuality.pm25State = ReadingState::STALE; dirtyInsideAQ = true; }
-            if (insideAirQuality.pm10State != ReadingState::STALE && insideAirQuality.pm10State != ReadingState::NO_DATA) { insideAirQuality.pm10State = ReadingState::STALE; dirtyInsideAQ = true; }
+            if (insideAirQuality.pm1State != ReadingState::STALE && insideAirQuality.pm1State != ReadingState::NO_DATA) {
+                insideAirQuality.pm1State = ReadingState::STALE;
+                dirtyInsideAQ = true;
+            }
+            if (insideAirQuality.pm25State != ReadingState::STALE && insideAirQuality.pm25State != ReadingState::NO_DATA) {
+                insideAirQuality.pm25State = ReadingState::STALE;
+                dirtyInsideAQ = true;
+            }
+            if (insideAirQuality.pm10State != ReadingState::STALE && insideAirQuality.pm10State != ReadingState::NO_DATA) {
+                insideAirQuality.pm10State = ReadingState::STALE;
+                dirtyInsideAQ = true;
+            }
         }
     }
 }
@@ -717,49 +772,44 @@ void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
 
 // Initialise pins for touch and backlight
 void pinInit() {
-    pinMode(TFT_BL, OUTPUT);
-    // pinMode(TOUCH_RST, OUTPUT);
-
+    if (isWaveshare) {
+        // Waveshare: backlight and LCD/touch reset are all behind the TCA9554 I2C expander.
+        // waveshare_expander_init() initialises Wire, resets the LCD panel and GT911, and
+        // leaves the backlight off until after display init.
+        waveshare_expander_init();
+    } else {
+        pinMode(board->tftBl, OUTPUT);
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
-    ledcAttachChannel(TFT_BL, PWMFreq, PWMResolution, PWMChannel);
-    ledcWrite(TFT_BL, NIGHTTIME_DUTY); // Start dim
+        ledcAttachChannel(board->tftBl, PWMFreq, PWMResolution, PWMChannel);
+        ledcWrite(board->tftBl, NIGHTTIME_DUTY); // Start dim
 #else
-    ledcSetup(PWMChannel, PWMFreq, PWMResolution);
-    ledcAttachPin(TFT_BL, PWMChannel);
-    ledcWrite(PWMChannel, NIGHTTIME_DUTY); // Start dim
+        ledcSetup(PWMChannel, PWMFreq, PWMResolution);
+        ledcAttachPin(board->tftBl, PWMChannel);
+        ledcWrite(PWMChannel, NIGHTTIME_DUTY); // Start dim
 #endif
-
-    /*vTaskDelay(pdMS_TO_TICKS(100));
-    digitalWrite(TOUCH_RST, LOW);
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    digitalWrite(TOUCH_RST, HIGH);
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    digitalWrite(TOUCH_RST, LOW);
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    digitalWrite(TOUCH_RST, HIGH);
-    vTaskDelay(pdMS_TO_TICKS(1000));*/
+    }
 }
 
 // Initialise touch screen
 void touchInit(void) {
-    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-    ts.begin();
-    ts.setRotation(ROTATION_INVERTED);
+    Wire.begin(board->i2cSda, board->i2cScl);
+    ts->begin();
+    ts->setRotation(ROTATION_INVERTED);
 }
 
 void touchRead(lv_indev_t* indev, lv_indev_data_t* data) {
-    ts.read();
-    if (ts.isTouched) {
-        touchLastX = map(ts.points[0].x, 0, 1024, 0, LCD_WIDTH);
-        touchLastY = map(ts.points[0].y, 0, 750, 0, LCD_HEIGHT);
+    ts->read();
+    if (ts->isTouched) {
+        touchLastX = map(ts->points[0].x, 0, 1024, 0, LCD_WIDTH);
+        touchLastY = map(ts->points[0].y, 0, board->touchRawMaxY, 0, LCD_HEIGHT);
         data->point.x = touchLastX;
         data->point.y = touchLastY;
-        data->state = LV_INDEV_STATE_PRESSED; // Note: renamed constant
+        data->state = LV_INDEV_STATE_PRESSED;
 
-        ts.isTouched = false;
+        ts->isTouched = false;
     } else {
         data->point.x = touchLastX;
-        data->state = LV_INDEV_STATE_RELEASED; // Note: renamed constant
+        data->state = LV_INDEV_STATE_RELEASED;
     }
 }
 

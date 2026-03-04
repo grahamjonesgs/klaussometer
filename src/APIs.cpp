@@ -233,7 +233,7 @@ static void fetchSolarToken() {
                 snprintf(solarToken.token, sizeof(solarToken.token), "bearer %s", recToken);
                 solarToken.tokenTime = time(nullptr);
                 char logMessage2[CHAR_LEN];
-                snprintf(logMessage2, CHAR_LEN, "Solar token obtained, raw=%zu, stored=%zu", strlen(recToken), strlen(solarToken.token));
+                snprintf(logMessage2, CHAR_LEN, "Solar token obtained");
                 logAndPublish(logMessage2);
                 saveDataBlock(SOLAR_TOKEN_FILENAME, &solarToken, sizeof(solarToken));
             } else {

@@ -48,6 +48,7 @@ static constexpr int ROOM_COUNT = 5;
     &ui_GridTitleCost,    &ui_GridTitlePercentage, &ui_FCMin,                &ui_FCMax,                                      \
     &ui_SolarTodayEnergy, &ui_SolarMonthEnergy,    &ui_GridTitleSolar,                                                                         \
     &ui_Direction1,       &ui_Direction2,          &ui_Direction3,           &ui_Direction4,           &ui_Direction5,       \
+    &ui_FCAQI,            &ui_FCAQIUpdateTime,     &ui_InsideAirQualityCO2,  &ui_InsideAirQualityPM25,                       \
     &ui_Version,                                                                                                             \
 }
 // clang-format on
@@ -205,13 +206,6 @@ static const int MUTEX_TIMEOUT_SD_MS = 5000;  // SD operations can be slow; wait
 static const int MUTEX_TIMEOUT_MQTT_MS = 500; // MQTT parse window; short wait is fine
 static constexpr int MUTEX_NOWAIT = 0;        // Non-blocking: try once, skip if unavailable
 
-// Touch screen settings
-static const int I2C_SDA_PIN = 17;
-static const int I2C_SCL_PIN = 18;
-static const int TOUCH_INT = -1;
-static const int TOUCH_RST = 38;
-static const int TFT_BL = 10;
-
 static const int WIFI_RETRIES = 10; // Number of times to retry the wifi before a restart
 
 static const int PIN_SD_CMD = 11;
@@ -233,44 +227,7 @@ static const int COLOR_ARC_TRACK_DAY = 0xE0E0E0;   // Light gray track for day
 static const int ARC_OPACITY_NIGHT = 180;          // Dimmer indicator at night
 static const int ARC_OPACITY_DAY = 255;            // Full opacity during day
 
-// Define LCD panel constants
-static const int LCD_DE_PIN = 40;
-static const int LCD_VSYNC_PIN = 41;
-static const int LCD_HSYNC_PIN = 39;
-static const int LCD_PCLK_PIN = 42;
-
-static const int LCD_R0_PIN = 45;
-static const int LCD_R1_PIN = 48;
-static const int LCD_R2_PIN = 47;
-static const int LCD_R3_PIN = 21;
-static const int LCD_R4_PIN = 14;
-
-static const int LCD_G0_PIN = 5;
-static const int LCD_G1_PIN = 6;
-static const int LCD_G2_PIN = 7;
-static const int LCD_G3_PIN = 15;
-static const int LCD_G4_PIN = 16;
-static const int LCD_G5_PIN = 4;
-
-static const int LCD_B0_PIN = 8;
-static const int LCD_B1_PIN = 3;
-static const int LCD_B2_PIN = 46;
-static const int LCD_B3_PIN = 9;
-static const int LCD_B4_PIN = 1;
-static const int LCD_B5_PIN = 2;
-static const int LCD_HSYNC_POLARITY = 0;
-static const int LCD_HSYNC_FRONT_PORCH = 40;
-static const int LCD_HSYNC_PULSE_WIDTH = 8; // was 48
-static const int LCD_HSYNC_BACK_PORCH = 128;
-
-static const int LCD_VSYNC_POLARITY = 1;
-static const int LCD_VSYNC_FRONT_PORCH = 13;
-static const int LCD_VSYNC_PULSE_WIDTH = 8; // was 3
-static const int LCD_VSYNC_BACK_PORCH = 45;
-
-static const int LCD_PCLK_ACTIVE_NEG = 1;
-static const int LCD_PREFER_SPEED = 12000000; // was 16000000
-static const int LCD_WIDTH = 1024;
+static const int LCD_WIDTH  = 1024;
 static const int LCD_HEIGHT = 600;
 
 // For Backlight PWM
