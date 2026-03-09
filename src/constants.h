@@ -160,6 +160,8 @@ static const time_t TIME_SYNC_THRESHOLD = 1577836800; // 2020-01-01: used to det
 
 static const int MAX_NO_MESSAGE_STALE_SEC = 1800;         // Seconds without a message before a reading turns grey (ReadingState::STALE)
 static const int MAX_NO_MESSAGE_BLANK_SEC = 3600;         // Seconds without a message before a reading is blanked (ReadingState::NO_DATA)
+static const int MAX_API_DATA_AGE_SEC = 7200;             // Seconds before API-sourced data (weather/UV/AQ) is cleared from the display
+
 static const int TIME_RETRIES = 100;                      // Number of time to retry getting the time during setup
 static const int WEATHER_UPDATE_INTERVAL_SEC = 300;       // Interval between weather updates
 static const int UV_UPDATE_INTERVAL_SEC = 3600;           // Interval between UV updates

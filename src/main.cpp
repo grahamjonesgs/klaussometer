@@ -45,6 +45,8 @@ void setBacklight(bool day);
 void getBatteryStatus(float batteryValue, int readingIndex, char* iconChar, lv_color_t* colorPtr);
 void invalidateOldReadings();
 void invalidateInsideAirQuality();
+void invalidateStaleApiData();
+static void onTimeTouched(lv_event_t* e);
 static void setStatusColor(lv_obj_t* label, time_t updateTime, int maxAgeSec);
 static void updateRoomDisplay();
 static void updateUVDisplay();
@@ -96,6 +98,8 @@ Arduino_RGB_Display* gfx = nullptr;
 TAMC_GT911* ts = nullptr;
 int touchLastX = 0;
 int touchLastY = 0;
+static bool touchAvailable = false; // set true only if GT911 responds on I2C
+static bool showDate = false;       // when true, ui_Time shows date instead of time
 
 // Screen setting
 static uint32_t screenWidth = LCD_WIDTH;
@@ -302,6 +306,8 @@ void setup() {
     // Init Display
     pinInit();
 
+    touchInit();
+
     // Init Display Hardware
     gfx->begin();
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
@@ -337,6 +343,15 @@ void setup() {
     lv_display_set_flush_cb(disp, dispFlush);
     lv_display_set_buffers(disp, dispDrawBuf, nullptr, bufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
     ui_init();
+
+    // Register touch input device with LVGL
+    lv_indev_t* indev = lv_indev_create();
+    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_read_cb(indev, touchRead);
+
+    // Tap the time label to toggle between time and date
+    lv_obj_add_flag(ui_Time, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(ui_Time, onTimeTouched, LV_EVENT_CLICKED, nullptr);
 
     // Set initial UI values
     lv_label_set_text(ui_Version, "");
@@ -478,6 +493,7 @@ void loop() {
     lv_label_set_text(ui_StatusMessage, statusMessageValue);
     invalidateOldReadings();
     invalidateInsideAirQuality();
+    invalidateStaleApiData();
 }
 
 // Colors a status indicator green if data is fresh, red if it exceeds maxAgeSec.
@@ -538,6 +554,10 @@ static void updateUVDisplay() {
         lv_arc_set_value(ui_UVArc, uv.index * 10);
         lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(uvColor(uv.index)), LV_PART_INDICATOR | LV_STATE_DEFAULT);
         lv_obj_set_style_bg_color(ui_UVArc, lv_color_hex(uvColor(uv.index)), LV_PART_KNOB | LV_STATE_DEFAULT);
+    } else {
+        lv_obj_add_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(ui_UVLabel, "--");
+        lv_label_set_text(ui_UVUpdateTime, "");
     }
 }
 
@@ -559,6 +579,9 @@ static void updateWeatherDisplay() {
             lv_label_set_text(ui_FCAQI, tempString);
             snprintf(tempString, CHAR_LEN, "AQI Updated %s", airQuality.timeString);
             lv_label_set_text(ui_FCAQIUpdateTime, tempString);
+        } else {
+            lv_label_set_text(ui_FCAQI, "AQI --");
+            lv_label_set_text(ui_FCAQIUpdateTime, "");
         }
         lv_arc_set_value(ui_TempArcFC, weather.temperature);
         snprintf(tempString, CHAR_LEN, "%2.0f", weather.temperature);
@@ -619,6 +642,8 @@ static void updatePeriodicStatus(unsigned long currentMillis) {
 
     setStatusColor(ui_SolarStatus, solar.currentUpdateTime, 2 * SOLAR_CURRENT_UPDATE_INTERVAL_SEC);
     setStatusColor(ui_WeatherStatus, weather.updateTime, 2 * WEATHER_UPDATE_INTERVAL_SEC);
+    setStatusColor(ui_UVUpdateTime, uv.updateTime, 2 * UV_UPDATE_INTERVAL_SEC);
+    setStatusColor(ui_FCAQIUpdateTime, airQuality.updateTime, 2 * AIR_QUALITY_UPDATE_INTERVAL_SEC);
 
     if (WiFi.status() == WL_CONNECTED) {
         lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
@@ -642,7 +667,7 @@ static void updatePeriodicStatus(unsigned long currentMillis) {
         lv_label_set_text(ui_Time, "Syncing");
     } else {
         char timeString[CHAR_LEN];
-        strftime(timeString, sizeof(timeString), "%H:%M:%S", &timeinfo);
+        strftime(timeString, sizeof(timeString), showDate ? "%a %d %b %Y" : "%H:%M:%S", &timeinfo);
         lv_label_set_text(ui_Time, timeString);
     }
 
@@ -755,6 +780,28 @@ void invalidateInsideAirQuality() {
     }
 }
 
+// Clears API-sourced data (weather, UV, outdoor AQ) if it exceeds MAX_API_DATA_AGE_SEC.
+// Handles old SD card restores and prolonged API outages — mirrors invalidateOldReadings()
+// for MQTT sensors. The display functions' updateTime > 0 checks then show "--"/hidden.
+void invalidateStaleApiData() {
+    if (time(nullptr) <= TIME_SYNC_THRESHOLD)
+        return;
+    time_t now = time(nullptr);
+
+    if (weather.updateTime > 0 && (now - weather.updateTime) > MAX_API_DATA_AGE_SEC) {
+        weather.updateTime = 0;
+        dirtyWeather = true;
+    }
+    if (uv.updateTime > 0 && (now - uv.updateTime) > MAX_API_DATA_AGE_SEC) {
+        uv.updateTime = 0;
+        dirtyUv = true;
+    }
+    if (airQuality.updateTime > 0 && (now - airQuality.updateTime) > MAX_API_DATA_AGE_SEC) {
+        airQuality.updateTime = 0;
+        dirtyWeather = true;
+    }
+}
+
 // Flush function for LVGL
 void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     uint32_t w = (area->x2 - area->x1 + 1);
@@ -794,11 +841,29 @@ void pinInit() {
 // Initialise touch screen
 void touchInit(void) {
     Wire.begin(board->i2cSda, board->i2cScl);
+    // GT911 can be at 0x5D (INT low during reset) or 0x14 (INT high during reset).
+    // Probe both so we know whether the device is present before calling ts->read().
+    for (uint8_t addr : {(uint8_t)0x5D, (uint8_t)0x14}) {
+        Wire.beginTransmission(addr);
+        if (Wire.endTransmission() == 0) {
+            touchAvailable = true;
+            Serial.printf("Touch: GT911 found at 0x%02X\n", addr);
+            break;
+        }
+    }
+    if (!touchAvailable) {
+        Serial.println("Touch: GT911 not found on I2C bus");
+        return;
+    }
     ts->begin();
     ts->setRotation(ROTATION_INVERTED);
 }
 
 void touchRead(lv_indev_t* indev, lv_indev_data_t* data) {
+    if (!touchAvailable) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
     ts->read();
     if (ts->isTouched) {
         touchLastX = map(ts->points[0].x, 0, 1024, 0, LCD_WIDTH);
@@ -806,11 +871,20 @@ void touchRead(lv_indev_t* indev, lv_indev_data_t* data) {
         data->point.x = touchLastX;
         data->point.y = touchLastY;
         data->state = LV_INDEV_STATE_PRESSED;
-
         ts->isTouched = false;
     } else {
         data->point.x = touchLastX;
         data->state = LV_INDEV_STATE_RELEASED;
+    }
+}
+
+// Tap the time label to toggle between HH:MM:SS and day/date display.
+static void onTimeTouched(lv_event_t* e) {
+    showDate = !showDate;
+    if (getLocalTime(&timeinfo)) {
+        char buf[CHAR_LEN];
+        strftime(buf, sizeof(buf), showDate ? "%a %d %b %Y" : "%H:%M:%S", &timeinfo);
+        lv_label_set_text(ui_Time, buf);
     }
 }
 

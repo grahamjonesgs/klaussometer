@@ -64,6 +64,7 @@ char urlBuffer[URL_BUFFER_SIZE] = {0};
 const size_t POST_BUFFER_SIZE = 512;
 char postBuffer[POST_BUFFER_SIZE] = {0};
 
+
 // Auto-detect Content-Length vs chunked transfer and read the payload
 static int readHttpPayload() {
     int contentLength = http.getSize();
