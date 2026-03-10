@@ -20,6 +20,19 @@ void sdcard_init() {
 static int normalLogLineCount = -1; // -1 means not yet initialized
 static int errorLogLineCount = -1;
 
+static int* getLineCountPtr(const char* logFilename) {
+    return (strcmp(logFilename, NORMAL_LOG_FILENAME) == 0) ? &normalLogLineCount : &errorLogLineCount;
+}
+
+static int countLinesInFile(File& f) {
+    int count = 0;
+    while (f.available()) {
+        if (f.read() == '\n')
+            count++;
+    }
+    return count;
+}
+
 bool saveDataBlock(const char* filename, const void* dataPtr, size_t size) {
     if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
         return false;
@@ -149,18 +162,14 @@ void addLogToSDCard(const char* message, const char* logFilename) {
     }
 
     // Determine which cache to use
-    int* lineCountPtr = (strcmp(logFilename, NORMAL_LOG_FILENAME) == 0) ? &normalLogLineCount : &errorLogLineCount;
+    int* lineCountPtr = getLineCountPtr(logFilename);
 
     // Initialize cache if needed (first time or after rotation)
     if (*lineCountPtr == -1) {
         if (SD_MMC.exists(logFilename)) {
             File logFile = SD_MMC.open(logFilename, FILE_READ);
             if (logFile) {
-                *lineCountPtr = 0;
-                while (logFile.available()) {
-                    if (logFile.read() == '\n')
-                        (*lineCountPtr)++;
-                }
+                *lineCountPtr = countLinesInFile(logFile);
                 logFile.close();
             }
         } else {
@@ -190,11 +199,7 @@ void addLogToSDCard(const char* message, const char* logFilename) {
             // Use cached count if available, otherwise count
             int totalLines = *lineCountPtr;
             if (totalLines <= 0) {
-                totalLines = 0;
-                while (oldFile.available()) {
-                    if (oldFile.read() == '\n')
-                        totalLines++;
-                }
+                totalLines = countLinesInFile(oldFile);
                 oldFile.seek(0);
             }
 
@@ -293,16 +298,12 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
     }
 
     // Use cached line count instead of scanning the entire file
-    int* lineCountPtr = (strcmp(logFilename, NORMAL_LOG_FILENAME) == 0) ? &normalLogLineCount : &errorLogLineCount;
+    int* lineCountPtr = getLineCountPtr(logFilename);
     int totalLines = *lineCountPtr;
 
     // If cache is invalid, count lines (first time only)
     if (totalLines <= 0) {
-        totalLines = 0;
-        while (logFile.available()) {
-            if (logFile.read() == '\n')
-                totalLines++;
-        }
+        totalLines = countLinesInFile(logFile);
         logFile.seek(0);
         *lineCountPtr = totalLines;
     }

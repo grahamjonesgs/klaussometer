@@ -25,6 +25,10 @@ static void updateChargingStatus() {
 
         // Time remaining = usable capacity left / current draw rate
         // Usable capacity = (SoC% - min%) * total kWh; power is in kW
+        if (solar.batteryPower == 0.0f) {
+            lv_label_set_text(ui_ChargingTime, "");
+            return;
+        }
         float remainHours = (solar.batteryCharge / 100.0 - BATTERY_MIN) * BATTERY_CAPACITY / solar.batteryPower;
         int remainMinutes = 60.0 * remainHours;
         int remainMinutesRound = REMAINING_TIME_ROUND_MIN * (round(remainMinutes / REMAINING_TIME_ROUND_MIN));
@@ -47,6 +51,10 @@ static void updateChargingStatus() {
         lv_label_set_text(ui_ChargingLabel, tempString);
 
         // Time to full = remaining capacity to fill / charge rate (batteryPower is negative when charging)
+        if (solar.batteryPower == 0.0f) {
+            lv_label_set_text(ui_ChargingTime, "");
+            return;
+        }
         float remainHours = -(BATTERY_CHARGE_FULL_THRESHOLD - solar.batteryCharge / 100) * BATTERY_CAPACITY / solar.batteryPower;
         int remainMinutes = 60.0 * remainHours;
         int remainMinutesRound = REMAINING_TIME_ROUND_MIN * (round(remainMinutes / REMAINING_TIME_ROUND_MIN));

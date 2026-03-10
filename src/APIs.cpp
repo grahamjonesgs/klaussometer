@@ -155,6 +155,7 @@ static bool fetchWeather() {
             saveDataBlock(WEATHER_DATA_FILENAME, &weather, sizeof(weather));
         } else {
             logAndPublish("Weather update failed: Payload read error");
+            weather.updateTime = time(nullptr); // Prevents rapid retry if the API returns empty payload
         }
         http.end();
         return true;
@@ -201,6 +202,7 @@ static bool fetchAirQuality() {
             saveDataBlock(AIR_QUALITY_DATA_FILENAME, &airQuality, sizeof(airQuality));
         } else {
             logAndPublish("Air quality update failed: Payload read error");
+            airQuality.updateTime = time(nullptr); // Prevents rapid retry if the API returns empty payload
         }
         http.end();
         return true;
@@ -340,7 +342,7 @@ static bool fetchCurrentSolar() {
                     solarToken.token[0] = '\0'; // Clear the token to trigger a refresh
                 } else {
                     char logMessage[CHAR_LEN];
-                    snprintf(logMessage, CHAR_LEN, "Solar status failed: %s", msg);
+                    snprintf(logMessage, CHAR_LEN, "Solar status failed: %s", msg ? msg : "unknown error");
                     errorPublish(logMessage);
                 }
             }

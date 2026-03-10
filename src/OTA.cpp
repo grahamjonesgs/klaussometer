@@ -24,7 +24,7 @@ void checkForUpdates() {
         String serverVersion = http.getString();
         serverVersion.trim();
         http.end();
-        lastOTAUpdateCheck = time(NULL);
+        lastOTAUpdateCheck = time(nullptr);
         if (compareVersions(serverVersion, FIRMWARE_VERSION) > 0) {
             char logMessage[CHAR_LEN];
             snprintf(logMessage, CHAR_LEN, "New firmware version available: %s (current: %s)", serverVersion.c_str(), FIRMWARE_VERSION);
@@ -38,7 +38,7 @@ void checkForUpdates() {
     } else {
         logAndPublish("Error fetching version file");
         http.end();
-        lastOTAUpdateCheck = time(NULL);
+        lastOTAUpdateCheck = time(nullptr);
     }
 }
 
