@@ -12,27 +12,31 @@ extern Preferences storage;
 
 extern HTTPClient http;
 
-// Per-API backoff tracking
+// Per-API retry tracking. lastAttemptTime records when a fetch was last
+// tried regardless of outcome, so retry pacing never has to fake the data's
+// updateTime (which the display uses for freshness colouring).
 struct ApiBackoff {
     int failCount;
     time_t nextRetryTime;
+    time_t lastAttemptTime;
 };
 
-static ApiBackoff uvBackoff = {0, 0};
-static ApiBackoff weatherBackoff = {0, 0};
-static ApiBackoff airQualityBackoff = {0, 0};
-static ApiBackoff solarCurrentBackoff = {0, 0};
-static ApiBackoff solarDailyBackoff = {0, 0};
-static ApiBackoff solarMonthlyBackoff = {0, 0};
+static ApiBackoff solarTokenBackoff = {0, 0, 0};
+static ApiBackoff uvBackoff = {0, 0, 0};
+static ApiBackoff weatherBackoff = {0, 0, 0};
+static ApiBackoff airQualityBackoff = {0, 0, 0};
+static ApiBackoff solarCurrentBackoff = {0, 0, 0};
+static ApiBackoff solarDailyBackoff = {0, 0, 0};
+static ApiBackoff solarMonthlyBackoff = {0, 0, 0};
 
 // Helper function to calculate backoff delay with exponential increase
-static int getBackoffDelay(int failCount) {
+static int getBackoffDelay(int failCount, int maxDelaySec) {
     // Exponential backoff: base_delay * 2^(failCount-1), capped at max
     int delay = API_FAIL_DELAY_SEC;
-    for (int i = 1; i < failCount && delay < API_MAX_BACKOFF_SEC; i++) {
+    for (int i = 1; i < failCount && delay < maxDelaySec; i++) {
         delay *= 2;
     }
-    return (delay > API_MAX_BACKOFF_SEC) ? API_MAX_BACKOFF_SEC : delay;
+    return (delay > maxDelaySec) ? maxDelaySec : delay;
 }
 
 static bool canRetry(ApiBackoff& state) {
@@ -44,9 +48,39 @@ static void resetBackoff(ApiBackoff& state) {
     state.nextRetryTime = 0;
 }
 
-static void applyBackoff(ApiBackoff& state) {
+// During a prolonged outage let the backoff grow up to the API's own update
+// interval (at least API_MAX_BACKOFF_SEC), so a slow-cadence API like UV
+// (hourly, quota-limited) isn't retried every 5 minutes for hours on end.
+static void applyBackoff(ApiBackoff& state, int intervalSec) {
     state.failCount++;
-    state.nextRetryTime = time(nullptr) + getBackoffDelay(state.failCount);
+    int cap = (intervalSec > API_MAX_BACKOFF_SEC) ? intervalSec : API_MAX_BACKOFF_SEC;
+    state.nextRetryTime = time(nullptr) + getBackoffDelay(state.failCount, cap);
+}
+
+// An attempt is due when the data is stale, any failure backoff has expired,
+// and at least API_FAIL_DELAY_SEC has passed since the previous attempt.
+// The last check stops every-pass hammering when a fetch returns without
+// updating the data (e.g. a Solarman "success: false" response).
+static bool fetchDue(const ApiBackoff& state, time_t dataUpdateTime, int intervalSec, time_t now) {
+    if (now - dataUpdateTime <= intervalSec)
+        return false;
+    if (now < state.nextRetryTime)
+        return false;
+    if (now - state.lastAttemptTime < API_FAIL_DELAY_SEC)
+        return false;
+    return true;
+}
+
+// Records the attempt, feeds the watchdog, runs the fetch and updates the
+// backoff state from its result.
+static void attemptFetch(ApiBackoff& state, bool (*fetchFn)(), int intervalSec, time_t now) {
+    state.lastAttemptTime = now;
+    esp_task_wdt_reset();
+    if (fetchFn()) {
+        resetBackoff(state);
+    } else {
+        applyBackoff(state, intervalSec);
+    }
 }
 
 // Logs an HTTP error with a consistent "[HTTP] <label> failed, error: <code>" format.
@@ -231,9 +265,11 @@ static bool fetchAirQuality() {
 
 // Fetches a JWT bearer token from the Solarman API and stores it in solarToken.
 // Tokens last ~24h; api_manager_t refreshes after 12h or when a request is rejected.
-static void fetchSolarToken() {
+// Returns true when a token was obtained (or the fetch was skipped because WiFi
+// is down); false on any failure so the caller can apply backoff.
+static bool fetchSolarToken() {
     if (WiFi.status() != WL_CONNECTED)
-        return;
+        return true;
 
     snprintf(urlBuffer, sizeof(urlBuffer), "https://%s/account/v1.0/token?appId=%s", SOLAR_URL, SOLAR_APPID);
     http.begin(urlBuffer);
@@ -241,6 +277,7 @@ static void fetchSolarToken() {
 
     snprintf(postBuffer, POST_BUFFER_SIZE, "{\n\"appSecret\" : \"%s\", \n\"email\" : \"%s\",\n\"password\" : \"%s\"\n}", SOLAR_SECRET, SOLAR_USERNAME, SOLAR_PASSHASH);
     int httpCodeToken = http.POST(postBuffer);
+    bool obtained = false;
     if (httpCodeToken == HTTP_CODE_OK) {
         int payloadLen = readHttpPayload();
         if (payloadLen > 0) {
@@ -254,10 +291,9 @@ static void fetchSolarToken() {
                 const char* recToken = root["access_token"];
                 snprintf(solarToken.token, sizeof(solarToken.token), "bearer %s", recToken);
                 solarToken.tokenTime = time(nullptr);
-                char logMessage2[CHAR_LEN];
-                snprintf(logMessage2, CHAR_LEN, "Solar token obtained");
-                logAndPublish(logMessage2);
+                logAndPublish("Solar token obtained");
                 saveDataBlock(SOLAR_TOKEN_FILENAME, &solarToken, sizeof(solarToken));
+                obtained = true;
             } else {
                 char logMessage[CHAR_LEN];
                 snprintf(logMessage, CHAR_LEN, "Solar token error: %s", root["msg"].as<const char*>());
@@ -272,6 +308,7 @@ static void fetchSolarToken() {
         errorPublish(logMessage);
     }
     http.end();
+    return obtained;
 }
 
 // Fetches real-time solar data (power flows, battery SoC) from Solarman.
@@ -537,16 +574,17 @@ void api_manager_t(void* pvParameters) {
             logAndPublish(hwmMsg);
         }
 
-        // NOTE: the watchdog is fed before every fetch below. A single pass can
-        // make 8 blocking HTTPS calls; when WiFi is up but the internet is down
-        // each call runs to its timeout and one reset per pass is not enough to
-        // stay inside the 60 s watchdog window.
+        // NOTE: attemptFetch feeds the watchdog before every fetch. A single
+        // pass can make 8 blocking HTTPS calls; when WiFi is up but the
+        // internet is down each call runs to its timeout and one reset per
+        // pass is not enough to stay inside the 60 s watchdog window.
 
         // Solar token - fetch if empty or expired (tokens last ~24h, refresh after 12h)
         if (strlen(solarToken.token) == 0 || (solarToken.tokenTime > 0 && (now - solarToken.tokenTime) > SOLAR_TOKEN_REFRESH_SEC)) {
-            solarToken.token[0] = '\0';
-            esp_task_wdt_reset();
-            fetchSolarToken();
+            if (canRetry(solarTokenBackoff) && (now - solarTokenBackoff.lastAttemptTime >= API_FAIL_DELAY_SEC)) {
+                solarToken.token[0] = '\0';
+                attemptFetch(solarTokenBackoff, fetchSolarToken, API_MAX_BACKOFF_SEC, now);
+            }
         }
 
         // UV - at night the index is zero by definition; apply that once on the
@@ -567,66 +605,36 @@ void api_manager_t(void* pvParameters) {
             }
         } else {
             uvNightApplied = false;
-            if (weather.isDay && canRetry(uvBackoff) && (now - uv.updateTime > UV_UPDATE_INTERVAL_SEC)) {
-                esp_task_wdt_reset();
-                if (fetchUV()) {
-                    resetBackoff(uvBackoff);
-                } else {
-                    applyBackoff(uvBackoff);
-                }
+            if (weather.isDay && fetchDue(uvBackoff, uv.updateTime, UV_UPDATE_INTERVAL_SEC, now)) {
+                attemptFetch(uvBackoff, fetchUV, UV_UPDATE_INTERVAL_SEC, now);
             }
         }
 
         // Weather
-        if (canRetry(weatherBackoff) && (now - weather.updateTime > WEATHER_UPDATE_INTERVAL_SEC)) {
-            esp_task_wdt_reset();
-            if (fetchWeather()) {
-                resetBackoff(weatherBackoff);
-            } else {
-                applyBackoff(weatherBackoff);
-            }
+        if (fetchDue(weatherBackoff, weather.updateTime, WEATHER_UPDATE_INTERVAL_SEC, now)) {
+            attemptFetch(weatherBackoff, fetchWeather, WEATHER_UPDATE_INTERVAL_SEC, now);
         }
 
         // Air Quality
-        if (canRetry(airQualityBackoff) && (now - airQuality.updateTime > AIR_QUALITY_UPDATE_INTERVAL_SEC)) {
-            esp_task_wdt_reset();
-            if (fetchAirQuality()) {
-                resetBackoff(airQualityBackoff);
-            } else {
-                applyBackoff(airQualityBackoff);
-            }
+        if (fetchDue(airQualityBackoff, airQuality.updateTime, AIR_QUALITY_UPDATE_INTERVAL_SEC, now)) {
+            attemptFetch(airQualityBackoff, fetchAirQuality, AIR_QUALITY_UPDATE_INTERVAL_SEC, now);
         }
 
         // Solar APIs - skip if token not available
         if (strlen(solarToken.token) > 0) {
             // Current Solar
-            if (canRetry(solarCurrentBackoff) && (now - solar.currentUpdateTime > SOLAR_CURRENT_UPDATE_INTERVAL_SEC)) {
-                esp_task_wdt_reset();
-                if (fetchCurrentSolar()) {
-                    resetBackoff(solarCurrentBackoff);
-                } else {
-                    applyBackoff(solarCurrentBackoff);
-                }
+            if (fetchDue(solarCurrentBackoff, solar.currentUpdateTime, SOLAR_CURRENT_UPDATE_INTERVAL_SEC, now)) {
+                attemptFetch(solarCurrentBackoff, fetchCurrentSolar, SOLAR_CURRENT_UPDATE_INTERVAL_SEC, now);
             }
 
             // Daily Solar
-            if (canRetry(solarDailyBackoff) && (now - solar.dailyUpdateTime > SOLAR_DAILY_UPDATE_INTERVAL_SEC)) {
-                esp_task_wdt_reset();
-                if (fetchDailySolar()) {
-                    resetBackoff(solarDailyBackoff);
-                } else {
-                    applyBackoff(solarDailyBackoff);
-                }
+            if (fetchDue(solarDailyBackoff, solar.dailyUpdateTime, SOLAR_DAILY_UPDATE_INTERVAL_SEC, now)) {
+                attemptFetch(solarDailyBackoff, fetchDailySolar, SOLAR_DAILY_UPDATE_INTERVAL_SEC, now);
             }
 
             // Monthly Solar
-            if (canRetry(solarMonthlyBackoff) && (now - solar.monthlyUpdateTime > SOLAR_MONTHLY_UPDATE_INTERVAL_SEC)) {
-                esp_task_wdt_reset();
-                if (fetchMonthlySolar()) {
-                    resetBackoff(solarMonthlyBackoff);
-                } else {
-                    applyBackoff(solarMonthlyBackoff);
-                }
+            if (fetchDue(solarMonthlyBackoff, solar.monthlyUpdateTime, SOLAR_MONTHLY_UPDATE_INTERVAL_SEC, now)) {
+                attemptFetch(solarMonthlyBackoff, fetchMonthlySolar, SOLAR_MONTHLY_UPDATE_INTERVAL_SEC, now);
             }
         }
 
