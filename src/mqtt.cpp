@@ -99,7 +99,15 @@ void receive_mqtt_messages_t(void* pvParameters) {
                 }
 
                 if (messageProcessed) {
-                    saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings);
+                    // Throttle persistence: saving ~15 KB on every sensor message wears the
+                    // SD card out. Readings expire after an hour anyway, so losing up to
+                    // READINGS_SAVE_INTERVAL_SEC of state across a reboot is acceptable.
+                    static time_t lastReadingsSave = 0;
+                    time_t now = time(nullptr);
+                    if (now - lastReadingsSave >= READINGS_SAVE_INTERVAL_SEC) {
+                        lastReadingsSave = now;
+                        saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings);
+                    }
                 } else if (strcmp(topicBuffer, MQTT_INSIDE_CO2_TOPIC) == 0 ||
                            strcmp(topicBuffer, MQTT_INSIDE_PM1_TOPIC) == 0 ||
                            strcmp(topicBuffer, MQTT_INSIDE_PM25_TOPIC) == 0 ||
@@ -178,6 +186,9 @@ void updateReadings(char* recMessage, int index, int dataType) {
         }
     }
 
+    // Hold dataMutex while mutating the reading — the display loop reads these
+    // fields and a preemption mid-snprintf would show a torn string.
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
     readings[index].currentValue = parsedValue;
 
     // Set format string and log suffix based on data type
@@ -196,6 +207,7 @@ void updateReadings(char* recMessage, int index, int dataType) {
         break;
     default:
         // Handle unknown data type
+        xSemaphoreGive(dataMutex);
         return;
     }
 
@@ -239,6 +251,7 @@ void updateReadings(char* recMessage, int index, int dataType) {
     readings[index].lastValue[readings[index].readingIndex] = readings[index].currentValue;
     readings[index].readingIndex++;
     readings[index].lastMessageTime = time(nullptr);
+    xSemaphoreGive(dataMutex);
     dirtyRooms = true;
 
     if (valueChanged) {
@@ -271,9 +284,11 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
             logAndPublish(logMsg);
             return;
         }
+        xSemaphoreTake(dataMutex, portMAX_DELAY);
         insideAirQuality.co2 = parsedValue;
         insideAirQuality.co2State = ReadingState::FIRST_READING;
         insideAirQuality.co2LastMessageTime = now;
+        xSemaphoreGive(dataMutex);
         snprintf(logMsg, CHAR_LEN, "Inside CO2: %.0f ppm", parsedValue);
         valueChanged = !hasLoggedInsideCO2 || fabsf(parsedValue - lastLoggedInsideCO2) >= LOG_CHANGE_THRESHOLD_CO2;
         if (valueChanged) { lastLoggedInsideCO2 = parsedValue; hasLoggedInsideCO2 = true; }
@@ -283,9 +298,11 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
             logAndPublish(logMsg);
             return;
         }
+        xSemaphoreTake(dataMutex, portMAX_DELAY);
         insideAirQuality.pm1 = parsedValue;
         insideAirQuality.pm1State = ReadingState::FIRST_READING;
         insideAirQuality.pmLastMessageTime = now;
+        xSemaphoreGive(dataMutex);
         snprintf(logMsg, CHAR_LEN, "Inside PM1: %.1f ug/m3", parsedValue);
         valueChanged = !hasLoggedInsidePM1 || fabsf(parsedValue - lastLoggedInsidePM1) >= LOG_CHANGE_THRESHOLD_PM;
         if (valueChanged) { lastLoggedInsidePM1 = parsedValue; hasLoggedInsidePM1 = true; }
@@ -295,9 +312,11 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
             logAndPublish(logMsg);
             return;
         }
+        xSemaphoreTake(dataMutex, portMAX_DELAY);
         insideAirQuality.pm25 = parsedValue;
         insideAirQuality.pm25State = ReadingState::FIRST_READING;
         insideAirQuality.pmLastMessageTime = now;
+        xSemaphoreGive(dataMutex);
         snprintf(logMsg, CHAR_LEN, "Inside PM2.5: %.1f ug/m3", parsedValue);
         valueChanged = !hasLoggedInsidePM25 || fabsf(parsedValue - lastLoggedInsidePM25) >= LOG_CHANGE_THRESHOLD_PM;
         if (valueChanged) { lastLoggedInsidePM25 = parsedValue; hasLoggedInsidePM25 = true; }
@@ -307,9 +326,11 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
             logAndPublish(logMsg);
             return;
         }
+        xSemaphoreTake(dataMutex, portMAX_DELAY);
         insideAirQuality.pm10 = parsedValue;
         insideAirQuality.pm10State = ReadingState::FIRST_READING;
         insideAirQuality.pmLastMessageTime = now;
+        xSemaphoreGive(dataMutex);
         snprintf(logMsg, CHAR_LEN, "Inside PM10: %.1f ug/m3", parsedValue);
         valueChanged = !hasLoggedInsidePM10 || fabsf(parsedValue - lastLoggedInsidePM10) >= LOG_CHANGE_THRESHOLD_PM;
         if (valueChanged) { lastLoggedInsidePM10 = parsedValue; hasLoggedInsidePM10 = true; }
@@ -320,5 +341,10 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
         logAndPublish(logMsg);
     }
     dirtyInsideAQ = true;
-    saveDataBlock(INSIDE_AIR_QUALITY_DATA_FILENAME, &insideAirQuality, sizeof(insideAirQuality));
+    // Throttled for the same SD-wear reason as the readings save above
+    static time_t lastInsideAQSave = 0;
+    if (now - lastInsideAQSave >= READINGS_SAVE_INTERVAL_SEC) {
+        lastInsideAQSave = now;
+        saveDataBlock(INSIDE_AIR_QUALITY_DATA_FILENAME, &insideAirQuality, sizeof(insideAirQuality));
+    }
 }

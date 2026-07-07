@@ -36,7 +36,6 @@ void setup_wifi() {
     char messageBuffer[CHAR_LEN];
     snprintf(messageBuffer, CHAR_LEN, "Connected to WiFi SSID: %s, IP: %s, RSSI: %d", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
     logAndPublish(messageBuffer);
-    setup_web_server();
 }
 
 void mqtt_connect() {

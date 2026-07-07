@@ -25,22 +25,24 @@ static void updateChargingStatus() {
 
         // Time remaining = usable capacity left / current draw rate
         // Usable capacity = (SoC% - min%) * total kWh; power is in kW
-        if (solar.batteryPower == 0.0f) {
-            lv_label_set_text(ui_ChargingTime, "");
-            return;
-        }
         float remainHours = (solar.batteryCharge / 100.0 - BATTERY_MIN) * BATTERY_CAPACITY / solar.batteryPower;
         int remainMinutes = 60.0 * remainHours;
         int remainMinutesRound = REMAINING_TIME_ROUND_MIN * (round(remainMinutes / REMAINING_TIME_ROUND_MIN));
+        // Derive hours and minutes from the same rounded total so they can't
+        // disagree (e.g. 1h50m previously displayed as "2 hour 50 mins")
+        int wholeHours = remainMinutesRound / 60;
+        int wholeMins = remainMinutesRound % 60;
 
         time_t endTime = solar.currentUpdateTime + remainMinutesRound * 60;
         char timeBufEnd[CHAR_LEN];
         formatTimeHMS(endTime, timeBufEnd, sizeof(timeBufEnd));
 
-        if ((floor(remainHours) == 1) && (remainMinutes > 0)) {
-            snprintf(tempString, CHAR_LEN, "%2.0f hour %i mins\n remaining\n Until %s", remainHours, remainMinutesRound % 60, timeBufEnd);
-        } else if ((remainMinutesRound > 0) && (remainHours < MAX_SOLAR_TIME_STATUS_HOURS)) {
-            snprintf(tempString, CHAR_LEN, "%2.0f hours %i mins\n remaining\n Until %s", remainHours, remainMinutesRound % 60, timeBufEnd);
+        if (remainMinutesRound > 0 && remainHours < MAX_SOLAR_TIME_STATUS_HOURS) {
+            if (wholeHours > 0) {
+                snprintf(tempString, CHAR_LEN, "%d %s %d mins\n remaining\n Until %s", wholeHours, (wholeHours == 1) ? "hour" : "hours", wholeMins, timeBufEnd);
+            } else {
+                snprintf(tempString, CHAR_LEN, "%d mins\n remaining\n Until %s", wholeMins, timeBufEnd);
+            }
         } else {
             tempString[0] = '\0'; // Don't print for too long time
         }
@@ -51,20 +53,18 @@ static void updateChargingStatus() {
         lv_label_set_text(ui_ChargingLabel, tempString);
 
         // Time to full = remaining capacity to fill / charge rate (batteryPower is negative when charging)
-        if (solar.batteryPower == 0.0f) {
-            lv_label_set_text(ui_ChargingTime, "");
-            return;
-        }
         float remainHours = -(BATTERY_CHARGE_FULL_THRESHOLD - solar.batteryCharge / 100) * BATTERY_CAPACITY / solar.batteryPower;
         int remainMinutes = 60.0 * remainHours;
         int remainMinutesRound = REMAINING_TIME_ROUND_MIN * (round(remainMinutes / REMAINING_TIME_ROUND_MIN));
+        int wholeHours = remainMinutesRound / 60;
+        int wholeMins = remainMinutesRound % 60;
 
-        if (remainMinutes == 0) {
-            tempString[0] = '\0';
-        } else if ((floor(remainHours) == 1) && (remainMinutes > 0)) {
-            snprintf(tempString, CHAR_LEN, "%2.0f hour %i mins to\n fully charged", remainHours, remainMinutesRound % 60);
-        } else if ((remainMinutesRound > 0) && (remainHours < MAX_SOLAR_TIME_STATUS_HOURS)) {
-            snprintf(tempString, CHAR_LEN, "%2.0f hours %i mins to\n fully charged", remainHours, remainMinutesRound % 60);
+        if (remainMinutesRound > 0 && remainHours < MAX_SOLAR_TIME_STATUS_HOURS) {
+            if (wholeHours > 0) {
+                snprintf(tempString, CHAR_LEN, "%d %s %d mins to\n fully charged", wholeHours, (wholeHours == 1) ? "hour" : "hours", wholeMins);
+            } else {
+                snprintf(tempString, CHAR_LEN, "%d mins to\n fully charged", wholeMins);
+            }
         } else {
             tempString[0] = '\0'; // Don't print for too long time
         }
@@ -124,6 +124,7 @@ void set_solar_values() {
     if (solar.currentUpdateTime == 0)
         return;
     char tempString[CHAR_LEN];
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
 
     lv_obj_clear_flag(ui_BatteryArc, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(ui_SolarArc, LV_OBJ_FLAG_HIDDEN);
@@ -152,6 +153,7 @@ void set_solar_values() {
     lv_label_set_text(ui_AsofTimeLabel, tempString);
 
     updateGridMetrics();
+    xSemaphoreGive(dataMutex);
 }
 
 // Sets all text fields to the given color for day/night mode.
@@ -201,9 +203,13 @@ void displayStatusMessages_t(void* pvParameters) {
     unsigned long lastHwmLog = 0;
     while (true) {
         if (xQueueReceive(statusMessageQueue, &receivedMsg, pdMS_TO_TICKS(STATUS_MESSAGE_QUEUE_TIMEOUT_MS)) == pdTRUE) {
+            xSemaphoreTake(dataMutex, portMAX_DELAY);
             snprintf(statusMessageValue, CHAR_LEN, "%s", receivedMsg.text);
+            xSemaphoreGive(dataMutex);
             vTaskDelay(pdMS_TO_TICKS(receivedMsg.durationSec * 1000));
+            xSemaphoreTake(dataMutex, portMAX_DELAY);
             statusMessageValue[0] = '\0';
+            xSemaphoreGive(dataMutex);
         }
         if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
             lastHwmLog = millis();

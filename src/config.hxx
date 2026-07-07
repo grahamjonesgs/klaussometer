@@ -37,4 +37,5 @@ static const float BATTERY_MIN = 0.05;
 static const float ELECTRICITY_PRICE = 4.426; // Rand per kWh
 
 static const int TIME_OFFSET = 7200;
+static const char* NTP_SERVER = "pool.ntp.org";
 #endif // CONFIG_H

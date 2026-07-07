@@ -34,6 +34,7 @@ WebServer webServer(80);
 HTTPClient http;
 static const int HTTP_TIMEOUT_MS = 10000; // 10 second timeout for API calls
 SemaphoreHandle_t mqttMutex;
+SemaphoreHandle_t dataMutex;
 
 // Forward declarations for functions defined later in this file
 void pinInit();
@@ -114,6 +115,38 @@ static lv_obj_t** tempLabels[ROOM_COUNT] = TEMP_LABELS;
 static lv_obj_t** batteryLabels[ROOM_COUNT] = BATTERY_LABELS;
 static lv_obj_t** directionLabels[ROOM_COUNT] = DIRECTION_LABELS;
 static lv_obj_t** humidityLabels[ROOM_COUNT] = HUMIDITY_LABELS;
+
+// Restores persisted sensor state from SD without touching the compiled-in
+// description/topic/dataType fields (they are const, and blindly overwriting
+// them would resurrect renamed topics from an old firmware's save file).
+// Loads into a temporary buffer, then copies only the runtime fields across,
+// and only for entries whose saved topic still matches the compiled-in one.
+static bool restoreReadings() {
+    Readings* temp = (Readings*)heap_caps_malloc(sizeof(readings), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!temp) {
+        temp = (Readings*)malloc(sizeof(readings));
+    }
+    if (!temp) {
+        return false;
+    }
+    bool ok = loadDataBlock(READINGS_DATA_FILENAME, temp, sizeof(readings));
+    if (ok) {
+        for (int i = 0; i < numberOfReadings; i++) {
+            if (strncmp(temp[i].topic, readings[i].topic, CHAR_LEN) != 0) {
+                continue; // Topic changed since this file was saved — keep the fresh NO_DATA entry
+            }
+            memcpy(readings[i].output, temp[i].output, sizeof(readings[i].output));
+            readings[i].currentValue = temp[i].currentValue;
+            memcpy(readings[i].lastValue, temp[i].lastValue, sizeof(readings[i].lastValue));
+            readings[i].readingState = temp[i].readingState;
+            readings[i].hasEnoughData = temp[i].hasEnoughData;
+            readings[i].readingIndex = temp[i].readingIndex;
+            readings[i].lastMessageTime = temp[i].lastMessageTime;
+        }
+    }
+    free(temp);
+    return ok;
+}
 
 // Probes GPIO 8/9 for the Waveshare TCA9554 I2C expander at address 0x24.
 // Returns true if found (Waveshare board), false otherwise (Matouch board).
@@ -219,13 +252,14 @@ void setup() {
     // Setup queues and mutexes
     statusMessageQueue = xQueueCreate(STATUS_MESSAGE_QUEUE_SIZE, sizeof(StatusMessage));
     mqttMutex = xSemaphoreCreateMutex();
+    dataMutex = xSemaphoreCreateMutex();
     sdcard_init();
 
     if (statusMessageQueue == nullptr) {
         Serial.println("Error: Failed to create status message queue");
     }
-    if (mqttMutex == nullptr) {
-        Serial.println("Error: Failed to create MQTT mutex! Restarting...");
+    if (mqttMutex == nullptr || dataMutex == nullptr) {
+        Serial.println("Error: Failed to create mutex! Restarting...");
         delay(1000);
         esp_restart();
     }
@@ -266,7 +300,7 @@ void setup() {
         } else {
             logAndPublish("UV state restore failed");
         }
-        if (loadDataBlock(READINGS_DATA_FILENAME, &readings, sizeof(readings))) {
+        if (restoreReadings()) {
             logAndPublish("Readings state restored OK");
             invalidateOldReadings();
         } else {
@@ -437,6 +471,11 @@ void setup() {
     http.setTimeout(HTTP_TIMEOUT_MS);       // Set read timeout for all API calls
     http.setReuse(false);                   // Disable keep-alive - single task calls different hosts/protocols
 
+    // Register web server handlers exactly once, before the connectivity task starts.
+    // WebServer::on() appends (never replaces) handlers, so calling this from
+    // setup_wifi() on every reconnect leaked memory and raced handleClient().
+    setup_web_server();
+
     // Register shutdown handler to log reboots (including watchdog timeouts)
     esp_register_shutdown_handler(shutdownHandler);
 
@@ -490,7 +529,11 @@ void loop() {
     updatePeriodicStatus(currentMillis);
     adjustDayNightMode();
 
-    lv_label_set_text(ui_StatusMessage, statusMessageValue);
+    char statusCopy[CHAR_LEN];
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    snprintf(statusCopy, CHAR_LEN, "%s", statusMessageValue);
+    xSemaphoreGive(dataMutex);
+    lv_label_set_text(ui_StatusMessage, statusCopy);
     invalidateOldReadings();
     invalidateInsideAirQuality();
     invalidateStaleApiData();
@@ -510,6 +553,7 @@ static void updateRoomDisplay() {
     char tempString[CHAR_LEN];
     char batteryIcon;
     lv_color_t batteryColor;
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
     for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
         lv_arc_set_value(*tempArcs[i], readings[i].currentValue);
         lv_label_set_text(*tempLabels[i], readings[i].output);
@@ -533,6 +577,7 @@ static void updateRoomDisplay() {
         lv_label_set_text(*batteryLabels[i], tempString);
         lv_obj_set_style_text_color(*batteryLabels[i], batteryColor, LV_PART_MAIN);
     }
+    xSemaphoreGive(dataMutex);
 }
 
 // Updates the UV arc, label and update-time label.
@@ -541,6 +586,7 @@ static void updateUVDisplay() {
         return;
     dirtyUv = false;
     char tempString[CHAR_LEN];
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
     if (uv.updateTime > 0) {
         lv_obj_clear_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
         if (weather.isDay) {
@@ -559,6 +605,7 @@ static void updateUVDisplay() {
         lv_label_set_text(ui_UVLabel, "--");
         lv_label_set_text(ui_UVUpdateTime, "");
     }
+    xSemaphoreGive(dataMutex);
 }
 
 // Updates weather forecast labels, the temperature arc and the AQI display.
@@ -567,6 +614,7 @@ static void updateWeatherDisplay() {
         return;
     dirtyWeather = false;
     char tempString[CHAR_LEN];
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
     if (weather.updateTime > 0) {
         lv_label_set_text(ui_FCConditions, weather.description);
         snprintf(tempString, CHAR_LEN, "Updated %s", weather.timeString);
@@ -583,22 +631,24 @@ static void updateWeatherDisplay() {
             lv_label_set_text(ui_FCAQI, "AQI --");
             lv_label_set_text(ui_FCAQIUpdateTime, "");
         }
-        lv_arc_set_value(ui_TempArcFC, weather.temperature);
-        snprintf(tempString, CHAR_LEN, "%2.0f", weather.temperature);
-        lv_label_set_text(ui_TempLabelFC, tempString);
         if (weather.temperature < weather.minTemp) {
             weather.minTemp = weather.temperature;
         }
         if (weather.temperature > weather.maxTemp) {
             weather.maxTemp = weather.temperature;
         }
+        // Set the range before the value — lv_arc_set_value clamps against the current range
+        lv_arc_set_range(ui_TempArcFC, weather.minTemp, weather.maxTemp);
+        lv_arc_set_value(ui_TempArcFC, weather.temperature);
+        snprintf(tempString, CHAR_LEN, "%2.0f", weather.temperature);
+        lv_label_set_text(ui_TempLabelFC, tempString);
         snprintf(tempString, CHAR_LEN, "%2.0f°C", weather.minTemp);
         lv_label_set_text(ui_FCMin, tempString);
         snprintf(tempString, CHAR_LEN, "%2.0f°C", weather.maxTemp);
         lv_label_set_text(ui_FCMax, tempString);
         lv_obj_clear_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
-        lv_arc_set_range(ui_TempArcFC, weather.minTemp, weather.maxTemp);
     }
+    xSemaphoreGive(dataMutex);
 }
 
 // Updates CO2 and PM2.5 labels; red when stale, default text colour otherwise.
@@ -609,6 +659,7 @@ static void updateInsideAQDisplay() {
 
     char tempString[CHAR_LEN];
     lv_color_t defaultColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
 
     // CO2 label
     if (insideAirQuality.co2State == ReadingState::NO_DATA) {
@@ -629,6 +680,7 @@ static void updateInsideAQDisplay() {
         lv_label_set_text(ui_InsideAirQualityPM25, tempString);
     }
     lv_obj_set_style_text_color(ui_InsideAirQualityPM25, insideAirQuality.pm25State == ReadingState::STALE ? lv_color_hex(COLOR_RED) : defaultColor, LV_PART_MAIN);
+    xSemaphoreGive(dataMutex);
 }
 
 // Updates status indicators, clock, WiFi icon and version string once per second.
@@ -707,6 +759,7 @@ static void adjustDayNightMode() {
 void invalidateOldReadings() {
     if (time(nullptr) > TIME_SYNC_THRESHOLD) {
         time_t now = time(nullptr);
+        xSemaphoreTake(dataMutex, portMAX_DELAY);
         for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
             time_t age = now - readings[i].lastMessageTime;
             if (age > MAX_NO_MESSAGE_BLANK_SEC && readings[i].readingState != ReadingState::NO_DATA) {
@@ -719,6 +772,7 @@ void invalidateOldReadings() {
                 dirtyRooms = true;
             }
         }
+        xSemaphoreGive(dataMutex);
     }
 }
 
@@ -726,6 +780,7 @@ void invalidateInsideAirQuality() {
     if (time(nullptr) <= TIME_SYNC_THRESHOLD)
         return;
     time_t now = time(nullptr);
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
 
     // SCD41 — CO2 sensor
     if (insideAirQuality.co2LastMessageTime != 0) {
@@ -778,6 +833,7 @@ void invalidateInsideAirQuality() {
             }
         }
     }
+    xSemaphoreGive(dataMutex);
 }
 
 // Clears API-sourced data (weather, UV, outdoor AQ) if it exceeds MAX_API_DATA_AGE_SEC.
@@ -788,6 +844,7 @@ void invalidateStaleApiData() {
         return;
     time_t now = time(nullptr);
 
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
     if (weather.updateTime > 0 && (now - weather.updateTime) > MAX_API_DATA_AGE_SEC) {
         weather.updateTime = 0;
         dirtyWeather = true;
@@ -800,6 +857,7 @@ void invalidateStaleApiData() {
         airQuality.updateTime = 0;
         dirtyWeather = true;
     }
+    xSemaphoreGive(dataMutex);
 }
 
 // Flush function for LVGL

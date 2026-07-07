@@ -120,6 +120,12 @@ struct LogEntry {
     time_t timestamp;
 };
 
+// Guards the shared data structs (readings, weather, uv, solar, airQuality,
+// insideAirQuality, statusMessageValue) against torn reads between the producer
+// tasks (MQTT, API, status) and the display loop. Hold only around the actual
+// struct reads/writes — never across HTTP or SD card operations.
+extern SemaphoreHandle_t dataMutex;
+
 // Dirty flags for display update groups (set by data producers, cleared by loop)
 extern std::atomic<bool> dirtyRooms;
 extern std::atomic<bool> dirtySolar;
