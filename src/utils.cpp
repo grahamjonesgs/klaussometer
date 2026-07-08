@@ -1,5 +1,6 @@
 #include "utils.h"
 #include "constants.h" // WIFI_RSSI_*, WIFI_HIGH/MEDIUM/LOW/NONE icon glyphs
+#include <cctype>
 
 // Returns an RGB hex colour matching the standard UV Index risk scale.
 // Colours follow WHO/meteorological convention:
@@ -216,10 +217,14 @@ int compareVersionsStr(const char* v1, const char* v2) {
     while (i < len1 || j < len2) {
         int num1 = 0, num2 = 0;
         while (i < len1 && v1[i] != '.') {
+            if (!isdigit((unsigned char)v1[i]))
+                return 0; // malformed version string — treat as equal (safe: no OTA triggered)
             num1 = num1 * 10 + (v1[i] - '0');
             i++;
         }
         while (j < len2 && v2[j] != '.') {
+            if (!isdigit((unsigned char)v2[j]))
+                return 0;
             num2 = num2 * 10 + (v2[j] - '0');
             j++;
         }

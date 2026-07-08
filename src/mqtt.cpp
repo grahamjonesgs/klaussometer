@@ -12,10 +12,21 @@ static float lastLoggedValue[MAX_READINGS] = {0};
 static bool hasLoggedBefore[MAX_READINGS] = {false};
 
 // Track last logged values for inside air quality sensors
-static float lastLoggedInsideCO2  = 0.0f; static bool hasLoggedInsideCO2  = false;
-static float lastLoggedInsidePM1  = 0.0f; static bool hasLoggedInsidePM1  = false;
-static float lastLoggedInsidePM25 = 0.0f; static bool hasLoggedInsidePM25 = false;
-static float lastLoggedInsidePM10 = 0.0f; static bool hasLoggedInsidePM10 = false;
+static float lastLoggedInsideCO2  = 0.0f;
+static bool  hasLoggedInsideCO2   = false;
+static float lastLoggedInsidePM1  = 0.0f;
+static bool  hasLoggedInsidePM1   = false;
+static float lastLoggedInsidePM25 = 0.0f;
+static bool  hasLoggedInsidePM25  = false;
+static float lastLoggedInsidePM10 = 0.0f;
+static bool  hasLoggedInsidePM10  = false;
+
+// Updates the last-logged tracking variables and returns true if the value changed enough to log.
+static bool updateInsideTracking(float value, float* lastLogged, bool* hasLogged, float threshold) {
+    bool changed = !(*hasLogged) || fabsf(value - *lastLogged) >= threshold;
+    if (changed) { *lastLogged = value; *hasLogged = true; }
+    return changed;
+}
 
 // Get mqtt messages
 void receive_mqtt_messages_t(void* pvParameters) {
@@ -290,8 +301,7 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
         insideAirQuality.co2LastMessageTime = now;
         xSemaphoreGive(dataMutex);
         snprintf(logMsg, CHAR_LEN, "Inside CO2: %.0f ppm", parsedValue);
-        valueChanged = !hasLoggedInsideCO2 || fabsf(parsedValue - lastLoggedInsideCO2) >= LOG_CHANGE_THRESHOLD_CO2;
-        if (valueChanged) { lastLoggedInsideCO2 = parsedValue; hasLoggedInsideCO2 = true; }
+        valueChanged = updateInsideTracking(parsedValue, &lastLoggedInsideCO2, &hasLoggedInsideCO2, LOG_CHANGE_THRESHOLD_CO2);
     } else if (strcmp(topic, MQTT_INSIDE_PM1_TOPIC) == 0) {
         if (parsedValue < 0.0f || parsedValue > PM_MAX_VALID) {
             snprintf(logMsg, CHAR_LEN, "Inside PM1 out of range: %.1f ug/m3", parsedValue);
@@ -304,8 +314,7 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
         insideAirQuality.pmLastMessageTime = now;
         xSemaphoreGive(dataMutex);
         snprintf(logMsg, CHAR_LEN, "Inside PM1: %.1f ug/m3", parsedValue);
-        valueChanged = !hasLoggedInsidePM1 || fabsf(parsedValue - lastLoggedInsidePM1) >= LOG_CHANGE_THRESHOLD_PM;
-        if (valueChanged) { lastLoggedInsidePM1 = parsedValue; hasLoggedInsidePM1 = true; }
+        valueChanged = updateInsideTracking(parsedValue, &lastLoggedInsidePM1, &hasLoggedInsidePM1, LOG_CHANGE_THRESHOLD_PM);
     } else if (strcmp(topic, MQTT_INSIDE_PM25_TOPIC) == 0) {
         if (parsedValue < 0.0f || parsedValue > PM_MAX_VALID) {
             snprintf(logMsg, CHAR_LEN, "Inside PM2.5 out of range: %.1f ug/m3", parsedValue);
@@ -318,8 +327,7 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
         insideAirQuality.pmLastMessageTime = now;
         xSemaphoreGive(dataMutex);
         snprintf(logMsg, CHAR_LEN, "Inside PM2.5: %.1f ug/m3", parsedValue);
-        valueChanged = !hasLoggedInsidePM25 || fabsf(parsedValue - lastLoggedInsidePM25) >= LOG_CHANGE_THRESHOLD_PM;
-        if (valueChanged) { lastLoggedInsidePM25 = parsedValue; hasLoggedInsidePM25 = true; }
+        valueChanged = updateInsideTracking(parsedValue, &lastLoggedInsidePM25, &hasLoggedInsidePM25, LOG_CHANGE_THRESHOLD_PM);
     } else if (strcmp(topic, MQTT_INSIDE_PM10_TOPIC) == 0) {
         if (parsedValue < 0.0f || parsedValue > PM_MAX_VALID) {
             snprintf(logMsg, CHAR_LEN, "Inside PM10 out of range: %.1f ug/m3", parsedValue);
@@ -332,8 +340,7 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
         insideAirQuality.pmLastMessageTime = now;
         xSemaphoreGive(dataMutex);
         snprintf(logMsg, CHAR_LEN, "Inside PM10: %.1f ug/m3", parsedValue);
-        valueChanged = !hasLoggedInsidePM10 || fabsf(parsedValue - lastLoggedInsidePM10) >= LOG_CHANGE_THRESHOLD_PM;
-        if (valueChanged) { lastLoggedInsidePM10 = parsedValue; hasLoggedInsidePM10 = true; }
+        valueChanged = updateInsideTracking(parsedValue, &lastLoggedInsidePM10, &hasLoggedInsidePM10, LOG_CHANGE_THRESHOLD_PM);
     } else {
         return;
     }
