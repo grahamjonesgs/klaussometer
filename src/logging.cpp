@@ -10,7 +10,8 @@ extern char errorTopic[CHAR_LEN];
 
 // Shared implementation: serial print, queued SD write, and non-blocking MQTT publish.
 static void publishMessageInternal(const char* messageBuffer, const char* filename, const char* topic, bool retained) {
-    Serial.println(messageBuffer);
+    Serial.println(messageBuffer);  // Native USB CDC port
+    Serial0.println(messageBuffer); // Hardware UART mirror
 
     // Queue SD card write (non-blocking)
     if (sdLogQueue != nullptr) {

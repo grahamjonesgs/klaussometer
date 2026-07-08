@@ -193,6 +193,10 @@ void shutdownHandler(void) {
 
 void setup() {
     Serial.begin(115200);
+    // Serial is the native USB CDC port (ARDUINO_USB_CDC_ON_BOOT=1); Serial0 is
+    // the hardware UART, which the application log is mirrored to so messages
+    // are visible when only the UART port is connected (see publishMessageInternal).
+    Serial0.begin(115200);
 
     // Auto-detect board type by probing I2C on GPIO 8/9 for the Waveshare expander at 0x24
     isWaveshare = detectWaveshare();
