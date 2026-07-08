@@ -55,7 +55,6 @@ void mqtt_connect() {
     logAndPublish("Connected to the MQTT broker");
     for (int i = 0; i < numberOfReadings; i++) {
         if (!mqttClient.subscribe(readings[i].topic)) {
-            char messageBuffer[CHAR_LEN];
             snprintf(messageBuffer, CHAR_LEN, "MQTT subscribe failed for topic: %s", readings[i].topic);
             errorPublish(messageBuffer);
         }
@@ -66,7 +65,6 @@ void mqtt_connect() {
     };
     for (const char* topic : insideTopics) {
         if (!mqttClient.subscribe(topic)) {
-            char messageBuffer[CHAR_LEN];
             snprintf(messageBuffer, CHAR_LEN, "MQTT subscribe failed for topic: %s", topic);
             errorPublish(messageBuffer);
         }

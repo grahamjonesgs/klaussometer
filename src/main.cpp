@@ -707,7 +707,7 @@ static void adjustDayNightMode() {
 void invalidateOldReadings() {
     if (time(nullptr) > TIME_SYNC_THRESHOLD) {
         time_t now = time(nullptr);
-        for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
+        for (unsigned char i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
             time_t age = now - readings[i].lastMessageTime;
             if (age > MAX_NO_MESSAGE_BLANK_SEC && readings[i].readingState != ReadingState::NO_DATA) {
                 readings[i].readingState = ReadingState::NO_DATA;
