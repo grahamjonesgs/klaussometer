@@ -896,24 +896,50 @@ void pinInit() {
     }
 }
 
-// Initialise touch screen
-void touchInit(void) {
-    Wire.begin(board->i2cSda, board->i2cScl);
-    // GT911 can be at 0x5D (INT low during reset) or 0x14 (INT high during reset).
-    // Probe both so we know whether the device is present before calling ts->read().
+// Probes the two possible GT911 I2C addresses. The chip latches 0x5D or 0x14
+// from the level of its INT pin at the rising edge of reset. Returns the
+// address that responded, or 0 if the controller isn't on the bus.
+static uint8_t probeGT911Address() {
     for (uint8_t addr : {(uint8_t)0x5D, (uint8_t)0x14}) {
         Wire.beginTransmission(addr);
         if (Wire.endTransmission() == 0) {
-            touchAvailable = true;
-            Serial.printf("Touch: GT911 found at 0x%02X\n", addr);
-            break;
+            return addr;
         }
     }
-    if (!touchAvailable) {
+    return 0;
+}
+
+// Initialise touch screen
+void touchInit(void) {
+    Wire.begin(board->i2cSda, board->i2cScl);
+    uint8_t addr = probeGT911Address();
+    if (addr == 0) {
         Serial.println("Touch: GT911 not found on I2C bus");
         return;
     }
-    ts->begin();
+    // Pass the detected address to begin() — its default is 0x5D, and a GT911
+    // that latched 0x14 would then NACK every LVGL input poll (~30/s), flooding
+    // the log with "requestFrom(): i2cRead returned Error -1".
+    // begin() also pulses the GT911 reset. On boards where the INT or RST strap
+    // pin isn't wired to the ESP32 (the -1 pin values become invalid pin 255 in
+    // TAMC_GT911's uint8_t fields) the chip can re-latch the other address, so
+    // verify after begin() and follow it if it moved.
+    for (int attempt = 0; attempt < 3 && !touchAvailable; attempt++) {
+        ts->begin(addr);
+        uint8_t after = probeGT911Address();
+        if (after == addr) {
+            touchAvailable = true;
+        } else if (after == 0) {
+            break;
+        } else {
+            addr = after;
+        }
+    }
+    if (!touchAvailable) {
+        Serial.println("Touch: GT911 unresponsive after reset - touch disabled");
+        return;
+    }
+    Serial.printf("Touch: GT911 found at 0x%02X\n", addr);
     ts->setRotation(ROTATION_INVERTED);
 }
 

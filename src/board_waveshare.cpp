@@ -46,11 +46,18 @@ void waveshare_expander_init() {
     expander_set_bit(WS_IO_LCD_RST, 1);
     delay(20);
 
-    // Reset GT911 touch controller: pulse RST low -> high
+    // Reset GT911 touch controller: pulse RST low -> high.
+    // The GT911 samples its INT pin at the rising edge of RST to latch its I2C
+    // address (low = 0x5D, high = 0x14). Drive INT low during the pulse so the
+    // address is deterministic — left floating it can latch either one, and the
+    // touch driver then NACKs on every poll.
+    pinMode(WS_TOUCH_INT, OUTPUT);
+    digitalWrite(WS_TOUCH_INT, LOW);
     expander_set_bit(WS_IO_TOUCH_RST, 0);
     delay(50);
     expander_set_bit(WS_IO_TOUCH_RST, 1);
     delay(50);
+    pinMode(WS_TOUCH_INT, INPUT); // Release INT — the GT911 drives it after init
 
     // Backlight starts off — caller sets brightness after display init
     expander_set_bit(WS_IO_BACKLIGHT, 0);

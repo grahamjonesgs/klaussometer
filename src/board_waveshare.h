@@ -24,6 +24,9 @@
 #define WS_IO_LCD_RST   3 // LCD panel reset
 #define WS_IO_SD_CS     4 // SD card chip select
 
+// GT911 touch INT is wired to this ESP32 GPIO (matches BOARD_CFG_WAVESHARE.touchInt)
+#define WS_TOUCH_INT 4
+
 // Backlight brightness levels used in day/night mode (0–97)
 static const int WS_BACKLIGHT_DAY_PERCENT   = 97; // Maximum usable brightness
 static const int WS_BACKLIGHT_NIGHT_PERCENT = 10; // Dim night-time brightness
