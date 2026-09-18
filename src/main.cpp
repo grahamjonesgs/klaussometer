@@ -853,7 +853,13 @@ void invalidateStaleApiData() {
         weather.updateTime = 0;
         dirtyWeather = true;
     }
-    if (uv.updateTime > 0 && (now - uv.updateTime) > MAX_API_DATA_AGE_SEC) {
+    // At night the API manager pins the UV index to zero once and stops
+    // refreshing it, so its age is meaningless - only age it out during the
+    // day. If the weather data itself has gone stale then isDay is
+    // untrustworthy, but the check above has already zeroed weather.updateTime
+    // so UV ages out with it.
+    bool uvNight = (weather.updateTime > 0 && !weather.isDay);
+    if (!uvNight && uv.updateTime > 0 && (now - uv.updateTime) > MAX_API_DATA_AGE_SEC) {
         uv.updateTime = 0;
         dirtyUv = true;
     }
