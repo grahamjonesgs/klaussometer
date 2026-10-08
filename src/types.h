@@ -20,9 +20,9 @@
 #include <time.h>
 
 struct __attribute__((packed)) Readings {
-    const char description[CHAR_LEN];
-    const char topic[CHAR_LEN];
-    char output[CHAR_LEN];
+    const char description[READING_NAME_LEN];
+    const char topic[MQTT_TOPIC_LEN];
+    char output[READING_OUTPUT_LEN];
     float currentValue;
     float lastValue[STORED_READING];
     ReadingState readingState;
@@ -37,17 +37,21 @@ struct __attribute__((packed)) Weather {
     float windSpeed;
     float maxTemp;
     float minTemp;
+    float uvMax; // Forecast max UV index for today
     bool isDay;
     time_t updateTime;
-    char windDir[CHAR_LEN];
-    char description[CHAR_LEN];
-    char timeString[CHAR_LEN];
+    char windDir[WIND_DIR_LEN];
+    char description[WEATHER_DESC_LEN];
+    char timeString[TIME_STR_LEN];
+    char sunrise[6];     // "HH:MM" local, from the API; "" if unknown
+    char sunset[6];      // "HH:MM" local, astronomical sunset from the API
+    char mountainSet[6]; // "HH:MM" local, sun behind the ridge (mountain_sunset.h)
 };
 
 struct __attribute__((packed)) UV {
     int index;
     time_t updateTime;
-    char timeString[CHAR_LEN];
+    char timeString[TIME_STR_LEN];
 };
 
 struct __attribute__((packed)) AirQuality {
@@ -56,7 +60,7 @@ struct __attribute__((packed)) AirQuality {
     float ozone;
     int europeanAqi;
     time_t updateTime;
-    char timeString[CHAR_LEN];
+    char timeString[TIME_STR_LEN];
 };
 
 // Indoor air quality from inside sensor (SCD41 CO2 + PMS5003 particulates)
@@ -73,6 +77,18 @@ struct __attribute__((packed)) InsideAirQuality {
     ReadingState pm10State;
 };
 
+// Solar generation forecast from MQTT solar/forecast (server-side model)
+struct __attribute__((packed)) SolarForecast {
+    time_t ts;           // When the server made the forecast (Unix time); 0 = none received
+    float todayExp;      // Expected kWh, allowing for throttling once the battery is full
+    float todayPot;      // Potential kWh with no throttling
+    float todayMade;     // Generated so far today
+    float tomorrowExp;
+    float tomorrowPot;
+    char todayFull[6];   // "HH:MM" battery-full time, or "" if it won't fill
+    char tomorrowFull[6];
+};
+
 struct __attribute__((packed)) Solar {
     time_t currentUpdateTime;
     time_t dailyUpdateTime;
@@ -82,7 +98,7 @@ struct __attribute__((packed)) Solar {
     float gridPower;
     float batteryPower;
     float solarPower;
-    char time[CHAR_LEN];
+    char time[TIME_STR_LEN];
     float todayBatteryMin;
     float todayBatteryMax;
     bool isMinMaxReset;
@@ -132,5 +148,6 @@ extern std::atomic<bool> dirtySolar;
 extern std::atomic<bool> dirtyWeather;
 extern std::atomic<bool> dirtyUv;
 extern std::atomic<bool> dirtyInsideAQ;
+extern std::atomic<bool> dirtySolarForecast;
 
 #endif // TYPES_H

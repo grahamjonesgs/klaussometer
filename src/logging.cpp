@@ -16,7 +16,7 @@ static void publishMessageInternal(const char* messageBuffer, const char* filena
     // Queue SD card write (non-blocking)
     if (sdLogQueue != nullptr) {
         SDLogMessage logMsg;
-        snprintf(logMsg.message, CHAR_LEN, "%s", messageBuffer);
+        snprintf(logMsg.message, sizeof(logMsg.message), "%s", messageBuffer);
         snprintf(logMsg.filename, sizeof(logMsg.filename), "%s", filename);
         xQueueSend(sdLogQueue, &logMsg, 0); // Don't block if queue is full
     }
@@ -38,7 +38,7 @@ void logAndPublish(const char* messageBuffer) {
     publishMessageInternal(messageBuffer, NORMAL_LOG_FILENAME, logTopic, false);
 
     StatusMessage msg;
-    snprintf(msg.text, CHAR_LEN, "%s", messageBuffer);
+    snprintf(msg.text, sizeof(msg.text), "%s", messageBuffer);
     msg.durationSec = STATUS_MESSAGE_TIME;
     xQueueSend(statusMessageQueue, &msg, 0); // Don't block if queue is full
 }

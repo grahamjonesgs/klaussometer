@@ -375,8 +375,8 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
             if (pipePos != nullptr) {
                 *pipePos = '\0';
                 lines[lineCount].timestamp = atol(lineBuffer);
-                strncpy(lines[lineCount].message, pipePos + 1, CHAR_LEN - 1);
-                lines[lineCount].message[CHAR_LEN - 1] = '\0';
+                strncpy(lines[lineCount].message, pipePos + 1, sizeof(lines[lineCount].message) - 1);
+                lines[lineCount].message[sizeof(lines[lineCount].message) - 1] = '\0';
                 lineCount++;
             }
         }
@@ -446,7 +446,7 @@ void sdcard_logger_t(void* pvParameters) {
         if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
             lastHwmLog = millis();
             char hwmMsg[CHAR_LEN];
-            snprintf(hwmMsg, CHAR_LEN, "Stack HWM: SD Logger %u words", uxTaskGetStackHighWaterMark(nullptr));
+            snprintf(hwmMsg, sizeof(hwmMsg), "Stack HWM: SD Logger %u words", uxTaskGetStackHighWaterMark(nullptr));
             logAndPublish(hwmMsg);
         }
     }

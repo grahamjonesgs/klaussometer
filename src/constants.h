@@ -45,10 +45,12 @@ static constexpr int ROOM_COUNT = 5;
     &ui_FCUpdateTime,     &ui_UVUpdateTime,        &ui_ChargingLabel,        &ui_AsofTimeLabel,        &ui_ChargingTime,     \
     &ui_TextKlaussometer, &ui_SolarMinMax,         &ui_GridBought,           &ui_GridTodayEnergy,      &ui_GridMonthEnergy,  \
     &ui_GridTodayCost,    &ui_GridMonthCost,       &ui_GridTodayPercentage,  &ui_GridMonthPercentage,  &ui_GridTitlekWh,     \
-    &ui_GridTitleCost,    &ui_GridTitlePercentage, &ui_FCMin,                &ui_FCMax,                                      \
+    &ui_GridTitleCost,    &ui_GridTitlePercentage, &ui_FCMin,                &ui_FCMax,                &ui_UVMax,            \
     &ui_SolarTodayEnergy, &ui_SolarMonthEnergy,    &ui_GridTitleSolar,                                                                         \
     &ui_Direction1,       &ui_Direction2,          &ui_Direction3,           &ui_Direction4,           &ui_Direction5,       \
     &ui_FCAQI,            &ui_FCAQIUpdateTime,     &ui_InsideAirQualityCO2,  &ui_InsideAirQualityPM25,                       \
+    &ui_UVMin,            &ui_FCSunrise,           &ui_FCSunset,             &ui_FCMountainSet,        &ui_SolarForecast,    \
+    &ui_SolarForecastTitle,                                                                                                  \
     &ui_Version,                                                                                                             \
 }
 // clang-format on
@@ -57,6 +59,14 @@ static const char* const LOG_TOPIC = "klaussometer/log";
 static const char* const ERROR_TOPIC = "klaussometer/error";
 
 static const int CHAR_LEN = 255;
+// Field sizes for strings stored in the data structs (including the null terminator)
+static const int TIME_STR_LEN = 9;        // "HH:MM:SS"
+static const int WIND_DIR_LEN = 4;        // Compass point, e.g. "NE"
+static const int WEATHER_DESC_LEN = 32;   // Longest WMO text is "Thunderstorm with slight hail" (29)
+static const int READING_NAME_LEN = 24;   // Room name, e.g. "Living room"
+static const int MQTT_TOPIC_LEN = 64;     // Longest current topic is 31 characters
+static const int READING_OUTPUT_LEN = 16; // Formatted reading, e.g. "23.5" or "65%"
+static const int MQTT_PAYLOAD_LEN = 512; // Receive buffer for MQTT payloads (solar/forecast JSON is ~140 bytes and may grow)
 #define NO_READING "--"
 // Character settings
 static const char CHAR_UP = 'a';   // Based on epicycles font
@@ -141,6 +151,9 @@ static const char* const MQTT_INSIDE_PM1_TOPIC  = "kitchen/pm1/set";
 static const char* const MQTT_INSIDE_PM25_TOPIC = "kitchen/pm25/set";
 static const char* const MQTT_INSIDE_PM10_TOPIC = "kitchen/pm10/set";
 
+// Solar generation forecast (retained JSON, published hourly by the server)
+static const char* const MQTT_SOLAR_FORECAST_TOPIC = "solar/forecast";
+
 // Data type definition for array
 static const int DATA_TEMPERATURE = 0;
 static const int DATA_HUMIDITY = 1;
@@ -163,6 +176,8 @@ static const int READINGS_SAVE_INTERVAL_SEC = 300;        // Minimum seconds bet
 static const int MAX_NO_MESSAGE_STALE_SEC = 1800;         // Seconds without a message before a reading turns grey (ReadingState::STALE)
 static const int MAX_NO_MESSAGE_BLANK_SEC = 3600;         // Seconds without a message before a reading is blanked (ReadingState::NO_DATA)
 static const int MAX_API_DATA_AGE_SEC = 7200;             // Seconds before API-sourced data (weather/UV/AQ) is cleared from the display
+static const int SOLAR_FORECAST_STALE_SEC = 7200;         // Forecast age (from its ts) before the label turns grey (two missed hourly runs)
+static const int SOLAR_FORECAST_OLD_SEC = 21600;          // Forecast age before the label turns red
 
 static const int TIME_RETRIES = 100;                      // Number of time to retry getting the time during setup
 static const int WEATHER_UPDATE_INTERVAL_SEC = 300;       // Interval between weather updates
@@ -250,6 +265,7 @@ static const char* const UV_DATA_FILENAME = "/uv_data.bin";
 static const char* const READINGS_DATA_FILENAME = "/readings_data.bin";
 static const char* const AIR_QUALITY_DATA_FILENAME = "/air_quality_data.bin";
 static const char* const INSIDE_AIR_QUALITY_DATA_FILENAME = "/inside_aq_data.bin";
+static const char* const SOLAR_FORECAST_DATA_FILENAME = "/solar_forecast.bin";
 static const char* const NORMAL_LOG_FILENAME = "/normal_log.txt";
 static const char* const ERROR_LOG_FILENAME = "/error_log.txt";
 
@@ -270,6 +286,8 @@ static const int SD_LOG_QUEUE_SIZE = 20;         // Slots in the SD card log wri
 static constexpr uint64_t CHIP_ID_MASK = 0xFFFF; // Lower 16 bits of eFuse MAC used as chip ID
 static const int DISPLAY_BUFFER_LINES = 10;      // Height of the LVGL draw buffer in screen lines
 static const int POWER_ARC_SCALE = 10;           // Multiplier to convert kW values to arc range (0–100)
+static const int UV_ARC_SCALE = 10;              // Multiplier to convert UV index to arc range
+static const int UV_ARC_DEFAULT_MAX = 13;        // UV arc full-scale when no daily max is available
 
 // OTA
 static const int OTA_BUFFER_SIZE = 128;         // Byte buffer for OTA firmware download chunks

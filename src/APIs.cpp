@@ -2,6 +2,7 @@
 #include "APIs.h"
 #include "OTA.h"
 #include "SDCard.h"
+#include "mountain_sunset.h"
 
 extern Weather weather;
 extern UV uv;
@@ -86,7 +87,7 @@ static void attemptFetch(ApiBackoff& state, bool (*fetchFn)(), int intervalSec, 
 // Logs an HTTP error with a consistent "[HTTP] <label> failed, error: <code>" format.
 static void reportHttpError(const char* label, int httpCode) {
     char logMessage[CHAR_LEN];
-    snprintf(logMessage, CHAR_LEN, "[HTTP] %s failed, error: %d", label, httpCode);
+    snprintf(logMessage, sizeof(logMessage), "[HTTP] %s failed, error: %d", label, httpCode);
     errorPublish(logMessage);
 }
 
@@ -132,7 +133,7 @@ static bool fetchUV() {
     DeserializationError err = deserializeJson(root, payloadBuffer);
     if (err || !root["data"][0]["uv"].is<float>()) {
         char logMessage[CHAR_LEN];
-        snprintf(logMessage, CHAR_LEN, "UV update failed: JSON error (%s)", err ? err.c_str() : "missing field");
+        snprintf(logMessage, sizeof(logMessage), "UV update failed: JSON error (%s)", err ? err.c_str() : "missing field");
         errorPublish(logMessage);
         return false;
     }
@@ -146,6 +147,31 @@ static bool fetchUV() {
     logAndPublish("UV updated");
     saveDataBlock(UV_DATA_FILENAME, &uv, sizeof(uv));
     return true;
+}
+
+// Parses an open-meteo local time "YYYY-MM-DDTHH:MM" into "HH:MM" (buf must hold 6).
+// Optionally returns the month and day. Leaves buf empty and returns false on bad input.
+static bool parseApiTime(const char* iso, char* buf, int* month = nullptr, int* mday = nullptr) {
+    int y, mo, d, h, mi;
+    buf[0] = '\0';
+    if (!iso || sscanf(iso, "%d-%d-%dT%d:%d", &y, &mo, &d, &h, &mi) != 5)
+        return false;
+    snprintf(buf, 6, "%02d:%02d", h, mi);
+    if (month)
+        *month = mo;
+    if (mday)
+        *mday = d;
+    return true;
+}
+
+// Looks up when the sun goes behind the ridge on the given date ("HH:MM", buf must hold 6).
+static void mountainSetTime(int month, int mday, char* buf) {
+    buf[0] = '\0';
+    if (month < 1 || month > 12 || mday < 1 || mday > 31)
+        return;
+    uint16_t m = mountain_sunset_min[ms_index(month, mday)];
+    if (m != MS_NONE16)
+        snprintf(buf, 6, "%02d:%02d", m / 60, m % 60);
 }
 
 // Returns true on success or non-HTTP error (no backoff needed)
@@ -181,7 +207,7 @@ static bool fetchWeather() {
     DeserializationError err = deserializeJson(root, payloadBuffer);
     if (err || !root["current"]["temperature_2m"].is<float>()) {
         char logMessage[CHAR_LEN];
-        snprintf(logMessage, CHAR_LEN, "Weather update failed: JSON error (%s)", err ? err.c_str() : "missing field");
+        snprintf(logMessage, sizeof(logMessage), "Weather update failed: JSON error (%s)", err ? err.c_str() : "missing field");
         errorPublish(logMessage);
         return false;
     }
@@ -191,21 +217,33 @@ static bool fetchWeather() {
     float weatherWindSpeed = root["current"]["wind_speed_10m"];
     float weatherMaxTemp = root["daily"]["temperature_2m_max"][0];
     float weatherMinTemp = root["daily"]["temperature_2m_min"][0];
+    float weatherUvMax = root["daily"]["uv_index_max"][0];
     bool weatherIsDay = root["current"]["is_day"];
     int weatherCode = root["current"]["weather_code"];
+    char sunrise[6], sunset[6], mountainSet[6] = "";
+    int month = 0, mday = 0;
+    parseApiTime(root["daily"]["sunrise"][0].as<const char*>(), sunrise);
+    // Index the mountain table by the forecast's own date so all three times are for the same day
+    if (parseApiTime(root["daily"]["sunset"][0].as<const char*>(), sunset, &month, &mday))
+        mountainSetTime(month, mday, mountainSet);
 
     xSemaphoreTake(dataMutex, portMAX_DELAY);
     weather.temperature = weatherTemperature;
     weather.windSpeed = weatherWindSpeed;
     weather.maxTemp = weatherMaxTemp;
     weather.minTemp = weatherMinTemp;
+    weather.uvMax = weatherUvMax;
     weather.isDay = weatherIsDay;
-    snprintf(weather.description, CHAR_LEN, "%s", wmoToText(weatherCode, weatherIsDay));
-    snprintf(weather.windDir, CHAR_LEN, "%s", degreesToDirection(weatherWindDir));
+    snprintf(weather.description, sizeof(weather.description), "%s", wmoToText(weatherCode, weatherIsDay));
+    snprintf(weather.windDir, sizeof(weather.windDir), "%s", degreesToDirection(weatherWindDir));
+    memcpy(weather.sunrise, sunrise, sizeof(weather.sunrise));
+    memcpy(weather.sunset, sunset, sizeof(weather.sunset));
+    memcpy(weather.mountainSet, mountainSet, sizeof(weather.mountainSet));
     weather.updateTime = time(nullptr);
     formatTimeHMS(weather.updateTime, weather.timeString, sizeof(weather.timeString));
     xSemaphoreGive(dataMutex);
     dirtyWeather = true;
+    dirtyUv = true; // UV arc range and max label come from the weather data
     logAndPublish("Weather updated");
     saveDataBlock(WEATHER_DATA_FILENAME, &weather, sizeof(weather));
     return true;
@@ -241,7 +279,7 @@ static bool fetchAirQuality() {
     DeserializationError err = deserializeJson(root, payloadBuffer);
     if (err || !root["current"]["european_aqi"].is<int>()) {
         char logMessage[CHAR_LEN];
-        snprintf(logMessage, CHAR_LEN, "Air quality update failed: JSON error (%s)", err ? err.c_str() : "missing field");
+        snprintf(logMessage, sizeof(logMessage), "Air quality update failed: JSON error (%s)", err ? err.c_str() : "missing field");
         errorPublish(logMessage);
         return false;
     }
@@ -256,7 +294,7 @@ static bool fetchAirQuality() {
     xSemaphoreGive(dataMutex);
     dirtyWeather = true;
     char logMessage[CHAR_LEN];
-    snprintf(logMessage, CHAR_LEN, "Air quality updated. PM10: %.2f, PM2.5: %.2f, Ozone: %.2f, AQI: %d", airQuality.pm10, airQuality.pm25, airQuality.ozone,
+    snprintf(logMessage, sizeof(logMessage), "Air quality updated. PM10: %.2f, PM2.5: %.2f, Ozone: %.2f, AQI: %d", airQuality.pm10, airQuality.pm25, airQuality.ozone,
              airQuality.europeanAqi);
     logAndPublish(logMessage);
     saveDataBlock(AIR_QUALITY_DATA_FILENAME, &airQuality, sizeof(airQuality));
@@ -285,7 +323,7 @@ static bool fetchSolarToken() {
             DeserializationError err = deserializeJson(root, payloadBuffer);
             if (err) {
                 char logMessage[CHAR_LEN];
-                snprintf(logMessage, CHAR_LEN, "Solar token failed: JSON error (%s)", err.c_str());
+                snprintf(logMessage, sizeof(logMessage), "Solar token failed: JSON error (%s)", err.c_str());
                 errorPublish(logMessage);
             } else if (root["access_token"].is<const char*>()) {
                 const char* recToken = root["access_token"];
@@ -296,7 +334,7 @@ static bool fetchSolarToken() {
                 obtained = true;
             } else {
                 char logMessage[CHAR_LEN];
-                snprintf(logMessage, CHAR_LEN, "Solar token error: %s", root["msg"].as<const char*>());
+                snprintf(logMessage, sizeof(logMessage), "Solar token error: %s", root["msg"].as<const char*>());
                 errorPublish(logMessage);
             }
         } else {
@@ -304,7 +342,7 @@ static bool fetchSolarToken() {
         }
     } else {
         char logMessage[CHAR_LEN];
-        snprintf(logMessage, CHAR_LEN, "[HTTP] GET solar token failed, error: %s", http.errorToString(httpCodeToken).c_str());
+        snprintf(logMessage, sizeof(logMessage), "[HTTP] GET solar token failed, error: %s", http.errorToString(httpCodeToken).c_str());
         errorPublish(logMessage);
     }
     http.end();
@@ -343,7 +381,7 @@ static bool fetchCurrentSolar() {
     DeserializationError err = deserializeJson(root, payloadBuffer);
     if (err) {
         char logMessage[CHAR_LEN];
-        snprintf(logMessage, CHAR_LEN, "Solar status failed: JSON error (%s)", err.c_str());
+        snprintf(logMessage, sizeof(logMessage), "Solar status failed: JSON error (%s)", err.c_str());
         errorPublish(logMessage);
         return false;
     }
@@ -352,12 +390,12 @@ static bool fetchCurrentSolar() {
         const char* msg = root["msg"];
         if (msg && strcmp(msg, "auth invalid token") == 0) {
             char logMessage[CHAR_LEN];
-            snprintf(logMessage, CHAR_LEN, "Solar token rejected (len=%zu), clearing for refresh", strlen(solarToken.token));
+            snprintf(logMessage, sizeof(logMessage), "Solar token rejected (len=%zu), clearing for refresh", strlen(solarToken.token));
             logAndPublish(logMessage);
             solarToken.token[0] = '\0'; // Clear the token to trigger a refresh
         } else {
             char logMessage[CHAR_LEN];
-            snprintf(logMessage, CHAR_LEN, "Solar status failed: %s", msg ? msg : "unknown error");
+            snprintf(logMessage, sizeof(logMessage), "Solar status failed: %s", msg ? msg : "unknown error");
             errorPublish(logMessage);
         }
         return true;
@@ -371,7 +409,7 @@ static bool fetchCurrentSolar() {
     float recSolarPower = root["generationPower"];
 
     struct tm ts;
-    char timeBuf[CHAR_LEN];
+    char timeBuf[TIME_STR_LEN];
     localtime_r(&recTime, &ts);
     strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", &ts);
 
@@ -388,7 +426,7 @@ static bool fetchCurrentSolar() {
     solar.usingPower = recUsingPower / 1000;
     solar.batteryCharge = recBatteryCharge;
     solar.gridPower = recGridPower / 1000;
-    snprintf(solar.time, CHAR_LEN, "%s", timeBuf);
+    snprintf(solar.time, sizeof(solar.time), "%s", timeBuf);
 
     // Track daily battery min/max, resetting at midnight. NVS writes happen
     // after the mutex is released — they can take tens of milliseconds.
@@ -473,7 +511,7 @@ static bool fetchDailySolar() {
     DeserializationError err = deserializeJson(root, payloadBuffer);
     if (err) {
         char logMessage[CHAR_LEN];
-        snprintf(logMessage, CHAR_LEN, "Solar today's values failed: JSON error (%s)", err.c_str());
+        snprintf(logMessage, sizeof(logMessage), "Solar today's values failed: JSON error (%s)", err.c_str());
         errorPublish(logMessage);
         return false;
     }
@@ -537,7 +575,7 @@ static bool fetchMonthlySolar() {
     DeserializationError err = deserializeJson(root, payloadBuffer);
     if (err) {
         char logMessage[CHAR_LEN];
-        snprintf(logMessage, CHAR_LEN, "Solar month's values failed: JSON error (%s)", err.c_str());
+        snprintf(logMessage, sizeof(logMessage), "Solar month's values failed: JSON error (%s)", err.c_str());
         errorPublish(logMessage);
         return false;
     }
@@ -570,7 +608,7 @@ void api_manager_t(void* pvParameters) {
         if (now - lastHwmLog > HWM_LOG_INTERVAL_SEC) {
             lastHwmLog = now;
             char hwmMsg[CHAR_LEN];
-            snprintf(hwmMsg, CHAR_LEN, "Stack HWM: API Manager %u words", uxTaskGetStackHighWaterMark(nullptr));
+            snprintf(hwmMsg, sizeof(hwmMsg), "Stack HWM: API Manager %u words", uxTaskGetStackHighWaterMark(nullptr));
             logAndPublish(hwmMsg);
         }
 

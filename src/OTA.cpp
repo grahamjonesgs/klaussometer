@@ -17,7 +17,7 @@ void checkForUpdates() {
         return;
 
     char url[CHAR_LEN];
-    snprintf(url, CHAR_LEN, "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_VERSION_PATH);
+    snprintf(url, sizeof(url), "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_VERSION_PATH);
     http.begin(url);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
@@ -27,12 +27,12 @@ void checkForUpdates() {
         lastOTAUpdateCheck = time(nullptr);
         if (compareVersions(serverVersion, FIRMWARE_VERSION) > 0) {
             char logMessage[CHAR_LEN];
-            snprintf(logMessage, CHAR_LEN, "New firmware version available: %s (current: %s)", serverVersion.c_str(), FIRMWARE_VERSION);
+            snprintf(logMessage, sizeof(logMessage), "New firmware version available: %s (current: %s)", serverVersion.c_str(), FIRMWARE_VERSION);
             logAndPublish(logMessage);
             updateFirmware();
         } else {
             char logMessage[CHAR_LEN];
-            snprintf(logMessage, CHAR_LEN, "Firmware version %s is up to date", FIRMWARE_VERSION);
+            snprintf(logMessage, sizeof(logMessage), "Firmware version %s is up to date", FIRMWARE_VERSION);
             logAndPublish(logMessage);
         }
     } else {
@@ -47,7 +47,7 @@ void checkForUpdates() {
 // Restarts the device on success.
 void updateFirmware() {
     char binUrl[CHAR_LEN];
-    snprintf(binUrl, CHAR_LEN, "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_BIN_PATH);
+    snprintf(binUrl, sizeof(binUrl), "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_BIN_PATH);
     http.begin(binUrl);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
@@ -76,7 +76,7 @@ void updateFirmware() {
                         int progress = (written * 100) / contentLength;
                         if (progress != lastProgress && progress % OTA_LOG_INTERVAL_PERCENT == 0) {
                             char logMessage[CHAR_LEN];
-                            snprintf(logMessage, CHAR_LEN, "Download Progress: %d%%", progress);
+                            snprintf(logMessage, sizeof(logMessage), "Download Progress: %d%%", progress);
                             logAndPublish(logMessage);
                             lastProgress = progress;
                         }
@@ -89,7 +89,7 @@ void updateFirmware() {
                 logAndPublish("OTA update written successfully");
             } else {
                 char logMessage[CHAR_LEN];
-                snprintf(logMessage, CHAR_LEN, "OTA incomplete: %d/%d bytes", written, contentLength);
+                snprintf(logMessage, sizeof(logMessage), "OTA incomplete: %d/%d bytes", written, contentLength);
                 logAndPublish(logMessage);
             }
 
@@ -98,7 +98,7 @@ void updateFirmware() {
                 ESP.restart();
             } else {
                 char logMessage[CHAR_LEN];
-                snprintf(logMessage, CHAR_LEN, "Update failed. Error: %s", Update.errorString());
+                snprintf(logMessage, sizeof(logMessage), "Update failed. Error: %s", Update.errorString());
                 logAndPublish(logMessage);
             }
         } else {

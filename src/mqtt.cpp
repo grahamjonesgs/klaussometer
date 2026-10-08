@@ -6,6 +6,7 @@ extern SemaphoreHandle_t mqttMutex;
 extern Readings readings[];
 extern const int numberOfReadings;
 extern InsideAirQuality insideAirQuality;
+extern SolarForecast solarForecast;
 
 // Track last logged value per reading (compared against to detect meaningful changes)
 static float lastLoggedValue[MAX_READINGS] = {0};
@@ -35,7 +36,7 @@ void receive_mqtt_messages_t(void* pvParameters) {
 
     int messageSize = 0;
     char topicBuffer[CHAR_LEN];
-    char recMessage[CHAR_LEN]; // Remove = {0} here
+    char recMessage[MQTT_PAYLOAD_LEN];
     int index;
     unsigned long lastHwmLog = 0;
 
@@ -46,7 +47,7 @@ void receive_mqtt_messages_t(void* pvParameters) {
         if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
             lastHwmLog = millis();
             char hwmMsg[CHAR_LEN];
-            snprintf(hwmMsg, CHAR_LEN, "Stack HWM: MQTT Receive %u words", uxTaskGetStackHighWaterMark(nullptr));
+            snprintf(hwmMsg, sizeof(hwmMsg), "Stack HWM: MQTT Receive %u words", uxTaskGetStackHighWaterMark(nullptr));
             logAndPublish(hwmMsg);
         }
 
@@ -64,7 +65,7 @@ void receive_mqtt_messages_t(void* pvParameters) {
                 memset(recMessage, 0, sizeof(recMessage));
 
                 int topicLength = mqttClient.messageTopic().length();
-                if (topicLength >= CHAR_LEN) {
+                if (topicLength >= (int)sizeof(topicBuffer)) {
                     xSemaphoreGive(mqttMutex);
                     logAndPublish("MQTT topic exceeds buffer size");
                     continue;
@@ -72,7 +73,7 @@ void receive_mqtt_messages_t(void* pvParameters) {
                 mqttClient.messageTopic().toCharArray(topicBuffer, topicLength + 1);
 
                 // Check message size before reading
-                if (messageSize >= CHAR_LEN) {
+                if (messageSize >= MQTT_PAYLOAD_LEN) {
                     xSemaphoreGive(mqttMutex);
                     logAndPublish("MQTT message exceeds buffer size");
                     continue;
@@ -84,7 +85,7 @@ void receive_mqtt_messages_t(void* pvParameters) {
 
                 if (bytesRead != messageSize) {
                     char logMsg[CHAR_LEN];
-                    snprintf(logMsg, CHAR_LEN, "MQTT read mismatch: expected %d, got %d", messageSize, bytesRead);
+                    snprintf(logMsg, sizeof(logMsg), "MQTT read mismatch: expected %d, got %d", messageSize, bytesRead);
                     logAndPublish(logMsg);
                     continue;
                 }
@@ -92,7 +93,7 @@ void receive_mqtt_messages_t(void* pvParameters) {
                 // Additional validation - check if message is empty or just whitespace
                 if (messageSize == 0 || recMessage[0] == '\0') {
                     char logMsg[CHAR_LEN];
-                    snprintf(logMsg, CHAR_LEN, "Empty MQTT message on topic: %s", topicBuffer);
+                    snprintf(logMsg, sizeof(logMsg), "Empty MQTT message on topic: %s", topicBuffer);
                     logAndPublish(logMsg);
                     continue;
                 }
@@ -124,6 +125,8 @@ void receive_mqtt_messages_t(void* pvParameters) {
                            strcmp(topicBuffer, MQTT_INSIDE_PM25_TOPIC) == 0 ||
                            strcmp(topicBuffer, MQTT_INSIDE_PM10_TOPIC) == 0) {
                     updateInsideAirQuality(topicBuffer, recMessage);
+                } else if (strcmp(topicBuffer, MQTT_SOLAR_FORECAST_TOPIC) == 0) {
+                    updateSolarForecast(recMessage);
                 }
             } else {
                 // No message
@@ -150,7 +153,7 @@ void updateReadings(char* recMessage, int index, int dataType) {
     // so the range checks below would not catch NaN either.
     if (endptr == recMessage || *endptr != '\0' || isnan(parsedValue) || isinf(parsedValue)) {
         char logMsg[CHAR_LEN];
-        snprintf(logMsg, CHAR_LEN, "Invalid numeric value received: '%s' for %s", recMessage, readings[index].description);
+        snprintf(logMsg, sizeof(logMsg), "Invalid numeric value received: '%s' for %s", recMessage, readings[index].description);
         logAndPublish(logMsg);
         return;
     }
@@ -158,19 +161,19 @@ void updateReadings(char* recMessage, int index, int dataType) {
     // Sanity check for reasonable sensor values
     if (dataType == DATA_TEMPERATURE && (parsedValue < TEMP_MIN_VALID || parsedValue > TEMP_MAX_VALID)) {
         char logMsg[CHAR_LEN];
-        snprintf(logMsg, CHAR_LEN, "Temperature out of range: %.1f for %s", parsedValue, readings[index].description);
+        snprintf(logMsg, sizeof(logMsg), "Temperature out of range: %.1f for %s", parsedValue, readings[index].description);
         logAndPublish(logMsg);
         return;
     }
     if (dataType == DATA_HUMIDITY && (parsedValue < 0.0f || parsedValue > HUMIDITY_MAX_VALID)) {
         char logMsg[CHAR_LEN];
-        snprintf(logMsg, CHAR_LEN, "Humidity out of range: %.1f for %s", parsedValue, readings[index].description);
+        snprintf(logMsg, sizeof(logMsg), "Humidity out of range: %.1f for %s", parsedValue, readings[index].description);
         logAndPublish(logMsg);
         return;
     }
     if (dataType == DATA_BATTERY && (parsedValue < 0.0f || parsedValue > BATTERY_MAX_VALID_V)) {
         char logMsg[CHAR_LEN];
-        snprintf(logMsg, CHAR_LEN, "Battery voltage out of range: %.2f for %s", parsedValue, readings[index].description);
+        snprintf(logMsg, sizeof(logMsg), "Battery voltage out of range: %.2f for %s", parsedValue, readings[index].description);
         logAndPublish(logMsg);
         return;
     }
@@ -267,7 +270,7 @@ void updateReadings(char* recMessage, int index, int dataType) {
 
     if (valueChanged) {
         char logMessage[CHAR_LEN];
-        snprintf(logMessage, CHAR_LEN, "%s %s updated: %.1f", readings[index].description, logMessageSuffix, parsedValue);
+        snprintf(logMessage, sizeof(logMessage), "%s %s updated: %.1f", readings[index].description, logMessageSuffix, parsedValue);
         logAndPublish(logMessage);
         lastLoggedValue[index] = parsedValue;
         hasLoggedBefore[index] = true;
@@ -280,7 +283,7 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
 
     if (endptr == recMessage || *endptr != '\0' || isnan(parsedValue) || isinf(parsedValue)) {
         char logMsg[CHAR_LEN];
-        snprintf(logMsg, CHAR_LEN, "Invalid inside AQ value: '%s' on %s", recMessage, topic);
+        snprintf(logMsg, sizeof(logMsg), "Invalid inside AQ value: '%s' on %s", recMessage, topic);
         logAndPublish(logMsg);
         return;
     }
@@ -291,7 +294,7 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
 
     if (strcmp(topic, MQTT_INSIDE_CO2_TOPIC) == 0) {
         if (parsedValue < CO2_MIN_VALID || parsedValue > CO2_MAX_VALID) {
-            snprintf(logMsg, CHAR_LEN, "Inside CO2 out of range: %.0f ppm", parsedValue);
+            snprintf(logMsg, sizeof(logMsg), "Inside CO2 out of range: %.0f ppm", parsedValue);
             logAndPublish(logMsg);
             return;
         }
@@ -300,11 +303,11 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
         insideAirQuality.co2State = ReadingState::FIRST_READING;
         insideAirQuality.co2LastMessageTime = now;
         xSemaphoreGive(dataMutex);
-        snprintf(logMsg, CHAR_LEN, "Inside CO2: %.0f ppm", parsedValue);
+        snprintf(logMsg, sizeof(logMsg), "Inside CO2: %.0f ppm", parsedValue);
         valueChanged = updateInsideTracking(parsedValue, &lastLoggedInsideCO2, &hasLoggedInsideCO2, LOG_CHANGE_THRESHOLD_CO2);
     } else if (strcmp(topic, MQTT_INSIDE_PM1_TOPIC) == 0) {
         if (parsedValue < 0.0f || parsedValue > PM_MAX_VALID) {
-            snprintf(logMsg, CHAR_LEN, "Inside PM1 out of range: %.1f ug/m3", parsedValue);
+            snprintf(logMsg, sizeof(logMsg), "Inside PM1 out of range: %.1f ug/m3", parsedValue);
             logAndPublish(logMsg);
             return;
         }
@@ -313,11 +316,11 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
         insideAirQuality.pm1State = ReadingState::FIRST_READING;
         insideAirQuality.pmLastMessageTime = now;
         xSemaphoreGive(dataMutex);
-        snprintf(logMsg, CHAR_LEN, "Inside PM1: %.1f ug/m3", parsedValue);
+        snprintf(logMsg, sizeof(logMsg), "Inside PM1: %.1f ug/m3", parsedValue);
         valueChanged = updateInsideTracking(parsedValue, &lastLoggedInsidePM1, &hasLoggedInsidePM1, LOG_CHANGE_THRESHOLD_PM);
     } else if (strcmp(topic, MQTT_INSIDE_PM25_TOPIC) == 0) {
         if (parsedValue < 0.0f || parsedValue > PM_MAX_VALID) {
-            snprintf(logMsg, CHAR_LEN, "Inside PM2.5 out of range: %.1f ug/m3", parsedValue);
+            snprintf(logMsg, sizeof(logMsg), "Inside PM2.5 out of range: %.1f ug/m3", parsedValue);
             logAndPublish(logMsg);
             return;
         }
@@ -326,11 +329,11 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
         insideAirQuality.pm25State = ReadingState::FIRST_READING;
         insideAirQuality.pmLastMessageTime = now;
         xSemaphoreGive(dataMutex);
-        snprintf(logMsg, CHAR_LEN, "Inside PM2.5: %.1f ug/m3", parsedValue);
+        snprintf(logMsg, sizeof(logMsg), "Inside PM2.5: %.1f ug/m3", parsedValue);
         valueChanged = updateInsideTracking(parsedValue, &lastLoggedInsidePM25, &hasLoggedInsidePM25, LOG_CHANGE_THRESHOLD_PM);
     } else if (strcmp(topic, MQTT_INSIDE_PM10_TOPIC) == 0) {
         if (parsedValue < 0.0f || parsedValue > PM_MAX_VALID) {
-            snprintf(logMsg, CHAR_LEN, "Inside PM10 out of range: %.1f ug/m3", parsedValue);
+            snprintf(logMsg, sizeof(logMsg), "Inside PM10 out of range: %.1f ug/m3", parsedValue);
             logAndPublish(logMsg);
             return;
         }
@@ -339,7 +342,7 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
         insideAirQuality.pm10State = ReadingState::FIRST_READING;
         insideAirQuality.pmLastMessageTime = now;
         xSemaphoreGive(dataMutex);
-        snprintf(logMsg, CHAR_LEN, "Inside PM10: %.1f ug/m3", parsedValue);
+        snprintf(logMsg, sizeof(logMsg), "Inside PM10: %.1f ug/m3", parsedValue);
         valueChanged = updateInsideTracking(parsedValue, &lastLoggedInsidePM10, &hasLoggedInsidePM10, LOG_CHANGE_THRESHOLD_PM);
     } else {
         return;
@@ -354,4 +357,50 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
         lastInsideAQSave = now;
         saveDataBlock(INSIDE_AIR_QUALITY_DATA_FILENAME, &insideAirQuality, sizeof(insideAirQuality));
     }
+}
+// Copies a "HH:MM" battery-full time into dest; null or anything malformed gives "" (won't fill).
+static void copyFullTime(JsonVariantConst value, char* dest, size_t destLen) {
+    dest[0] = '\0';
+    const char* s = value.as<const char*>();
+    if (s && strlen(s) == 5 && isdigit(s[0]) && isdigit(s[1]) && s[2] == ':' && isdigit(s[3]) && isdigit(s[4])) {
+        snprintf(dest, destLen, "%s", s);
+    }
+}
+
+// Parses the retained solar/forecast JSON, e.g.
+// {"ts":..,"at":"14:51","today":{"exp":22.6,"pot":25.6,"made":19.7,"full":"14:00"},"tomorrow":{"exp":14.4,"pot":14.4,"full":null}}
+void updateSolarForecast(const char* recMessage) {
+    JsonDocument root;
+    DeserializationError err = deserializeJson(root, recMessage);
+    if (err || !root["ts"].is<long long>() || !root["today"]["exp"].is<float>() || !root["tomorrow"]["exp"].is<float>()) {
+        char logMsg[CHAR_LEN];
+        snprintf(logMsg, sizeof(logMsg), "Invalid solar forecast: %s", err ? err.c_str() : "missing fields");
+        logAndPublish(logMsg);
+        return;
+    }
+
+    SolarForecast parsed = {};
+    parsed.ts = (time_t)root["ts"].as<long long>();
+    parsed.todayExp = root["today"]["exp"].as<float>();
+    parsed.todayPot = root["today"]["pot"] | parsed.todayExp;
+    parsed.todayMade = root["today"]["made"] | 0.0f;
+    parsed.tomorrowExp = root["tomorrow"]["exp"].as<float>();
+    parsed.tomorrowPot = root["tomorrow"]["pot"] | parsed.tomorrowExp;
+    copyFullTime(root["today"]["full"], parsed.todayFull, sizeof(parsed.todayFull));
+    copyFullTime(root["tomorrow"]["full"], parsed.tomorrowFull, sizeof(parsed.tomorrowFull));
+
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    bool isNew = parsed.ts != solarForecast.ts;
+    solarForecast = parsed;
+    xSemaphoreGive(dataMutex);
+
+    // Retained message is re-sent on every reconnect; only log and save a genuinely new forecast
+    if (isNew) {
+        char logMsg[CHAR_LEN];
+        snprintf(logMsg, sizeof(logMsg), "Solar forecast: today %.1f kWh, full %s; tomorrow %.1f kWh, full %s", parsed.todayExp,
+                 parsed.todayFull[0] ? parsed.todayFull : "never", parsed.tomorrowExp, parsed.tomorrowFull[0] ? parsed.tomorrowFull : "never");
+        logAndPublish(logMsg);
+        saveDataBlock(SOLAR_FORECAST_DATA_FILENAME, &solarForecast, sizeof(solarForecast));
+    }
+    dirtySolarForecast = true;
 }

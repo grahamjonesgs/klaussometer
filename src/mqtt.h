@@ -2,11 +2,13 @@
 #define MQTT_H
 
 #include "types.h"
+#include <ArduinoJson.h>
 #include <ArduinoMqttClient.h>
 #include <WiFi.h>
 
 void receive_mqtt_messages_t(void* pvParameters);
 void updateReadings(char* recMessage, int index, int dataType);
 void updateInsideAirQuality(const char* topic, char* recMessage);
+void updateSolarForecast(const char* recMessage);
 
 #endif // MQTT_H

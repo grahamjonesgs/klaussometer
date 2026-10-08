@@ -2,3 +2,8 @@ src/config.h
 .pio
 SL/backup
 SL/autosave
+__pycache__/
+.DS_Store
+mountain-sunset/*.tif
+mountain-sunset/*.tif.part
+.venv/

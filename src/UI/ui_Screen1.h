@@ -98,6 +98,13 @@ extern lv_obj_t *ui_SolarTodayEnergy;
 extern lv_obj_t *ui_SolarMonthEnergy;
 extern lv_obj_t *ui_InsideAirQualityCO2;
 extern lv_obj_t *ui_InsideAirQualityPM25;
+extern lv_obj_t *ui_UVMax;
+extern lv_obj_t *ui_UVMin;
+extern lv_obj_t *ui_FCSunrise;
+extern lv_obj_t *ui_FCSunset;
+extern lv_obj_t *ui_FCMountainSet;
+extern lv_obj_t *ui_SolarForecast;
+extern lv_obj_t *ui_SolarForecastTitle;
 // CUSTOM VARIABLES
 
 #ifdef __cplusplus

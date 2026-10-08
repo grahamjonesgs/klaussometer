@@ -53,17 +53,19 @@ static void updateRoomDisplay();
 static void updateUVDisplay();
 static void updateWeatherDisplay();
 static void updateInsideAQDisplay();
+static void updateSolarForecastDisplay();
 static void updatePeriodicStatus(unsigned long currentMillis);
 static void adjustDayNightMode();
 
 // Global variables
 struct tm timeinfo;
-Weather weather = {0.0, 0.0, 0.0, 0.0, false, 0, "", "", "--:--:--"};
+Weather weather = {0.0, 0.0, 0.0, 0.0, 0.0, false, 0, "", "", "--:--:--"};
 UV uv = {0, 0, "--:--:--"};
 Solar solar = {0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, "--:--:--", 100, 0, false, 0.0, 0.0};
 SolarToken solarToken = {};
 AirQuality airQuality = {0.0, 0.0, 0.0, 0, 0, "--:--:--"};
 InsideAirQuality insideAirQuality = {};
+SolarForecast solarForecast = {};
 Readings readings[]{READINGS_ARRAY};
 Preferences storage;
 extern const int numberOfReadings = sizeof(readings) / sizeof(readings[0]);
@@ -82,6 +84,7 @@ std::atomic<bool> dirtySolar(true);
 std::atomic<bool> dirtyWeather(true);
 std::atomic<bool> dirtyUv(true);
 std::atomic<bool> dirtyInsideAQ(false);
+std::atomic<bool> dirtySolarForecast(true);
 
 const int MAX_DUTY_CYCLE = (int)(pow(2, PWMResolution) - 1);
 const float DAYTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MAX_BRIGHTNESS);
@@ -132,7 +135,7 @@ static bool restoreReadings() {
     bool ok = loadDataBlock(READINGS_DATA_FILENAME, temp, sizeof(readings));
     if (ok) {
         for (int i = 0; i < numberOfReadings; i++) {
-            if (strncmp(temp[i].topic, readings[i].topic, CHAR_LEN) != 0) {
+            if (strncmp(temp[i].topic, readings[i].topic, sizeof(readings[i].topic)) != 0) {
                 continue; // Topic changed since this file was saved — keep the fresh NO_DATA entry
             }
             memcpy(readings[i].output, temp[i].output, sizeof(readings[i].output));
@@ -216,7 +219,7 @@ void setup() {
         });
     }
     esp_log_level_set("ssl_client", ESP_LOG_WARN);
-    snprintf(chipId, CHAR_LEN, "%04llx", ESP.getEfuseMac() & CHIP_ID_MASK);
+    snprintf(chipId, sizeof(chipId), "%04llx", ESP.getEfuseMac() & CHIP_ID_MASK);
     Serial.printf("Starting Klaussometer Display %s\n", chipId);
 
     // Log reset reason to help diagnose watchdog issues
@@ -322,12 +325,18 @@ void setup() {
         } else {
             logAndPublish("Inside air quality state restore failed");
         }
+        if (loadDataBlock(SOLAR_FORECAST_DATA_FILENAME, &solarForecast, sizeof(solarForecast))) {
+            logAndPublish("Solar forecast state restored OK");
+            dirtySolarForecast = true; // Trigger display update with restored values
+        } else {
+            logAndPublish("Solar forecast state restore failed");
+        }
     }
 
     // Add unique topics for MQTT logging
     WiFi.macAddress().toCharArray(macAddress, sizeof(macAddress));
-    snprintf(logTopic, CHAR_LEN, "klaussometer/%s/log", chipId);
-    snprintf(errorTopic, CHAR_LEN, "klaussometer/%s/error", chipId);
+    snprintf(logTopic, sizeof(logTopic), "klaussometer/%s/log", chipId);
+    snprintf(errorTopic, sizeof(errorTopic), "klaussometer/%s/error", chipId);
 
     // Create display and touch objects now that board config is known
     rgbpanel = new Arduino_ESP32RGBPanel(
@@ -411,11 +420,13 @@ void setup() {
     lv_label_set_text(ui_FCUpdateTime, "");
     lv_label_set_text(ui_FCMin, "");
     lv_label_set_text(ui_FCMax, "");
+    lv_label_set_text(ui_UVMax, "");
     lv_label_set_text(ui_UVUpdateTime, "");
     lv_label_set_text(ui_TempLabelFC, "--");
     lv_label_set_text(ui_UVLabel, "--");
     lv_label_set_text(ui_InsideAirQualityCO2, "CO2: --");
     lv_label_set_text(ui_InsideAirQualityPM25, "PM2.5: --");
+    lv_label_set_text(ui_SolarForecast, "--\n--");
 
     lv_obj_add_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
@@ -524,6 +535,7 @@ void loop() {
     updateUVDisplay();
     updateWeatherDisplay();
     updateInsideAQDisplay();
+    updateSolarForecastDisplay();
 
     if (dirtySolar) {
         dirtySolar = false;
@@ -535,7 +547,7 @@ void loop() {
 
     char statusCopy[CHAR_LEN];
     xSemaphoreTake(dataMutex, portMAX_DELAY);
-    snprintf(statusCopy, CHAR_LEN, "%s", statusMessageValue);
+    snprintf(statusCopy, sizeof(statusCopy), "%s", statusMessageValue);
     xSemaphoreGive(dataMutex);
     lv_label_set_text(ui_StatusMessage, statusCopy);
     invalidateOldReadings();
@@ -571,13 +583,13 @@ static void updateRoomDisplay() {
         } else {
             lv_obj_add_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
         }
-        snprintf(tempString, CHAR_LEN, "%c", readingStateGlyph(readings[i].readingState));
+        snprintf(tempString, sizeof(tempString), "%c", readingStateGlyph(readings[i].readingState));
         lv_label_set_text(*directionLabels[i], tempString);
         lv_label_set_text(*humidityLabels[i], readings[i + ROOM_COUNT].output);
     }
     for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
         getBatteryStatus(readings[i + 2 * ROOM_COUNT].currentValue, readings[i + 2 * ROOM_COUNT].readingIndex, &batteryIcon, &batteryColor);
-        snprintf(tempString, CHAR_LEN, "%c", batteryIcon);
+        snprintf(tempString, sizeof(tempString), "%c", batteryIcon);
         lv_label_set_text(*batteryLabels[i], tempString);
         lv_obj_set_style_text_color(*batteryLabels[i], batteryColor, LV_PART_MAIN);
     }
@@ -594,20 +606,35 @@ static void updateUVDisplay() {
     if (uv.updateTime > 0) {
         lv_obj_clear_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
         if (weather.isDay) {
-            snprintf(tempString, CHAR_LEN, "Updated %s", uv.timeString);
+            snprintf(tempString, sizeof(tempString), "%s", uv.timeString);
         } else {
             tempString[0] = '\0';
         }
         lv_label_set_text(ui_UVUpdateTime, tempString);
-        snprintf(tempString, CHAR_LEN, "%i", uv.index);
+        snprintf(tempString, sizeof(tempString), "%i", uv.index);
         lv_label_set_text(ui_UVLabel, tempString);
-        lv_arc_set_value(ui_UVArc, uv.index * 10);
+        // Scale the arc to today's forecast max. The current index comes from a
+        // different provider, so raise the max to it if it is higher. Without
+        // weather data fall back to the fixed scale and hide the max label.
+        int uvMax = UV_ARC_DEFAULT_MAX;
+        if (weather.updateTime > 0) {
+            uvMax = std::max((int)lroundf(weather.uvMax), uv.index);
+            snprintf(tempString, sizeof(tempString), "%i", uvMax);
+            lv_label_set_text(ui_UVMax, tempString);
+        } else {
+            lv_label_set_text(ui_UVMax, "");
+        }
+        // Set the range before the value — lv_arc_set_value clamps against the current range.
+        // A range of 0..0 draws as a full arc, so keep at least one UV step.
+        lv_arc_set_range(ui_UVArc, 0, std::max(uvMax, 1) * UV_ARC_SCALE);
+        lv_arc_set_value(ui_UVArc, uv.index * UV_ARC_SCALE);
         lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(uvColor(uv.index)), LV_PART_INDICATOR | LV_STATE_DEFAULT);
         lv_obj_set_style_bg_color(ui_UVArc, lv_color_hex(uvColor(uv.index)), LV_PART_KNOB | LV_STATE_DEFAULT);
     } else {
         lv_obj_add_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(ui_UVLabel, "--");
         lv_label_set_text(ui_UVUpdateTime, "");
+        lv_label_set_text(ui_UVMax, "");
     }
     xSemaphoreGive(dataMutex);
 }
@@ -621,15 +648,15 @@ static void updateWeatherDisplay() {
     xSemaphoreTake(dataMutex, portMAX_DELAY);
     if (weather.updateTime > 0) {
         lv_label_set_text(ui_FCConditions, weather.description);
-        snprintf(tempString, CHAR_LEN, "Updated %s", weather.timeString);
+        snprintf(tempString, sizeof(tempString), "%s", weather.timeString);
         lv_label_set_text(ui_FCUpdateTime, tempString);
-        snprintf(tempString, CHAR_LEN, "Wind %2.0f km/h %s", weather.windSpeed, weather.windDir);
+        snprintf(tempString, sizeof(tempString), "Wind %2.0f km/h %s", weather.windSpeed, weather.windDir);
         lv_label_set_text(ui_FCWindSpeed, tempString);
         if (airQuality.updateTime > 0) {
             const char* aqiRating = getAQIRating(airQuality.europeanAqi);
-            snprintf(tempString, CHAR_LEN, "AQI %d - %s", airQuality.europeanAqi, aqiRating);
+            snprintf(tempString, sizeof(tempString), "AQI %d - %s", airQuality.europeanAqi, aqiRating);
             lv_label_set_text(ui_FCAQI, tempString);
-            snprintf(tempString, CHAR_LEN, "AQI Updated %s", airQuality.timeString);
+            snprintf(tempString, sizeof(tempString), "AQI Updated %s", airQuality.timeString);
             lv_label_set_text(ui_FCAQIUpdateTime, tempString);
         } else {
             lv_label_set_text(ui_FCAQI, "AQI --");
@@ -644,13 +671,20 @@ static void updateWeatherDisplay() {
         // Set the range before the value — lv_arc_set_value clamps against the current range
         lv_arc_set_range(ui_TempArcFC, weather.minTemp, weather.maxTemp);
         lv_arc_set_value(ui_TempArcFC, weather.temperature);
-        snprintf(tempString, CHAR_LEN, "%2.0f", weather.temperature);
+        snprintf(tempString, sizeof(tempString), "%2.0f", weather.temperature);
         lv_label_set_text(ui_TempLabelFC, tempString);
-        snprintf(tempString, CHAR_LEN, "%2.0f°C", weather.minTemp);
+        snprintf(tempString, sizeof(tempString), "%2.0f°C", weather.minTemp);
         lv_label_set_text(ui_FCMin, tempString);
-        snprintf(tempString, CHAR_LEN, "%2.0f°C", weather.maxTemp);
+        snprintf(tempString, sizeof(tempString), "%2.0f°C", weather.maxTemp);
         lv_label_set_text(ui_FCMax, tempString);
         lv_obj_clear_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
+        // Sun times. An empty string means unknown (API field missing / no table entry).
+        snprintf(tempString, sizeof(tempString), "Sunrise %s", weather.sunrise[0] ? weather.sunrise : "--:--");
+        lv_label_set_text(ui_FCSunrise, tempString);
+        snprintf(tempString, sizeof(tempString), "Sunset %s", weather.sunset[0] ? weather.sunset : "--:--");
+        lv_label_set_text(ui_FCSunset, tempString);
+        snprintf(tempString, sizeof(tempString), "Mountain %s", weather.mountainSet[0] ? weather.mountainSet : "--:--");
+        lv_label_set_text(ui_FCMountainSet, tempString);
     }
     xSemaphoreGive(dataMutex);
 }
@@ -671,7 +705,7 @@ static void updateInsideAQDisplay() {
     } else {
         char co2Buf[32];
         formatIntegerWithCommas((long long)insideAirQuality.co2, co2Buf, sizeof(co2Buf));
-        snprintf(tempString, CHAR_LEN, "CO2: %s", co2Buf);
+        snprintf(tempString, sizeof(tempString), "CO2: %s", co2Buf);
         lv_label_set_text(ui_InsideAirQualityCO2, tempString);
     }
     lv_obj_set_style_text_color(ui_InsideAirQualityCO2, insideAirQuality.co2State == ReadingState::STALE ? lv_color_hex(COLOR_RED) : defaultColor, LV_PART_MAIN);
@@ -680,11 +714,84 @@ static void updateInsideAQDisplay() {
     if (insideAirQuality.pm25State == ReadingState::NO_DATA) {
         lv_label_set_text(ui_InsideAirQualityPM25, "PM2.5: --");
     } else {
-        snprintf(tempString, CHAR_LEN, "PM2.5: %.1f", insideAirQuality.pm25);
+        snprintf(tempString, sizeof(tempString), "PM2.5: %.1f", insideAirQuality.pm25);
         lv_label_set_text(ui_InsideAirQualityPM25, tempString);
     }
     lv_obj_set_style_text_color(ui_InsideAirQualityPM25, insideAirQuality.pm25State == ReadingState::STALE ? lv_color_hex(COLOR_RED) : defaultColor, LV_PART_MAIN);
     xSemaphoreGive(dataMutex);
+}
+
+// Formats one forecast row for the right-hand column, e.g. "23 kWh, full by 14:00" or "14 kWh, will not fill".
+// The model isn't that precise, so kWh is rounded to the nearest whole unit and the full time to the
+// nearest 30 minutes (capped at 23:30 so a late fill never shows as 24:00).
+static void formatForecastLine(char* buf, size_t len, float kwh, const char* full) {
+    if (full[0]) {
+        int minutes = ((full[0] - '0') * 10 + (full[1] - '0')) * 60 + (full[3] - '0') * 10 + (full[4] - '0');
+        minutes = (minutes + 15) / 30 * 30;
+        if (minutes > 23 * 60 + 30)
+            minutes = 23 * 60 + 30;
+        snprintf(buf, len, "%ld kWh, full by %02d:%02d", lroundf(kwh), minutes / 60, minutes % 60);
+    } else {
+        snprintf(buf, len, "%ld kWh, will not fill", lroundf(kwh));
+    }
+}
+
+// Updates the solar forecast figures (ui_SolarForecast) next to their static row titles
+// (ui_SolarForecastTitle). Redraws when a new forecast arrives and once a minute so the colour
+// ages and the day rolls over. After midnight, until the server publishes again, yesterday's
+// "tomorrow" figures become today's and the Tomorrow row shows "--".
+// Colour comes from the forecast's own ts: default when fresh, grey then red as it ages.
+static void updateSolarForecastDisplay() {
+    static time_t lastCheck = 0;
+    time_t now = time(nullptr);
+    if (!dirtySolarForecast && now - lastCheck < 60)
+        return;
+    dirtySolarForecast = false;
+    lastCheck = now;
+
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    SolarForecast fc = solarForecast;
+    xSemaphoreGive(dataMutex);
+
+    lv_color_t color = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
+
+    // Whole local days between the forecast date and today (0 until NTP has synced)
+    long dayDiff = 0;
+    bool synced = now > TIME_SYNC_THRESHOLD;
+    if (synced && fc.ts != 0) {
+        struct tm tsTm, nowTm;
+        localtime_r(&fc.ts, &tsTm);
+        localtime_r(&now, &nowTm);
+        tsTm.tm_hour = tsTm.tm_min = tsTm.tm_sec = 0;
+        nowTm.tm_hour = nowTm.tm_min = nowTm.tm_sec = 0;
+        dayDiff = lround(difftime(mktime(&nowTm), mktime(&tsTm)) / 86400.0);
+    }
+
+    char line1[64];
+    char line2[64];
+    char text[CHAR_LEN];
+    if (fc.ts == 0 || dayDiff > 1) {
+        snprintf(text, sizeof(text), "--\n--");
+    } else if (dayDiff == 1) {
+        formatForecastLine(line1, sizeof(line1), fc.tomorrowExp, fc.tomorrowFull);
+        snprintf(text, sizeof(text), "%s\n--", line1);
+    } else {
+        formatForecastLine(line1, sizeof(line1), fc.todayExp, fc.todayFull);
+        formatForecastLine(line2, sizeof(line2), fc.tomorrowExp, fc.tomorrowFull);
+        snprintf(text, sizeof(text), "%s\n%s", line1, line2);
+    }
+    lv_label_set_text(ui_SolarForecast, text);
+
+    if (synced && fc.ts != 0) {
+        time_t age = now - fc.ts;
+        if (age > SOLAR_FORECAST_OLD_SEC) {
+            color = lv_color_hex(COLOR_RED);
+        } else if (age > SOLAR_FORECAST_STALE_SEC) {
+            color = lv_color_hex(COLOR_STALE);
+        }
+    }
+    lv_obj_set_style_text_color(ui_SolarForecast, color, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_SolarForecastTitle, color, LV_PART_MAIN);
 }
 
 // Updates status indicators, clock, WiFi icon and version string once per second.
@@ -728,9 +835,9 @@ static void updatePeriodicStatus(unsigned long currentMillis) {
     }
 
     if (WiFi.status() == WL_CONNECTED) {
-        snprintf(tempString, CHAR_LEN, "IP: %s | Chip ID: %s | Firmware: V%s", WiFi.localIP().toString().c_str(), chipId, FIRMWARE_VERSION);
+        snprintf(tempString, sizeof(tempString), "IP: %s | Chip ID: %s | Firmware: V%s", WiFi.localIP().toString().c_str(), chipId, FIRMWARE_VERSION);
     } else {
-        snprintf(tempString, CHAR_LEN, "Chip ID: %s | Firmware: V%s", chipId, FIRMWARE_VERSION);
+        snprintf(tempString, sizeof(tempString), "Chip ID: %s | Firmware: V%s", chipId, FIRMWARE_VERSION);
     }
     lv_label_set_text(ui_Version, tempString);
 }
@@ -743,6 +850,7 @@ static void adjustDayNightMode() {
     lastIsDay = weather.isDay;
     dirtyRooms = true;    // Re-apply stale label colours after set_basic_text_color resets them
     dirtyInsideAQ = true; // Re-apply stale/default colour with new day/night defaultColor
+    dirtySolarForecast = true;
     if (!weather.isDay) {
         setBacklight(false);
         set_basic_text_color(lv_color_hex(COLOR_WHITE));
@@ -852,6 +960,7 @@ void invalidateStaleApiData() {
     if (weather.updateTime > 0 && (now - weather.updateTime) > MAX_API_DATA_AGE_SEC) {
         weather.updateTime = 0;
         dirtyWeather = true;
+        dirtyUv = true; // UV max and arc range depend on weather data
     }
     // At night the API manager pins the UV index to zero once and stops
     // refreshing it, so its age is meaningless - only age it out during the

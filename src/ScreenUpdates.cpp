@@ -13,14 +13,14 @@ static void setArcColor(lv_obj_t* arc, lv_color_t color) {
 extern Weather weather;
 extern Solar solar;
 extern QueueHandle_t statusMessageQueue;
-extern char statusMessageValue[];
+extern char statusMessageValue[CHAR_LEN];
 
 // Updates battery arc color and the charge/discharge status labels.
 // Shows remaining time to empty (discharging) or full (charging).
 static void updateChargingStatus() {
     char tempString[CHAR_LEN];
     if (solar.batteryPower > BATTERY_POWER_DISCHARGE_THRESHOLD) {
-        snprintf(tempString, CHAR_LEN, "Discharging %2.1fkW", solar.batteryPower);
+        snprintf(tempString, sizeof(tempString), "Discharging %2.1fkW", solar.batteryPower);
         lv_label_set_text(ui_ChargingLabel, tempString);
 
         // Time remaining = usable capacity left / current draw rate
@@ -39,9 +39,9 @@ static void updateChargingStatus() {
 
         if (remainMinutesRound > 0 && remainHours < MAX_SOLAR_TIME_STATUS_HOURS) {
             if (wholeHours > 0) {
-                snprintf(tempString, CHAR_LEN, "%d %s %d mins\n remaining\n Until %s", wholeHours, (wholeHours == 1) ? "hour" : "hours", wholeMins, timeBufEnd);
+                snprintf(tempString, sizeof(tempString), "%d %s %d mins\n remaining\n Until %s", wholeHours, (wholeHours == 1) ? "hour" : "hours", wholeMins, timeBufEnd);
             } else {
-                snprintf(tempString, CHAR_LEN, "%d mins\n remaining\n Until %s", wholeMins, timeBufEnd);
+                snprintf(tempString, sizeof(tempString), "%d mins\n remaining\n Until %s", wholeMins, timeBufEnd);
             }
         } else {
             tempString[0] = '\0'; // Don't print for too long time
@@ -49,7 +49,7 @@ static void updateChargingStatus() {
         lv_label_set_text(ui_ChargingTime, tempString);
         setArcColor(ui_BatteryArc, lv_color_hex(COLOR_RED));
     } else if (solar.batteryPower < BATTERY_POWER_CHARGE_THRESHOLD) {
-        snprintf(tempString, CHAR_LEN, "Charging %2.1fkW", -solar.batteryPower);
+        snprintf(tempString, sizeof(tempString), "Charging %2.1fkW", -solar.batteryPower);
         lv_label_set_text(ui_ChargingLabel, tempString);
 
         // Time to full = remaining capacity to fill / charge rate (batteryPower is negative when charging)
@@ -61,9 +61,9 @@ static void updateChargingStatus() {
 
         if (remainMinutesRound > 0 && remainHours < MAX_SOLAR_TIME_STATUS_HOURS) {
             if (wholeHours > 0) {
-                snprintf(tempString, CHAR_LEN, "%d %s %d mins to\n fully charged", wholeHours, (wholeHours == 1) ? "hour" : "hours", wholeMins);
+                snprintf(tempString, sizeof(tempString), "%d %s %d mins to\n fully charged", wholeHours, (wholeHours == 1) ? "hour" : "hours", wholeMins);
             } else {
-                snprintf(tempString, CHAR_LEN, "%d mins to\n fully charged", wholeMins);
+                snprintf(tempString, sizeof(tempString), "%d mins to\n fully charged", wholeMins);
             }
         } else {
             tempString[0] = '\0'; // Don't print for too long time
@@ -97,22 +97,22 @@ static void updateGridMetrics() {
     todayGridPercentage = todayGridPercentage > 100 ? 100 : (todayGridPercentage < 0 ? 0 : todayGridPercentage);
     monthGridPercentage = monthGridPercentage > 100 ? 100 : (monthGridPercentage < 0 ? 0 : monthGridPercentage);
 
-    snprintf(tempString, CHAR_LEN, "%.0f", solar.todayBuy);
+    snprintf(tempString, sizeof(tempString), "%.0f", solar.todayBuy);
     lv_label_set_text(ui_GridTodayEnergy, tempString);
-    snprintf(tempString, CHAR_LEN, "%.0f", solar.monthBuy);
+    snprintf(tempString, sizeof(tempString), "%.0f", solar.monthBuy);
     lv_label_set_text(ui_GridMonthEnergy, tempString);
-    snprintf(tempString, CHAR_LEN, "R%s", boughtTodayBuf);
+    snprintf(tempString, sizeof(tempString), "R%s", boughtTodayBuf);
     lv_label_set_text(ui_GridTodayCost, tempString);
-    snprintf(tempString, CHAR_LEN, "R%s", boughtMonthBuf);
+    snprintf(tempString, sizeof(tempString), "R%s", boughtMonthBuf);
     lv_label_set_text(ui_GridMonthCost, tempString);
-    snprintf(tempString, CHAR_LEN, "%d%%", todayGridPercentage);
+    snprintf(tempString, sizeof(tempString), "%d%%", todayGridPercentage);
     lv_label_set_text(ui_GridTodayPercentage, tempString);
-    snprintf(tempString, CHAR_LEN, "%d%%", monthGridPercentage);
+    snprintf(tempString, sizeof(tempString), "%d%%", monthGridPercentage);
     lv_label_set_text(ui_GridMonthPercentage, tempString);
 
-    snprintf(tempString, CHAR_LEN, "%.0f", solar.todayGeneration);
+    snprintf(tempString, sizeof(tempString), "%.0f", solar.todayGeneration);
     lv_label_set_text(ui_SolarTodayEnergy, tempString);
-    snprintf(tempString, CHAR_LEN, "%.0f", solar.monthGeneration);
+    snprintf(tempString, sizeof(tempString), "%.0f", solar.monthGeneration);
     lv_label_set_text(ui_SolarMonthEnergy, tempString);
 }
 
@@ -131,25 +131,25 @@ void set_solar_values() {
     lv_obj_clear_flag(ui_UsingArc, LV_OBJ_FLAG_HIDDEN);
 
     lv_arc_set_value(ui_BatteryArc, solar.batteryCharge);
-    snprintf(tempString, CHAR_LEN, "%2.0f%%", solar.batteryCharge);
+    snprintf(tempString, sizeof(tempString), "%2.0f%%", solar.batteryCharge);
     lv_label_set_text(ui_BatteryLabel, tempString);
 
     lv_arc_set_value(ui_SolarArc, solar.solarPower * POWER_ARC_SCALE);
-    snprintf(tempString, CHAR_LEN, "%2.1fkW", solar.solarPower);
+    snprintf(tempString, sizeof(tempString), "%2.1fkW", solar.solarPower);
     lv_label_set_text(ui_SolarLabel, tempString);
 
     lv_arc_set_value(ui_UsingArc, solar.usingPower * POWER_ARC_SCALE);
-    snprintf(tempString, CHAR_LEN, "%2.1fkW", solar.usingPower);
+    snprintf(tempString, sizeof(tempString), "%2.1fkW", solar.usingPower);
     lv_label_set_text(ui_UsingLabel, tempString);
 
     updateChargingStatus();
 
-    snprintf(tempString, CHAR_LEN, "Min %2.0f\nMax %2.0f", solar.todayBatteryMin, solar.todayBatteryMax);
+    snprintf(tempString, sizeof(tempString), "Min %2.0f\nMax %2.0f", solar.todayBatteryMin, solar.todayBatteryMax);
     lv_label_set_text(ui_SolarMinMax, tempString);
 
     char timeBuf[CHAR_LEN];
     formatTimeHMS(solar.currentUpdateTime, timeBuf, sizeof(timeBuf));
-    snprintf(tempString, CHAR_LEN, "Values as of %s\nReceived at %s", solar.time, timeBuf);
+    snprintf(tempString, sizeof(tempString), "Values as of %s\nReceived at %s", solar.time, timeBuf);
     lv_label_set_text(ui_AsofTimeLabel, tempString);
 
     updateGridMetrics();
@@ -204,7 +204,7 @@ void displayStatusMessages_t(void* pvParameters) {
     while (true) {
         if (xQueueReceive(statusMessageQueue, &receivedMsg, pdMS_TO_TICKS(STATUS_MESSAGE_QUEUE_TIMEOUT_MS)) == pdTRUE) {
             xSemaphoreTake(dataMutex, portMAX_DELAY);
-            snprintf(statusMessageValue, CHAR_LEN, "%s", receivedMsg.text);
+            snprintf(statusMessageValue, sizeof(statusMessageValue), "%s", receivedMsg.text);
             xSemaphoreGive(dataMutex);
             vTaskDelay(pdMS_TO_TICKS(receivedMsg.durationSec * 1000));
             xSemaphoreTake(dataMutex, portMAX_DELAY);
@@ -214,7 +214,7 @@ void displayStatusMessages_t(void* pvParameters) {
         if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
             lastHwmLog = millis();
             char hwmMsg[CHAR_LEN];
-            snprintf(hwmMsg, CHAR_LEN, "Stack HWM: Display Status %u words", uxTaskGetStackHighWaterMark(nullptr));
+            snprintf(hwmMsg, sizeof(hwmMsg), "Stack HWM: Display Status %u words", uxTaskGetStackHighWaterMark(nullptr));
             logAndPublish(hwmMsg);
         }
     }
