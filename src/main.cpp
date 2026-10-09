@@ -32,7 +32,9 @@ WiFiClient espClient;
 MqttClient mqttClient(espClient);
 WebServer webServer(80);
 HTTPClient http;
-static const int HTTP_TIMEOUT_MS = 10000; // 10 second timeout for API calls
+WiFiClientSecure httpsClient; // Shared TLS transport for every http.begin() (API manager task only)
+static const int HTTP_TIMEOUT_MS = 10000;         // 10 second timeout for API calls
+static const int HTTPS_HANDSHAKE_TIMEOUT_SEC = 20; // Default is 120 s, longer than the 60 s task watchdog
 SemaphoreHandle_t mqttMutex;
 SemaphoreHandle_t dataMutex;
 
@@ -143,7 +145,9 @@ static bool restoreReadings() {
             memcpy(readings[i].lastValue, temp[i].lastValue, sizeof(readings[i].lastValue));
             readings[i].readingState = temp[i].readingState;
             readings[i].hasEnoughData = temp[i].hasEnoughData;
-            readings[i].readingIndex = temp[i].readingIndex;
+            // readingIndex indexes lastValue[] - never trust an out-of-range value from the file
+            int idx = temp[i].readingIndex;
+            readings[i].readingIndex = (idx >= 0 && idx <= STORED_READING) ? idx : 0;
             readings[i].lastMessageTime = temp[i].lastMessageTime;
         }
     }
@@ -214,7 +218,9 @@ void setup() {
         esp_log_set_vprintf([](const char* fmt, va_list args) -> int {
             char buf[256];
             int len = vsnprintf(buf, sizeof(buf), fmt, args);
-            Serial.write((const uint8_t*)buf, len);
+            // vsnprintf returns the untruncated length - only write what fits in buf
+            if (len > 0)
+                Serial.write((const uint8_t*)buf, std::min(len, (int)sizeof(buf) - 1));
             return len;
         });
     }
@@ -272,8 +278,7 @@ void setup() {
     }
 
     // Initialize the SD card
-    SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0);
-    if (!SD_MMC.begin("/sdcard", true, true)) {
+    if (!sdcard_mount()) {
         logAndPublish("SD Card initialization failed!");
     } else {
         logAndPublish("SD Card initialized");
@@ -485,6 +490,9 @@ void setup() {
     configTime(TIME_OFFSET, 0, NTP_SERVER); // Setup as used to display time from stored values
     http.setTimeout(HTTP_TIMEOUT_MS);       // Set read timeout for all API calls
     http.setReuse(false);                   // Disable keep-alive - single task calls different hosts/protocols
+    // Certificates are not verified yet - the same as http.begin(url) without a CA did before
+    httpsClient.setInsecure();
+    httpsClient.setHandshakeTimeout(HTTPS_HANDSHAKE_TIMEOUT_SEC);
 
     // Register web server handlers exactly once, before the connectivity task starts.
     // WebServer::on() appends (never replaces) handlers, so calling this from
@@ -545,11 +553,16 @@ void loop() {
     updatePeriodicStatus(currentMillis);
     adjustDayNightMode();
 
+    // Only touch the label when the text changes - set_text re-lays out and redraws it
+    static char lastStatus[CHAR_LEN] = "";
     char statusCopy[CHAR_LEN];
     xSemaphoreTake(dataMutex, portMAX_DELAY);
     snprintf(statusCopy, sizeof(statusCopy), "%s", statusMessageValue);
     xSemaphoreGive(dataMutex);
-    lv_label_set_text(ui_StatusMessage, statusCopy);
+    if (strcmp(statusCopy, lastStatus) != 0) {
+        memcpy(lastStatus, statusCopy, sizeof(lastStatus));
+        lv_label_set_text(ui_StatusMessage, statusCopy);
+    }
     invalidateOldReadings();
     invalidateInsideAirQuality();
     invalidateStaleApiData();
@@ -668,9 +681,13 @@ static void updateWeatherDisplay() {
         if (weather.temperature > weather.maxTemp) {
             weather.maxTemp = weather.temperature;
         }
-        // Set the range before the value — lv_arc_set_value clamps against the current range
-        lv_arc_set_range(ui_TempArcFC, weather.minTemp, weather.maxTemp);
-        lv_arc_set_value(ui_TempArcFC, weather.temperature);
+        // Set the range before the value — lv_arc_set_value clamps against the current range.
+        // The arc works in integers, so scale to tenths of a degree and keep the range at
+        // least one step wide (an empty range draws as a full arc).
+        int32_t arcMin = lroundf(weather.minTemp * TEMP_ARC_SCALE);
+        int32_t arcMax = std::max(arcMin + 1, (int32_t)lroundf(weather.maxTemp * TEMP_ARC_SCALE));
+        lv_arc_set_range(ui_TempArcFC, arcMin, arcMax);
+        lv_arc_set_value(ui_TempArcFC, lroundf(weather.temperature * TEMP_ARC_SCALE));
         snprintf(tempString, sizeof(tempString), "%2.0f", weather.temperature);
         lv_label_set_text(ui_TempLabelFC, tempString);
         snprintf(tempString, sizeof(tempString), "%2.0f°C", weather.minTemp);
@@ -685,6 +702,20 @@ static void updateWeatherDisplay() {
         lv_label_set_text(ui_FCSunset, tempString);
         snprintf(tempString, sizeof(tempString), "Mountain %s", weather.mountainSet[0] ? weather.mountainSet : "--:--");
         lv_label_set_text(ui_FCMountainSet, tempString);
+    } else {
+        // No weather data, or invalidateStaleApiData() has aged it out - blank the panel
+        lv_label_set_text(ui_FCConditions, "");
+        lv_label_set_text(ui_FCUpdateTime, "");
+        lv_label_set_text(ui_FCWindSpeed, "");
+        lv_label_set_text(ui_FCAQI, "");
+        lv_label_set_text(ui_FCAQIUpdateTime, "");
+        lv_label_set_text(ui_TempLabelFC, "--");
+        lv_label_set_text(ui_FCMin, "");
+        lv_label_set_text(ui_FCMax, "");
+        lv_obj_add_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(ui_FCSunrise, "Sunrise --:--");
+        lv_label_set_text(ui_FCSunset, "Sunset --:--");
+        lv_label_set_text(ui_FCMountainSet, "Mountain --:--");
     }
     xSemaphoreGive(dataMutex);
 }
@@ -948,6 +979,14 @@ void invalidateInsideAirQuality() {
     xSemaphoreGive(dataMutex);
 }
 
+// Parses "HH:MM" into minutes after midnight; -1 if empty or malformed.
+static int hhmmToMinutes(const char* s) {
+    int h, m;
+    if (!s[0] || sscanf(s, "%d:%d", &h, &m) != 2 || h < 0 || h > 23 || m < 0 || m > 59)
+        return -1;
+    return h * 60 + m;
+}
+
 // Clears API-sourced data (weather, UV, outdoor AQ) if it exceeds MAX_API_DATA_AGE_SEC.
 // Handles old SD card restores and prolonged API outages — mirrors invalidateOldReadings()
 // for MQTT sensors. The display functions' updateTime > 0 checks then show "--"/hidden.
@@ -961,6 +1000,19 @@ void invalidateStaleApiData() {
         weather.updateTime = 0;
         dirtyWeather = true;
         dirtyUv = true; // UV max and arc range depend on weather data
+    }
+    // Without fresh weather the API's isDay freezes, so keep day/night mode
+    // following the clock using the last known sunrise/sunset (a day or two old
+    // is only a few minutes out).
+    if (weather.updateTime == 0) {
+        int riseMin = hhmmToMinutes(weather.sunrise);
+        int setMin = hhmmToMinutes(weather.sunset);
+        if (riseMin >= 0 && setMin >= 0) {
+            struct tm nowTm;
+            localtime_r(&now, &nowTm);
+            int nowMin = nowTm.tm_hour * 60 + nowTm.tm_min;
+            weather.isDay = nowMin >= riseMin && nowMin < setMin;
+        }
     }
     // At night the API manager pins the UV index to zero once and stops
     // refreshing it, so its age is meaningless - only age it out during the

@@ -288,11 +288,13 @@ static constexpr uint64_t CHIP_ID_MASK = 0xFFFF; // Lower 16 bits of eFuse MAC u
 static const int DISPLAY_BUFFER_LINES = 10;      // Height of the LVGL draw buffer in screen lines
 static const int POWER_ARC_SCALE = 10;           // Multiplier to convert kW values to arc range (0–100)
 static const int UV_ARC_SCALE = 10;              // Multiplier to convert UV index to arc range
+static const int TEMP_ARC_SCALE = 10;            // Forecast temperature arc works in tenths of a degree
 static const int UV_ARC_DEFAULT_MAX = 13;        // UV arc full-scale when no daily max is available
 
 // OTA
 static const int OTA_BUFFER_SIZE = 128;         // Byte buffer for OTA firmware download chunks
 static const int OTA_LOG_INTERVAL_PERCENT = 10; // Log OTA download progress every N percent
 static const int OTA_YIELD_DELAY_MS = 1;        // vTaskDelay in OTA download loop to yield CPU
+static const unsigned long OTA_STALL_TIMEOUT_MS = 15000; // Abort the OTA download after this long with no data
 
 #endif // CONSTANTS_H

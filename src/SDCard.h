@@ -5,6 +5,7 @@
 #include "utils.h"
 #include <SD_MMC.h>
 
+bool sdcard_mount();
 bool saveDataBlock(const char* filename, const void* dataPtr, size_t size);
 bool loadDataBlock(const char* filename, void* dataPtr, size_t expected_size);
 void addLogToSDCard(const char* message, const char* logFilename);

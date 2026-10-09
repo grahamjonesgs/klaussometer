@@ -12,6 +12,7 @@ extern AirQuality airQuality;
 extern Preferences storage;
 
 extern HTTPClient http;
+extern WiFiClientSecure httpsClient;
 
 // Per-API retry tracking. lastAttemptTime records when a fetch was last
 // tried regardless of outcome, so retry pacing never has to fake the data's
@@ -115,7 +116,7 @@ static bool fetchUV() {
         return true;
 
     snprintf(urlBuffer, URL_BUFFER_SIZE, "https://api.weatherbit.io/v2.0/current?city_id=%s&key=%s", WEATHERBIT_CITY_ID, WEATHERBIT_API);
-    http.begin(urlBuffer);
+    http.begin(httpsClient, urlBuffer);
     int httpCode = http.GET();
     if (httpCode != HTTP_CODE_OK) {
         reportHttpError("GET UV", httpCode);
@@ -189,7 +190,7 @@ static bool fetchWeather() {
              "&timezone=auto"
              "&forecast_days=1",
              LATITUDE, LONGITUDE);
-    http.begin(urlBuffer);
+    http.begin(httpsClient, urlBuffer);
     int httpCode = http.GET();
     if (httpCode != HTTP_CODE_OK) {
         reportHttpError("GET current weather", httpCode);
@@ -261,7 +262,7 @@ static bool fetchAirQuality() {
              "&current=pm10,pm2_5,ozone,european_aqi"
              "&timezone=auto",
              LATITUDE, LONGITUDE);
-    http.begin(urlBuffer);
+    http.begin(httpsClient, urlBuffer);
     int httpCode = http.GET();
     if (httpCode != HTTP_CODE_OK) {
         reportHttpError("GET air quality", httpCode);
@@ -310,7 +311,7 @@ static bool fetchSolarToken() {
         return true;
 
     snprintf(urlBuffer, sizeof(urlBuffer), "https://%s/account/v1.0/token?appId=%s", SOLAR_URL, SOLAR_APPID);
-    http.begin(urlBuffer);
+    http.begin(httpsClient, urlBuffer);
     http.addHeader("Content-Type", "application/json");
 
     snprintf(postBuffer, POST_BUFFER_SIZE, "{\n\"appSecret\" : \"%s\", \n\"email\" : \"%s\",\n\"password\" : \"%s\"\n}", SOLAR_SECRET, SOLAR_USERNAME, SOLAR_PASSHASH);
@@ -358,7 +359,7 @@ static bool fetchCurrentSolar() {
 
     snprintf(urlBuffer, URL_BUFFER_SIZE, "https://%s/station/v1.0/realTime?language=en", SOLAR_URL);
     http.setReuse(true); // Keep the connection open for potential token refresh and daily data fetches
-    http.begin(urlBuffer);
+    http.begin(httpsClient, urlBuffer);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", solarToken.token);
     snprintf(postBuffer, POST_BUFFER_SIZE, "{\n\"stationId\" : \"%s\"\n}", SOLAR_STATIONID);
@@ -486,7 +487,7 @@ static bool fetchDailySolar() {
     // Get the today buy amount (timetype 2)
     snprintf(urlBuffer, URL_BUFFER_SIZE, "https://%s/station/v1.0/history?language=en", SOLAR_URL);
     http.setReuse(true); // Keep the connection open for potential token refresh and daily data fetches
-    http.begin(urlBuffer);
+    http.begin(httpsClient, urlBuffer);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", solarToken.token);
 
@@ -550,7 +551,7 @@ static bool fetchMonthlySolar() {
     // Get month buy value timeType 3
     snprintf(urlBuffer, URL_BUFFER_SIZE, "https://%s/station/v1.0/history?language=en", SOLAR_URL);
     http.setReuse(true); // Keep the connection open for potential token refresh and daily data fetches
-    http.begin(urlBuffer);
+    http.begin(httpsClient, urlBuffer);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", solarToken.token);
 

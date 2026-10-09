@@ -27,7 +27,7 @@ static void updateChargingStatus() {
         // Usable capacity = (SoC% - min%) * total kWh; power is in kW
         float remainHours = (solar.batteryCharge / 100.0 - BATTERY_MIN) * BATTERY_CAPACITY / solar.batteryPower;
         int remainMinutes = 60.0 * remainHours;
-        int remainMinutesRound = REMAINING_TIME_ROUND_MIN * (round(remainMinutes / REMAINING_TIME_ROUND_MIN));
+        int remainMinutesRound = REMAINING_TIME_ROUND_MIN * (int)lroundf((float)remainMinutes / REMAINING_TIME_ROUND_MIN);
         // Derive hours and minutes from the same rounded total so they can't
         // disagree (e.g. 1h50m previously displayed as "2 hour 50 mins")
         int wholeHours = remainMinutesRound / 60;
@@ -54,7 +54,7 @@ static void updateChargingStatus() {
         // Time to full = remaining capacity to fill / charge rate (batteryPower is negative when charging)
         float remainHours = -(BATTERY_CHARGE_FULL_THRESHOLD - solar.batteryCharge / 100) * BATTERY_CAPACITY / solar.batteryPower;
         int remainMinutes = 60.0 * remainHours;
-        int remainMinutesRound = REMAINING_TIME_ROUND_MIN * (round(remainMinutes / REMAINING_TIME_ROUND_MIN));
+        int remainMinutesRound = REMAINING_TIME_ROUND_MIN * (int)lroundf((float)remainMinutes / REMAINING_TIME_ROUND_MIN);
         int wholeHours = remainMinutesRound / 60;
         int wholeMins = remainMinutesRound % 60;
 

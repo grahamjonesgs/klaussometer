@@ -12,22 +12,18 @@ static void expander_write(uint8_t reg, uint8_t val) {
     Wire.endTransmission();
 }
 
-static uint8_t expander_read(uint8_t reg) {
-    Wire.beginTransmission(WS_EXPANDER_I2C_ADDR);
-    Wire.write(reg);
-    Wire.endTransmission(false);
-    Wire.requestFrom((uint8_t)WS_EXPANDER_I2C_ADDR, (uint8_t)1);
-    return Wire.available() ? Wire.read() : 0;
-}
+// Shadow of the output register. Reading the register back for read-modify-write is
+// unsafe: a failed I2C read would return 0 and the write would then clear the LCD and
+// touch reset lines along with the bit being changed.
+static uint8_t outShadow = 0x00;
 
 static void expander_set_bit(uint8_t io_pin, uint8_t level) {
-    uint8_t val = expander_read(WS_EXPANDER_REG_OUT);
     if (level) {
-        val |= (1 << io_pin);
+        outShadow |= (1 << io_pin);
     } else {
-        val &= ~(1 << io_pin);
+        outShadow &= ~(1 << io_pin);
     }
-    expander_write(WS_EXPANDER_REG_OUT, val);
+    expander_write(WS_EXPANDER_REG_OUT, outShadow);
 }
 
 // --- Public API ---
@@ -39,7 +35,8 @@ void waveshare_expander_init() {
     expander_write(WS_EXPANDER_REG_MODE, 0x00);
 
     // Initial state: everything off / reset asserted
-    expander_write(WS_EXPANDER_REG_OUT, 0x00);
+    outShadow = 0x00;
+    expander_write(WS_EXPANDER_REG_OUT, outShadow);
     delay(20);
 
     // De-assert LCD reset

@@ -6,7 +6,9 @@
 extern WebServer webServer;
 extern char macAddress[18];
 unsigned long lastOTAUpdateCheck = 0;
+static bool webUpdateWritten = false; // Set when a web upload completes and verifies
 extern HTTPClient http;
+extern WiFiClientSecure httpsClient;
 extern char chipId[CHAR_LEN];
 
 // Fetches the version file from the OTA server and compares it to FIRMWARE_VERSION.
@@ -18,7 +20,7 @@ void checkForUpdates() {
 
     char url[CHAR_LEN];
     snprintf(url, sizeof(url), "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_VERSION_PATH);
-    http.begin(url);
+    http.begin(httpsClient, url);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
         String serverVersion = http.getString();
@@ -48,10 +50,17 @@ void checkForUpdates() {
 void updateFirmware() {
     char binUrl[CHAR_LEN];
     snprintf(binUrl, sizeof(binUrl), "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_BIN_PATH);
-    http.begin(binUrl);
+    http.begin(httpsClient, binUrl);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
         int contentLength = http.getSize();
+        // A chunked response has no length, and HTTPClient's stream would hand the raw
+        // chunk framing to the flash writer - refuse it rather than download a bad image
+        if (contentLength <= 0) {
+            logAndPublish("OTA aborted: server did not send a Content-Length");
+            http.end();
+            return;
+        }
         bool canBegin = Update.begin(contentLength);
         if (canBegin) {
             logAndPublish("Beginning OTA update. This may take a few moments");
@@ -62,16 +71,22 @@ void updateFirmware() {
             uint8_t buff[OTA_BUFFER_SIZE];
             size_t written = 0;
             int lastProgress = -1;
+            bool writeFailed = false;
+            unsigned long lastDataMs = millis();
 
-            while (client.connected() && written < contentLength) {
+            while (client.connected() && written < (size_t)contentLength) {
+                // Fed every pass: the stall check below bounds how long this loop can run without data
+                esp_task_wdt_reset();
                 size_t available = client.available();
                 if (available) {
                     int c = client.readBytes(buff, std::min(available, sizeof(buff)));
                     if (c > 0) {
-                        Update.write(buff, c);
+                        lastDataMs = millis();
+                        if (Update.write(buff, c) != (size_t)c) {
+                            writeFailed = true; // e.g. bad magic byte - no point downloading the rest
+                            break;
+                        }
                         written += c;
-
-                        esp_task_wdt_reset();
 
                         int progress = (written * 100) / contentLength;
                         if (progress != lastProgress && progress % OTA_LOG_INTERVAL_PERCENT == 0) {
@@ -81,25 +96,28 @@ void updateFirmware() {
                             lastProgress = progress;
                         }
                     }
+                } else if (millis() - lastDataMs > OTA_STALL_TIMEOUT_MS) {
+                    break; // Connected but no data - give up rather than hang
                 }
                 vTaskDelay(pdMS_TO_TICKS(OTA_YIELD_DELAY_MS)); // Allow other tasks to run
             }
 
-            if (written == contentLength) {
+            if (writeFailed || written != (size_t)contentLength) {
+                char logMessage[CHAR_LEN];
+                snprintf(logMessage, sizeof(logMessage), "OTA incomplete: %u/%d bytes, error: %s", (unsigned)written, contentLength,
+                         writeFailed ? Update.errorString() : "download stalled or dropped");
+                logAndPublish(logMessage);
+                Update.abort(); // Release the session so the next check can start a fresh one
+            } else {
                 logAndPublish("OTA update written successfully");
-            } else {
-                char logMessage[CHAR_LEN];
-                snprintf(logMessage, sizeof(logMessage), "OTA incomplete: %d/%d bytes", written, contentLength);
-                logAndPublish(logMessage);
-            }
-
-            if (Update.end()) {
-                logAndPublish("Update finished successfully. Restarting");
-                ESP.restart();
-            } else {
-                char logMessage[CHAR_LEN];
-                snprintf(logMessage, sizeof(logMessage), "Update failed. Error: %s", Update.errorString());
-                logAndPublish(logMessage);
+                if (Update.end()) {
+                    logAndPublish("Update finished successfully. Restarting");
+                    ESP.restart();
+                } else {
+                    char logMessage[CHAR_LEN];
+                    snprintf(logMessage, sizeof(logMessage), "Update failed. Error: %s", Update.errorString());
+                    logAndPublish(logMessage);
+                }
             }
         } else {
             logAndPublish("Not enough space to start OTA update");
@@ -180,14 +198,25 @@ void setup_web_server() {
     webServer.on(
         "/update", HTTP_POST,
         []() {
+            // Only reboot into a complete, verified image
+            bool ok = webUpdateWritten && !Update.hasError();
             webServer.sendHeader("Connection", "close");
-            webServer.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
-            delay(1000);
-            ESP.restart();
+            webServer.send(200, "text/plain", ok ? "OK" : "FAIL");
+            if (ok) {
+                delay(1000);
+                ESP.restart();
+            }
         },
         []() {
+            // The whole upload runs inside handleClient() on the loop task, so feed the
+            // watchdog per chunk or a slow upload resets the device mid-flash
+            esp_task_wdt_reset();
             HTTPUpload& upload = webServer.upload();
             if (upload.status == UPLOAD_FILE_START) {
+                webUpdateWritten = false;
+                if (Update.isRunning()) {
+                    Update.abort(); // Left over from an earlier upload that was cancelled
+                }
                 if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { // Start with unknown size
                     Update.printError(Serial);
                 }
@@ -197,11 +226,17 @@ void setup_web_server() {
                 }
             } else if (upload.status == UPLOAD_FILE_END) {
                 if (Update.end(true)) {
+                    webUpdateWritten = true;
                     logAndPublish("Update Success, rebooting");
                     delay(1000);
                 } else {
                     Update.printError(Serial);
                 }
+            } else if (upload.status == UPLOAD_FILE_ABORTED) {
+                // Browser cancelled or the connection dropped - without this the session
+                // stays "running" and blocks every later OTA until reboot
+                Update.abort();
+                logAndPublish("Web firmware upload aborted");
             }
         });
 

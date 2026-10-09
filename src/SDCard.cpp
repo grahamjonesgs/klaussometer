@@ -33,7 +33,36 @@ static int countLinesInFile(File& f) {
     return count;
 }
 
+// Mounts the SD card in 1-bit mode. Never formats on failure: a single bad mount
+// (flaky contact, exFAT card) must not wipe the logs and saved state.
+bool sdcard_mount() {
+    SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0);
+    return SD_MMC.begin("/sdcard", true, false);
+}
+
+static bool writeDataBlock(const char* filename, const void* dataPtr, size_t size);
+
+// Saves a snapshot of dataPtr. The struct is copied under dataMutex so the display
+// loop can't change it between the checksum and the write, so callers must not
+// hold dataMutex.
 bool saveDataBlock(const char* filename, const void* dataPtr, size_t size) {
+    void* snapshot = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!snapshot) {
+        snapshot = malloc(size);
+    }
+    if (!snapshot) {
+        return false;
+    }
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    memcpy(snapshot, dataPtr, size);
+    xSemaphoreGive(dataMutex);
+
+    bool ok = writeDataBlock(filename, snapshot, size);
+    free(snapshot);
+    return ok;
+}
+
+static bool writeDataBlock(const char* filename, const void* dataPtr, size_t size) {
     if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
         return false;
     }
@@ -48,11 +77,12 @@ bool saveDataBlock(const char* filename, const void* dataPtr, size_t size) {
         char logMessage[CHAR_LEN];
         snprintf(logMessage, sizeof(logMessage), "Error opening file %s for writing", filename);
         logAndPublish(logMessage);
-        SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0);
-        if (!SD_MMC.begin("/sdcard", true, true)) {
-            logAndPublish("SD Card initialization failed!");
+        // begin() returns early while the card is still registered, so unmount first
+        SD_MMC.end();
+        if (!sdcard_mount()) {
+            logAndPublish("SD Card remount failed!");
         } else {
-            logAndPublish("SD Card initialized");
+            logAndPublish("SD Card remounted");
         }
         xSemaphoreGive(sdMutex);
         return false;
@@ -245,7 +275,14 @@ void addLogToSDCard(const char* message, const char* logFilename) {
     if (logFile) {
         time_t now = time(nullptr);
         char logLine[CHAR_LEN + 50];
-        snprintf(logLine, sizeof(logLine), "%ld|%s\n", now, message);
+        int len = snprintf(logLine, sizeof(logLine), "%ld|", now);
+        // One entry per line: replace control characters (e.g. a newline inside a raw
+        // MQTT payload) so the message can't split into a second, unparseable line
+        for (size_t j = 0; message[j] != '\0' && len < (int)sizeof(logLine) - 2; j++) {
+            logLine[len++] = ((unsigned char)message[j] < 0x20) ? ' ' : message[j];
+        }
+        logLine[len++] = '\n';
+        logLine[len] = '\0';
         logFile.print(logLine);
         logFile.close();
 
@@ -406,6 +443,8 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
             } else if (c == '\t') {
                 escapedMsg[escPos++] = '\\';
                 escapedMsg[escPos++] = 't';
+            } else if ((unsigned char)c < 0x20) {
+                escapedMsg[escPos++] = ' '; // Other control characters are invalid in a JSON string
             } else {
                 escapedMsg[escPos++] = c;
             }
