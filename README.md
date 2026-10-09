@@ -61,18 +61,25 @@ klaussometer/
 ├── platformio.ini          # Build configuration
 ├── src/
 │   ├── main.cpp            # Boot sequence, main loop, task creation
-│   ├── config.h            # User configuration (not in git — see config.hxx)
-│   ├── config.hxx          # Configuration template
+│   ├── config.h            # User configuration (not in git — see config.example.h)
+│   ├── config.example.h    # Configuration template
 │   ├── constants.h         # Pin mappings, thresholds, intervals, colours
-│   ├── globals.h           # Data structures and function prototypes
+│   ├── types.h             # Data structures, shared mutex and dirty flags
 │   ├── html.h              # Web interface HTML templates
 │   ├── lv_conf.h           # LVGL configuration
-│   ├── APIs.cpp            # Consolidated API manager (weather, solar, UV, AQI, OTA)
+│   ├── mountain_sunset.h   # Generated mountain-sunset lookup table (see mountain-sunset/)
+│   ├── APIs.cpp            # Consolidated API manager (weather, solar, UV, AQI, OTA check)
+│   ├── board.cpp           # Board detection, backlight, LCD panel, touch and LVGL bring-up
+│   ├── board_waveshare.cpp # Waveshare I2C IO expander driver
 │   ├── connections.cpp     # WiFi, MQTT, and NTP setup
+│   ├── display.cpp         # All screen updates, day/night mode and status messages
+│   ├── logging.cpp         # Log to serial, SD card and MQTT
 │   ├── mqtt.cpp            # MQTT message handling and sensor updates
-│   ├── OTA.cpp             # Web server and firmware upload
-│   ├── ScreenUpdates.cpp   # Display rendering and solar calculations
-│   ├── SDCard.cpp          # Persistent storage with checksum validation
+│   ├── OTA.cpp             # Firmware update check and download from the OTA server
+│   ├── SDCard.cpp          # Persistent storage with checksum validation, log files
+│   ├── staleness.cpp       # Ages out sensor and API data that has stopped updating
+│   ├── utils.cpp           # Pure helpers (formatting, colours, checksums, versions)
+│   ├── web_server.cpp      # Local web interface: info, logs, reboot, firmware upload
 │   └── UI/                 # SquareLine Studio generated UI (screens, fonts, helpers)
 └── SL/                     # SquareLine Studio project files
 ```
@@ -89,7 +96,7 @@ klaussometer/
 
 ### Configuration
 
-1. Copy `src/config.hxx` to `src/config.h`
+1. Copy `src/config.example.h` to `src/config.h`
 2. Fill in your credentials:
 
 ```cpp
@@ -112,7 +119,7 @@ static const char* LONGITUDE = "18.4241";
 static const char* SOLAR_URL = "your_solaredge_url";
 static const char* SOLAR_APPID = "your_app_id";
 static const char* SOLAR_SECRET = "your_secret";
-// ... see config.hxx for all fields
+// ... see config.example.h for all fields
 
 // OTA server (optional)
 static const char* OTA_HOST = "your_server.com";
