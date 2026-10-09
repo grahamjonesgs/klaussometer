@@ -15,7 +15,7 @@ extern Solar solar;
 extern QueueHandle_t statusMessageQueue;
 extern char statusMessageValue[CHAR_LEN];
 
-// Updates battery arc color and the charge/discharge status labels.
+// Updates battery arc colour (by state of charge) and the charge/discharge status labels.
 // Shows remaining time to empty (discharging) or full (charging).
 static void updateChargingStatus() {
     char tempString[CHAR_LEN];
@@ -47,7 +47,6 @@ static void updateChargingStatus() {
             tempString[0] = '\0'; // Don't print for too long time
         }
         lv_label_set_text(ui_ChargingTime, tempString);
-        setArcColor(ui_BatteryArc, lv_color_hex(COLOR_RED));
     } else if (solar.batteryPower < BATTERY_POWER_CHARGE_THRESHOLD) {
         snprintf(tempString, sizeof(tempString), "Charging %2.1fkW", -solar.batteryPower);
         lv_label_set_text(ui_ChargingLabel, tempString);
@@ -69,12 +68,19 @@ static void updateChargingStatus() {
             tempString[0] = '\0'; // Don't print for too long time
         }
         lv_label_set_text(ui_ChargingTime, tempString);
-        setArcColor(ui_BatteryArc, lv_color_hex(COLOR_GREEN));
     } else {
         lv_label_set_text(ui_ChargingLabel, "");
         lv_label_set_text(ui_ChargingTime, "");
-        setArcColor(ui_BatteryArc, lv_color_hex(COLOR_BATTERY_IDLE));
     }
+
+    // Battery arc colour follows state of charge: red when low, green when nearly full, amber between
+    int batteryColor = COLOR_AMBER;
+    if (solar.batteryCharge < BATTERY_ARC_RED_BELOW_PCT) {
+        batteryColor = COLOR_RED;
+    } else if (solar.batteryCharge > BATTERY_ARC_GREEN_ABOVE_PCT) {
+        batteryColor = COLOR_GREEN;
+    }
+    setArcColor(ui_BatteryArc, lv_color_hex(batteryColor));
     setArcColor(ui_SolarArc, lv_color_hex(COLOR_GREEN));
 }
 

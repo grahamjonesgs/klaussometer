@@ -99,6 +99,8 @@ static const float BATTERY_CRITICAL = 3.40; // The point where the battery is co
 static const float BATTERY_POWER_DISCHARGE_THRESHOLD = 0.1f; // Min kW for the battery to be considered discharging
 static const float BATTERY_POWER_CHARGE_THRESHOLD = -0.1f;   // Max kW (negative) for the battery to be considered charging
 static const float BATTERY_CHARGE_FULL_THRESHOLD = 0.99f;    // SoC fraction treated as fully charged (99%)
+static const float BATTERY_ARC_RED_BELOW_PCT = 33.0f;        // Battery arc is red below this state of charge (%)
+static const float BATTERY_ARC_GREEN_ABOVE_PCT = 66.0f;      // Battery arc is green above this; amber in between
 
 // Reading state: tracks whether a sensor has valid data and which direction it's trending.
 // Stored in the Readings struct as uint8_t so it persists to SD card with no size change.
@@ -238,7 +240,6 @@ static const int COLOR_STALE = 0x808080;  // Grey: sensor offline / data too old
 static const int COLOR_GREEN = 0x205602;
 static const int COLOR_BLACK = 0x000000;
 static const int COLOR_WHITE = 0xFFFFFF;
-static const int COLOR_BATTERY_IDLE = 0x2095F6; // Blue: battery neither charging nor discharging
 
 // Night mode arc colors
 static const int COLOR_ARC_TRACK_NIGHT = 0x404040; // Dark gray track for night
