@@ -14,7 +14,7 @@
 #include "utils.h"
 #include <Preferences.h>
 
-unsigned long lastOTAUpdateCheck = 0;
+static time_t lastOTAUpdateCheck = 0; // When the version file was last checked (0 = not yet)
 
 // Set while either OTA path (server check or web upload) owns the global Update object
 static std::atomic<bool> otaInProgress(false);
@@ -51,10 +51,19 @@ static void recordAttempt(const char* version, time_t now) {
     prefs.end();
 }
 
+static void checkForUpdates();
+static void updateFirmware();
+
+void otaCheckIfDue() {
+    if (lastOTAUpdateCheck == 0 || time(nullptr) - lastOTAUpdateCheck > CHECK_UPDATE_INTERVAL_SEC) {
+        checkForUpdates();
+    }
+}
+
 // Fetches the version file from the OTA server and compares it to FIRMWARE_VERSION.
 // If the server has a newer version, calls updateFirmware() immediately.
-// Called periodically from api_manager_t (not a standalone task).
-void checkForUpdates() {
+// Called from otaCheckIfDue() on the API manager task (not a standalone task).
+static void checkForUpdates() {
     if (WiFi.status() != WL_CONNECTED)
         return;
     // The retry guard below needs real time
@@ -103,7 +112,7 @@ void checkForUpdates() {
 // Downloads the firmware binary from the OTA server and flashes it via the ESP Update library.
 // Logs progress every 10% and resets the watchdog during the download loop.
 // Restarts the device on success, so it only returns on failure.
-void updateFirmware() {
+static void updateFirmware() {
     // The version check before this was a full HTTPS round trip - feed before the next one
     esp_task_wdt_reset();
     HTTPClient& http = apiHttp();

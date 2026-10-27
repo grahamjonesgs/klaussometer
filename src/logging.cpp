@@ -1,4 +1,5 @@
 #include "logging.h"
+#include "constants.h"
 #include <Arduino.h>
 #include <esp_task_wdt.h>
 #include "SDCard.h"
@@ -36,4 +37,14 @@ void logAndPublish(const char* messageBuffer) {
 
 void errorPublish(const char* messageBuffer) {
     publishMessageInternal(messageBuffer, ERROR_LOG_FILENAME, true);
+}
+
+void logStackHwmIfDue(const char* taskName, unsigned long* lastLogMs) {
+    if (*lastLogMs != 0 && millis() - *lastLogMs < HWM_LOG_INTERVAL_MS) {
+        return;
+    }
+    *lastLogMs = millis();
+    char hwmMsg[CHAR_LEN];
+    snprintf(hwmMsg, sizeof(hwmMsg), "Stack HWM: %s %u words", taskName, uxTaskGetStackHighWaterMark(nullptr));
+    logAndPublish(hwmMsg);
 }

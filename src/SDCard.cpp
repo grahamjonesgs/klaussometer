@@ -595,11 +595,6 @@ void sdcard_logger_t(void* pvParameters) {
         if (xQueueReceive(sdLogQueue, &logMsg, pdMS_TO_TICKS(60000)) == pdTRUE) {
             addLogToSDCard(logMsg.message, logMsg.filename);
         }
-        if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
-            lastHwmLog = millis();
-            char hwmMsg[CHAR_LEN];
-            snprintf(hwmMsg, sizeof(hwmMsg), "Stack HWM: SD Logger %u words", uxTaskGetStackHighWaterMark(nullptr));
-            logAndPublish(hwmMsg);
-        }
+        logStackHwmIfDue("SD Logger", &lastHwmLog);
     }
 }

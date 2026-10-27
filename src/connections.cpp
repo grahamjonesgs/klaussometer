@@ -64,12 +64,7 @@ void connectivity_manager_t(void* pvParameters) {
         // Reset watchdog at the start of each loop iteration
         esp_task_wdt_reset();
 
-        if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
-            lastHwmLog = millis();
-            char hwmMsg[CHAR_LEN];
-            snprintf(hwmMsg, sizeof(hwmMsg), "Stack HWM: Connectivity %u words", uxTaskGetStackHighWaterMark(nullptr));
-            logAndPublish(hwmMsg);
-        }
+        logStackHwmIfDue("Connectivity", &lastHwmLog);
 
         if (WiFi.status() != WL_CONNECTED) {
             wasDisconnected = true;

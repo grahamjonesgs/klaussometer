@@ -275,12 +275,7 @@ void displayStatusMessages_t(void* pvParameters) {
             statusMessageValue[0] = '\0';
             xSemaphoreGive(dataMutex);
         }
-        if (millis() - lastHwmLog > HWM_LOG_INTERVAL_MS) {
-            lastHwmLog = millis();
-            char hwmMsg[CHAR_LEN];
-            snprintf(hwmMsg, sizeof(hwmMsg), "Stack HWM: Display Status %u words", uxTaskGetStackHighWaterMark(nullptr));
-            logAndPublish(hwmMsg);
-        }
+        logStackHwmIfDue("Display Status", &lastHwmLog);
     }
 }
 

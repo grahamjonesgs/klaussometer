@@ -184,7 +184,6 @@ static const int REMAINING_TIME_ROUND_MIN = 10;           // Round battery remai
 
 // Stack high-water-mark logging
 static const unsigned long HWM_LOG_INTERVAL_MS = 3600000UL; // Milliseconds between periodic stack HWM log entries
-static const int HWM_LOG_INTERVAL_SEC = 3600;               // Seconds between stack HWM log entries (for tasks using time())
 
 // Solar token
 static const int SOLAR_TOKEN_REFRESH_SEC = 43200; // Refresh Solarman JWT after 12 hours
