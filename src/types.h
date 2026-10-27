@@ -116,9 +116,14 @@ struct __attribute__((packed)) SolarToken {
     time_t tokenTime;
 };
 
+// Header written before every block saved to SD. A file whose magic, version, size
+// or CRC doesn't match is rejected, so a layout change or corruption means a refetch.
 struct __attribute__((packed)) DataHeader {
-    size_t size;
-    uint8_t checksum;
+    uint32_t magic;    // DATA_HEADER_MAGIC
+    uint16_t version;  // DATA_FORMAT_VERSION
+    uint16_t reserved; // 0
+    uint32_t size;     // Bytes of data following the header
+    uint32_t crc;      // CRC-32 of the data
 };
 
 struct StatusMessage {

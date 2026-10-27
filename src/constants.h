@@ -228,6 +228,7 @@ static const int SOLAR_TOKEN_REFRESH_SEC = 43200; // Refresh Solarman JWT after 
 // Mutex timeout values (in ms) — use the named constant that matches the call site's tolerance
 static const int MUTEX_TIMEOUT_SD_MS = 5000;  // SD operations can be slow; wait up to 5 s
 static constexpr int MUTEX_NOWAIT = 0;        // Non-blocking: try once, skip if unavailable
+static const int SHUTDOWN_SD_TIMEOUT_MS = 200; // Max wait for the SD card in the shutdown handler
 
 static const int WIFI_RETRIES = 10; // Number of times to retry the wifi before a restart
 
@@ -271,6 +272,11 @@ static const char* const INSIDE_AIR_QUALITY_DATA_FILENAME = "/inside_aq_data.bin
 static const char* const SOLAR_FORECAST_DATA_FILENAME = "/solar_forecast.bin";
 static const char* const NORMAL_LOG_FILENAME = "/normal_log.txt";
 static const char* const ERROR_LOG_FILENAME = "/error_log.txt";
+
+// Saved data block header (see DataHeader)
+static const uint32_t DATA_HEADER_MAGIC = 0x4B4C5344; // "KLSD"
+static const uint16_t DATA_FORMAT_VERSION = 2;        // Bump to invalidate every saved block (1 = old XOR header)
+static const unsigned long SD_BUSY_LOG_INTERVAL_MS = 60000; // Min interval between "SD card busy" log lines
 
 // Log settings
 static constexpr int MAX_LOG_FILE_SIZE = 1024 * 1024; // 1MB max per log file

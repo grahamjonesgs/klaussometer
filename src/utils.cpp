@@ -196,15 +196,18 @@ void formatTimeHMS(time_t t, char* buf, size_t bufSize) {
     strftime(buf, bufSize, "%H:%M:%S", &ts);
 }
 
-// XOR checksum over a byte range. Simple and fast; sufficient for detecting
-// accidental corruption in the small packed structs saved to SD card.
-uint8_t calculateChecksum(const void* dataPtr, size_t size) {
-    uint8_t sum = 0;
+// CRC-32 (IEEE 802.3, reflected, as used by zlib) over a byte range. Bitwise rather
+// than table-driven: the saved structs are at most a few KB, so speed doesn't matter.
+uint32_t crc32Calc(const void* dataPtr, size_t size) {
+    uint32_t crc = 0xFFFFFFFFu;
     const uint8_t* bytePtr = (const uint8_t*)dataPtr;
     for (size_t i = 0; i < size; ++i) {
-        sum ^= bytePtr[i];
+        crc ^= bytePtr[i];
+        for (int bit = 0; bit < 8; ++bit) {
+            crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+        }
     }
-    return sum;
+    return ~crc;
 }
 
 // Compares two semantic version strings (e.g. "4.1.35" vs "4.1.36").

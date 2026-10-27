@@ -177,9 +177,10 @@ static void onMqttMessage(int messageSize) {
         // READINGS_SAVE_INTERVAL_SEC of state across a reboot is acceptable.
         static time_t lastReadingsSave = 0;
         time_t now = time(nullptr);
-        if (now - lastReadingsSave >= READINGS_SAVE_INTERVAL_SEC) {
+        // Only a successful save restarts the interval; a skipped one is retried on the next message
+        if (now - lastReadingsSave >= READINGS_SAVE_INTERVAL_SEC &&
+            saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings)) {
             lastReadingsSave = now;
-            saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings);
         }
     } else if (strcmp(topicBuffer, MQTT_INSIDE_CO2_TOPIC) == 0 ||
                strcmp(topicBuffer, MQTT_INSIDE_PM1_TOPIC) == 0 ||
@@ -449,9 +450,9 @@ void updateInsideAirQuality(const char* topic, char* recMessage) {
     dirtyInsideAQ = true;
     // Throttled for the same SD-wear reason as the readings save above
     static time_t lastInsideAQSave = 0;
-    if (now - lastInsideAQSave >= READINGS_SAVE_INTERVAL_SEC) {
+    if (now - lastInsideAQSave >= READINGS_SAVE_INTERVAL_SEC &&
+        saveDataBlock(INSIDE_AIR_QUALITY_DATA_FILENAME, &insideAirQuality, sizeof(insideAirQuality))) {
         lastInsideAQSave = now;
-        saveDataBlock(INSIDE_AIR_QUALITY_DATA_FILENAME, &insideAirQuality, sizeof(insideAirQuality));
     }
 }
 // Copies a "HH:MM" battery-full time into dest; null or anything malformed gives "" (won't fill).

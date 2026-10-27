@@ -1,7 +1,13 @@
 #include "SDCard.h"
-extern Solar solar;
 SemaphoreHandle_t sdMutex;
 QueueHandle_t sdLogQueue;
+
+static const char* const TEMP_LOG_FILENAME = "/temp_log.txt";
+static const size_t SD_IO_BUFFER_SIZE = 512; // Block size for buffered log reads and copies
+
+// Shared block buffer for log scans and copies. Only used with sdMutex held, and the
+// helpers that use it never run nested, so one buffer keeps it off the small task stacks.
+static uint8_t sdIoBuffer[SD_IO_BUFFER_SIZE];
 
 void sdcard_init() {
     sdLogQueue = xQueueCreate(SD_LOG_QUEUE_SIZE, sizeof(SDLogMessage));
@@ -24,20 +30,117 @@ static int* getLineCountPtr(const char* logFilename) {
     return (strcmp(logFilename, NORMAL_LOG_FILENAME) == 0) ? &normalLogLineCount : &errorLogLineCount;
 }
 
+// Counts the newlines from the current position to the end of the file, a block at a time.
+// Caller holds sdMutex.
 static int countLinesInFile(File& f) {
     int count = 0;
-    while (f.available()) {
-        if (f.read() == '\n')
+    size_t bytesRead;
+    while ((bytesRead = f.read(sdIoBuffer, sizeof(sdIoBuffer))) > 0) {
+        const uint8_t* p = sdIoBuffer;
+        const uint8_t* end = sdIoBuffer + bytesRead;
+        while ((p = (const uint8_t*)memchr(p, '\n', end - p)) != nullptr) {
             count++;
+            p++;
+        }
     }
     return count;
 }
 
+// Advances f past the next `lines` newlines, a block at a time. Returns false if the
+// file ended first. Caller holds sdMutex.
+static bool skipLines(File& f, int lines) {
+    if (lines <= 0) {
+        return true;
+    }
+    int skipped = 0;
+    size_t bytesRead;
+    while ((bytesRead = f.read(sdIoBuffer, sizeof(sdIoBuffer))) > 0) {
+        for (size_t i = 0; i < bytesRead; i++) {
+            if (sdIoBuffer[i] == '\n' && ++skipped == lines) {
+                // Rewind to just after this newline
+                f.seek(f.position() - bytesRead + i + 1);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Caller holds sdMutex. Fills the cached line count for one log file if not yet known.
+static void ensureLineCount(const char* logFilename) {
+    int* lineCountPtr = getLineCountPtr(logFilename);
+    if (*lineCountPtr != -1) {
+        return;
+    }
+    File logFile = SD_MMC.open(logFilename, FILE_READ);
+    if (logFile) {
+        *lineCountPtr = countLinesInFile(logFile);
+        logFile.close();
+    } else {
+        *lineCountPtr = 0;
+    }
+}
+
 // Mounts the SD card in 1-bit mode. Never formats on failure: a single bad mount
 // (flaky contact, exFAT card) must not wipe the logs and saved state.
-bool sdcard_mount() {
+// On success the log line counts are cached here, at boot, so neither the logger
+// nor the web log viewer has to scan a 1 MB file later while holding sdMutex.
+static bool mountCard() {
     SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0);
     return SD_MMC.begin("/sdcard", true, false);
+}
+
+bool sdcard_mount() {
+    if (!mountCard()) {
+        return false;
+    }
+    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) == pdTRUE) {
+        normalLogLineCount = -1;
+        errorLogLineCount = -1;
+        ensureLineCount(NORMAL_LOG_FILENAME);
+        ensureLineCount(ERROR_LOG_FILENAME);
+        xSemaphoreGive(sdMutex);
+    }
+    return true;
+}
+
+// Formats one log line, "<epoch>|<message>\n", replacing control characters (e.g. a
+// newline inside a raw MQTT payload) so a message can't split into a second,
+// unparseable line. Returns the length written.
+static int formatLogLine(char* out, size_t outSize, const char* message) {
+    int len = snprintf(out, outSize, "%ld|", (long)time(nullptr));
+    for (size_t j = 0; message[j] != '\0' && len < (int)outSize - 2; j++) {
+        out[len++] = ((unsigned char)message[j] < 0x20) ? ' ' : message[j];
+    }
+    out[len++] = '\n';
+    out[len] = '\0';
+    return len;
+}
+
+// Caller holds sdMutex. Appends one formatted line and bumps the cached line count.
+static bool appendLogLine(const char* logFilename, const char* message) {
+    File logFile = SD_MMC.open(logFilename, FILE_APPEND);
+    if (!logFile) {
+        return false;
+    }
+    char logLine[CHAR_LEN + 50];
+    int len = formatLogLine(logLine, sizeof(logLine), message);
+    bool ok = logFile.write((const uint8_t*)logLine, len) == (size_t)len;
+    logFile.close();
+    int* lineCountPtr = getLineCountPtr(logFilename);
+    if (ok && *lineCountPtr >= 0) {
+        (*lineCountPtr)++;
+    }
+    return ok;
+}
+
+bool sdcard_append_line_now(const char* logFilename, const char* message, int timeoutMs) {
+    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(timeoutMs)) != pdTRUE) {
+        return false;
+    }
+    bool ok = appendLogLine(logFilename, message);
+    xSemaphoreGive(sdMutex);
+    return ok;
 }
 
 static bool writeDataBlock(const char* filename, const void* dataPtr, size_t size);
@@ -62,24 +165,44 @@ bool saveDataBlock(const char* filename, const void* dataPtr, size_t size) {
     return ok;
 }
 
+// Writes header + data to "<filename>.tmp", then swaps it into place, so a power cut
+// mid-save leaves the previous good copy (or the complete .tmp) rather than a
+// truncated file. loadDataBlock falls back to the .tmp if the swap didn't finish.
 static bool writeDataBlock(const char* filename, const void* dataPtr, size_t size) {
     if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
+        // Rate-limited so a stuck card can't flood the log
+        static unsigned long lastTimeoutLog = 0;
+        if (lastTimeoutLog == 0 || millis() - lastTimeoutLog > SD_BUSY_LOG_INTERVAL_MS) {
+            lastTimeoutLog = millis();
+            char logMessage[CHAR_LEN];
+            snprintf(logMessage, sizeof(logMessage), "SD card busy - save of %s skipped", filename);
+            logAndPublish(logMessage);
+        }
         return false;
     }
 
     DataHeader header;
+    header.magic = DATA_HEADER_MAGIC;
+    header.version = DATA_FORMAT_VERSION;
+    header.reserved = 0;
     header.size = size;
-    header.checksum = calculateChecksum(dataPtr, size);
+    header.crc = crc32Calc(dataPtr, size);
 
-    File dataFile = SD_MMC.open(filename, FILE_WRITE);
+    char tmpName[MQTT_TOPIC_LEN];
+    snprintf(tmpName, sizeof(tmpName), "%s.tmp", filename);
+
+    File dataFile = SD_MMC.open(tmpName, FILE_WRITE);
 
     if (!dataFile) {
         char logMessage[CHAR_LEN];
-        snprintf(logMessage, sizeof(logMessage), "Error opening file %s for writing", filename);
+        snprintf(logMessage, sizeof(logMessage), "Error opening file %s for writing", tmpName);
         logAndPublish(logMessage);
-        // begin() returns early while the card is still registered, so unmount first
+        // begin() returns early while the card is still registered, so unmount first.
+        // sdMutex is already held, so remount directly and let the line counts refill
         SD_MMC.end();
-        if (!sdcard_mount()) {
+        normalLogLineCount = -1;
+        errorLogLineCount = -1;
+        if (!mountCard()) {
             logAndPublish("SD Card remount failed!");
         } else {
             logAndPublish("SD Card remounted");
@@ -88,98 +211,186 @@ static bool writeDataBlock(const char* filename, const void* dataPtr, size_t siz
         return false;
     }
 
-    // 2. Write the header first
     size_t headerWritten = dataFile.write((const uint8_t*)&header, sizeof(DataHeader));
-    if (headerWritten != sizeof(DataHeader)) {
-        char logMessage[CHAR_LEN];
-        snprintf(logMessage, sizeof(logMessage), "Failed to write header to %s", filename);
-        logAndPublish(logMessage);
-        dataFile.close();
+    size_t bytesWritten = (headerWritten == sizeof(DataHeader)) ? dataFile.write((const uint8_t*)dataPtr, size) : 0;
+    dataFile.flush();
+    dataFile.close();
+
+    if (headerWritten != sizeof(DataHeader) || bytesWritten != size) {
+        SD_MMC.remove(tmpName); // Never leave a short .tmp for the load fallback to find
         xSemaphoreGive(sdMutex);
+        char logMessage[CHAR_LEN];
+        snprintf(logMessage, sizeof(logMessage), "Failed to write %s: header %zu/%zu, data %zu/%zu bytes", filename, headerWritten, sizeof(DataHeader),
+                 bytesWritten, size);
+        logAndPublish(logMessage);
         return false;
     }
 
-    size_t bytesWritten = dataFile.write((const uint8_t*)dataPtr, size);
-    dataFile.close();
+    SD_MMC.remove(filename);
+    bool renamed = SD_MMC.rename(tmpName, filename);
     xSemaphoreGive(sdMutex);
 
-    if (bytesWritten == size) {
-        return true;
-    } else {
+    if (!renamed) {
         char logMessage[CHAR_LEN];
-        snprintf(logMessage, sizeof(logMessage), "Failed to write all data. Wrote %zu of %zu data bytes to %s", bytesWritten, size, filename);
+        snprintf(logMessage, sizeof(logMessage), "Failed to rename %s - the .tmp copy will be loaded instead", tmpName);
         logAndPublish(logMessage);
-        return false;
     }
+    return true;
 }
 
-bool loadDataBlock(const char* filename, void* dataPtr, size_t expected_size) {
-    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
-        return false;
-    }
-
-    if (!SD_MMC.exists(filename)) {
-        char logMessage[CHAR_LEN];
-        snprintf(logMessage, sizeof(logMessage), "File %s does not exist", filename);
-        logAndPublish(logMessage);
-        xSemaphoreGive(sdMutex);
-        return false;
-    }
-
+// Caller holds sdMutex. Reads and verifies one data file into buffer (expected_size
+// bytes). Returns false with a reason in `why` if anything doesn't check out.
+static bool readVerifiedBlock(const char* filename, void* buffer, size_t expected_size, char* why, size_t whyLen) {
     File dataFile = SD_MMC.open(filename, FILE_READ);
     if (!dataFile) {
-        char logMessage[CHAR_LEN];
-        snprintf(logMessage, sizeof(logMessage), "Error opening file %s for reading", filename);
-        logAndPublish(logMessage);
-        xSemaphoreGive(sdMutex);
+        snprintf(why, whyLen, "cannot open %s", filename);
         return false;
     }
 
-    // 1. Read the header
     DataHeader header;
     size_t headerRead = dataFile.readBytes((char*)&header, sizeof(DataHeader));
-
     if (headerRead != sizeof(DataHeader)) {
-        char logMessage[CHAR_LEN];
-        snprintf(logMessage, sizeof(logMessage), "Failed to read header from %s. Expected %zu bytes", filename, sizeof(DataHeader));
-        logAndPublish(logMessage);
         dataFile.close();
-        xSemaphoreGive(sdMutex);
+        snprintf(why, whyLen, "%s: short header (%zu bytes)", filename, headerRead);
         return false;
     }
-
-    // 2. Verify file size consistency
+    if (header.magic != DATA_HEADER_MAGIC || header.version != DATA_FORMAT_VERSION) {
+        dataFile.close();
+        snprintf(why, whyLen, "%s: unknown format (old firmware?)", filename);
+        return false;
+    }
     if (header.size != expected_size) {
-        char logMessage[CHAR_LEN];
-        snprintf(logMessage, sizeof(logMessage), "Data size mismatch in %s. File header says %zu bytes, but struct expects %zu bytes", filename, header.size, expected_size);
-        logAndPublish(logMessage);
         dataFile.close();
-        xSemaphoreGive(sdMutex);
+        snprintf(why, whyLen, "%s: size %u, struct expects %u bytes", filename, (unsigned)header.size, (unsigned)expected_size);
         return false;
     }
 
-    // 3. Read the raw data block directly into the target memory
-    size_t bytesRead = dataFile.readBytes((char*)dataPtr, expected_size);
+    size_t bytesRead = dataFile.readBytes((char*)buffer, expected_size);
     dataFile.close();
-    xSemaphoreGive(sdMutex);
-
     if (bytesRead != expected_size) {
-        char logMessage[CHAR_LEN];
-        snprintf(logMessage, sizeof(logMessage), "Failed to read all data from %s. Read %zu of %zu bytes", filename, bytesRead, expected_size);
-        logAndPublish(logMessage);
+        snprintf(why, whyLen, "%s: read %zu of %zu bytes", filename, bytesRead, expected_size);
         return false;
     }
 
-    // 4. Verify integrity
-    uint8_t calculated = calculateChecksum(dataPtr, expected_size);
-
-    if (header.checksum != calculated) {
-        char logMessage[CHAR_LEN];
-        snprintf(logMessage, sizeof(logMessage), "Checksum failed for %s! Loaded: %02X, Calculated: %02X", filename, header.checksum, calculated);
-        logAndPublish(logMessage);
+    uint32_t calculated = crc32Calc(buffer, expected_size);
+    if (header.crc != calculated) {
+        snprintf(why, whyLen, "%s: CRC mismatch (file %08lX, data %08lX)", filename, (unsigned long)header.crc, (unsigned long)calculated);
         return false;
     }
     return true;
+}
+
+// Loads a block saved by saveDataBlock into dataPtr. The file is read into a scratch
+// buffer and only copied into dataPtr once its header, size and CRC all check out, so
+// a corrupt or partial file never leaves the target half-overwritten. Falls back to
+// the .tmp copy left by an interrupted save.
+bool loadDataBlock(const char* filename, void* dataPtr, size_t expected_size) {
+    void* scratch = heap_caps_malloc(expected_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!scratch) {
+        scratch = malloc(expected_size);
+    }
+    if (!scratch) {
+        return false;
+    }
+    if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
+        free(scratch);
+        return false;
+    }
+
+    char tmpName[MQTT_TOPIC_LEN];
+    snprintf(tmpName, sizeof(tmpName), "%s.tmp", filename);
+
+    char why[CHAR_LEN] = "";
+    char tmpWhy[CHAR_LEN] = "";
+    bool ok = false;
+    if (SD_MMC.exists(filename)) {
+        ok = readVerifiedBlock(filename, scratch, expected_size, why, sizeof(why));
+    } else {
+        snprintf(why, sizeof(why), "File %s does not exist", filename);
+    }
+    bool fromTmp = false;
+    if (!ok && SD_MMC.exists(tmpName)) {
+        ok = readVerifiedBlock(tmpName, scratch, expected_size, tmpWhy, sizeof(tmpWhy));
+        fromTmp = ok;
+    }
+    xSemaphoreGive(sdMutex);
+
+    if (ok) {
+        memcpy(dataPtr, scratch, expected_size);
+    }
+    free(scratch);
+
+    if (!ok) {
+        logAndPublish(why);
+        if (tmpWhy[0]) {
+            logAndPublish(tmpWhy);
+        }
+    } else if (fromTmp) {
+        char logMessage[CHAR_LEN];
+        snprintf(logMessage, sizeof(logMessage), "%s - restored from %s", why, tmpName);
+        logAndPublish(logMessage);
+    }
+    return ok;
+}
+
+// Caller holds sdMutex. Keeps the newest 75% of lines (at least 100) by copying them to
+// a temp file and swapping it in. The original is only replaced once the copy is
+// complete, so a full card or failed write never loses the log.
+static void rotateLog(const char* logFilename) {
+    int* lineCountPtr = getLineCountPtr(logFilename);
+    File oldFile = SD_MMC.open(logFilename, FILE_READ);
+    if (!oldFile) {
+        return;
+    }
+    int totalLines = *lineCountPtr;
+    if (totalLines <= 0) {
+        totalLines = countLinesInFile(oldFile);
+        oldFile.seek(0);
+    }
+
+    // Calculate how many lines to keep (75% of total, minimum 100)
+    int linesToKeep = (totalLines * 3) / 4;
+    if (linesToKeep < 100)
+        linesToKeep = 100;
+    int linesToSkip = totalLines - linesToKeep;
+    skipLines(oldFile, linesToSkip);
+
+    File tempFile = SD_MMC.open(TEMP_LOG_FILENAME, FILE_WRITE);
+    if (!tempFile) {
+        oldFile.close();
+        Serial.println("Log rotation: cannot create temp file - keeping the original log");
+        return;
+    }
+    bool copyOk = true;
+    int linesCopied = 0;
+    size_t bytesRead;
+    while ((bytesRead = oldFile.read(sdIoBuffer, sizeof(sdIoBuffer))) > 0) {
+        if (tempFile.write(sdIoBuffer, bytesRead) != bytesRead) {
+            copyOk = false;
+            break;
+        }
+        for (size_t i = 0; i < bytesRead; i++) {
+            if (sdIoBuffer[i] == '\n')
+                linesCopied++;
+        }
+    }
+    tempFile.flush();
+    tempFile.close();
+    oldFile.close();
+
+    if (!copyOk) {
+        SD_MMC.remove(TEMP_LOG_FILENAME);
+        Serial.println("Log rotation: temp file write failed - keeping the original log");
+        return;
+    }
+    // Replace old file with temp file
+    SD_MMC.remove(logFilename);
+    if (SD_MMC.rename(TEMP_LOG_FILENAME, logFilename)) {
+        *lineCountPtr = linesCopied;
+    } else {
+        *lineCountPtr = -1; // Unknown - recounted on the next write
+        Serial.println("Log rotation: rename failed");
+    }
 }
 
 void addLogToSDCard(const char* message, const char* logFilename) {
@@ -191,120 +402,44 @@ void addLogToSDCard(const char* message, const char* logFilename) {
         return;
     }
 
-    // Determine which cache to use
-    int* lineCountPtr = getLineCountPtr(logFilename);
+    // Only needed if the boot-time count in sdcard_mount() didn't happen (or a rotation
+    // rename failed); counted a block at a time
+    ensureLineCount(logFilename);
 
-    // Initialize cache if needed (first time or after rotation)
-    if (*lineCountPtr == -1) {
-        if (SD_MMC.exists(logFilename)) {
-            File logFile = SD_MMC.open(logFilename, FILE_READ);
-            if (logFile) {
-                *lineCountPtr = countLinesInFile(logFile);
-                logFile.close();
-            }
-        } else {
-            *lineCountPtr = 0;
-        }
-    }
-
-    // Check if file exists and get size
-    bool rotate = false;
-    if (SD_MMC.exists(logFilename)) {
-        File logFile = SD_MMC.open(logFilename, FILE_READ);
-        if (logFile) {
-            size_t fileSize = logFile.size();
-            logFile.close();
-
-            // Rotate log if it exceeds max size
-            if (fileSize > MAX_LOG_FILE_SIZE) {
-                rotate = true;
-            }
-        }
-    }
-
-    // Rotate log file if needed (keep newest 75% of entries)
-    if (rotate) {
-        File oldFile = SD_MMC.open(logFilename, FILE_READ);
-        if (oldFile) {
-            // Use cached count if available, otherwise count
-            int totalLines = *lineCountPtr;
-            if (totalLines <= 0) {
-                totalLines = countLinesInFile(oldFile);
-                oldFile.seek(0);
-            }
-
-            // Calculate how many lines to keep (75% of total, minimum 100)
-            int linesToKeep = (totalLines * 3) / 4; // 75% of entries
-            if (linesToKeep < 100)
-                linesToKeep = 100;
-
-            int linesToSkip = totalLines - linesToKeep;
-            if (linesToSkip < 0)
-                linesToSkip = 0;
-
-            // Skip oldest entries
-            for (int i = 0; i < linesToSkip; i++) {
-                while (oldFile.available() && oldFile.read() != '\n')
-                    ;
-            }
-
-            // Write remaining lines to temp file using buffered copy
-            File tempFile = SD_MMC.open("/temp_log.txt", FILE_WRITE);
-            if (tempFile) {
-                const size_t COPY_BUFFER_SIZE = 512;
-                uint8_t copyBuffer[COPY_BUFFER_SIZE];
-                while (oldFile.available()) {
-                    size_t bytesRead = oldFile.read(copyBuffer, COPY_BUFFER_SIZE);
-                    tempFile.write(copyBuffer, bytesRead);
-                }
-                tempFile.close();
-            }
-            oldFile.close();
-
-            // Replace old file with temp file
-            SD_MMC.remove(logFilename);
-            SD_MMC.rename("/temp_log.txt", logFilename);
-
-            // Update cached line count after rotation
-            *lineCountPtr = linesToKeep;
-        }
-    }
-
-    // Append new log entry
-    File logFile = SD_MMC.open(logFilename, FILE_APPEND);
+    // Rotate log if it exceeds max size
+    File logFile = SD_MMC.open(logFilename, FILE_READ);
     if (logFile) {
-        time_t now = time(nullptr);
-        char logLine[CHAR_LEN + 50];
-        int len = snprintf(logLine, sizeof(logLine), "%ld|", now);
-        // One entry per line: replace control characters (e.g. a newline inside a raw
-        // MQTT payload) so the message can't split into a second, unparseable line
-        for (size_t j = 0; message[j] != '\0' && len < (int)sizeof(logLine) - 2; j++) {
-            logLine[len++] = ((unsigned char)message[j] < 0x20) ? ' ' : message[j];
-        }
-        logLine[len++] = '\n';
-        logLine[len] = '\0';
-        logFile.print(logLine);
+        size_t fileSize = logFile.size();
         logFile.close();
-
-        // Increment cached line count
-        (*lineCountPtr)++;
+        if (fileSize > MAX_LOG_FILE_SIZE) {
+            rotateLog(logFilename);
+        }
     }
+
+    appendLogLine(logFilename, message);
     xSemaphoreGive(sdMutex);
 }
 
 // Estimate max JSON size: ~350 bytes per entry (timestamp, synced, message up to 255 chars with escaping)
 #define JSON_BUFFER_SIZE (MAX_LOG_ENTRIES_TO_READ * 400 + 32)
 
-void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
+// Returns a malloc'd JSON document (caller frees) and its length, or nullptr if no
+// buffer could be allocated.
+static char* allocJsonBuffer() {
     // Pre-allocate the output buffer to avoid repeated reallocations
     char* jsonBuffer = (char*)heap_caps_malloc(JSON_BUFFER_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (jsonBuffer == nullptr) {
         // Fall back to internal RAM if PSRAM not available
         jsonBuffer = (char*)malloc(JSON_BUFFER_SIZE);
     }
+    return jsonBuffer;
+}
+
+char* getLogsFromSDCard(const char* logFilename, size_t* jsonLength) {
+    char* jsonBuffer = allocJsonBuffer();
     if (jsonBuffer == nullptr) {
-        jsonOutput = "{\"logs\":[],\"error\":\"Memory allocation failed\"}";
-        return;
+        *jsonLength = 0;
+        return nullptr;
     }
 
     size_t bufferPos = 0;
@@ -312,64 +447,25 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
 
     if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
         bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "]}");
-        jsonOutput = jsonBuffer;
-        free(jsonBuffer);
-        return;
-    }
-
-    if (!SD_MMC.exists(logFilename)) {
-        xSemaphoreGive(sdMutex);
-        bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "]}");
-        jsonOutput = jsonBuffer;
-        free(jsonBuffer);
-        return;
+        *jsonLength = bufferPos;
+        return jsonBuffer;
     }
 
     File logFile = SD_MMC.open(logFilename, FILE_READ);
     if (!logFile) {
         xSemaphoreGive(sdMutex);
         bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "]}");
-        jsonOutput = jsonBuffer;
-        free(jsonBuffer);
-        return;
+        *jsonLength = bufferPos;
+        return jsonBuffer;
     }
 
-    // Use cached line count instead of scanning the entire file
-    int* lineCountPtr = getLineCountPtr(logFilename);
-    int totalLines = *lineCountPtr;
+    // Use the cached line count (filled at mount) instead of scanning the entire file
+    ensureLineCount(logFilename);
+    int totalLines = *getLineCountPtr(logFilename);
 
-    // If cache is invalid, count lines (first time only)
-    if (totalLines <= 0) {
-        totalLines = countLinesInFile(logFile);
-        logFile.seek(0);
-        *lineCountPtr = totalLines;
-    }
-
-    // Calculate how many lines to skip to get the last MAX_LOG_ENTRIES_TO_READ lines
-    int linesToSkip = 0;
+    // Skip to the last MAX_LOG_ENTRIES_TO_READ lines
     if (totalLines > MAX_LOG_ENTRIES_TO_READ) {
-        linesToSkip = totalLines - MAX_LOG_ENTRIES_TO_READ;
-    }
-
-    // Skip the older entries using buffered reading
-    if (linesToSkip > 0) {
-        const size_t BUFFER_SIZE = 512;
-        uint8_t buffer[BUFFER_SIZE];
-        int linesSkipped = 0;
-
-        while (logFile.available() && linesSkipped < linesToSkip) {
-            size_t bytesRead = logFile.read(buffer, BUFFER_SIZE);
-            for (size_t i = 0; i < bytesRead && linesSkipped < linesToSkip; i++) {
-                if (buffer[i] == '\n') {
-                    linesSkipped++;
-                    // If we've skipped enough, seek back to the position after this newline
-                    if (linesSkipped == linesToSkip) {
-                        logFile.seek(logFile.position() - bytesRead + i + 1);
-                        break;
-                    }
-                }
-            }
-        }
+        skipLines(logFile, totalLines - MAX_LOG_ENTRIES_TO_READ);
     }
 
     // Read the last N lines into memory using fixed-size buffers
@@ -386,29 +482,28 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
         logFile.close();
         xSemaphoreGive(sdMutex);
         bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "],\"error\":\"Line buffer allocation failed\"}");
-        jsonOutput = jsonBuffer;
-        free(jsonBuffer);
-        return;
+        *jsonLength = bufferPos;
+        return jsonBuffer;
     }
     int lineCount = 0;
 
-    // Read lines using a fixed buffer instead of String
+    // Split the rest of the file into lines, reading a block at a time
     char lineBuffer[CHAR_LEN + 32];
-    while (logFile.available() && lineCount < MAX_LOG_ENTRIES_TO_READ) {
-        int lineLen = 0;
-        while (logFile.available() && lineLen < (int)(sizeof(lineBuffer) - 1)) {
-            char c = logFile.read();
-            if (c == '\n')
-                break;
-            if (c != '\r') {
-                lineBuffer[lineLen++] = c;
+    int lineLen = 0;
+    size_t bytesRead;
+    while (lineCount < MAX_LOG_ENTRIES_TO_READ && (bytesRead = logFile.read(sdIoBuffer, sizeof(sdIoBuffer))) > 0) {
+        for (size_t b = 0; b < bytesRead && lineCount < MAX_LOG_ENTRIES_TO_READ; b++) {
+            char c = (char)sdIoBuffer[b];
+            if (c != '\n') {
+                // Over-long lines are truncated; '\r' is dropped
+                if (c != '\r' && lineLen < (int)sizeof(lineBuffer) - 1) {
+                    lineBuffer[lineLen++] = c;
+                }
+                continue;
             }
-        }
-        lineBuffer[lineLen] = '\0';
-
-        if (lineLen > 0) {
+            lineBuffer[lineLen] = '\0';
             // Parse timestamp|message format
-            char* pipePos = strchr(lineBuffer, '|');
+            char* pipePos = (lineLen > 0) ? strchr(lineBuffer, '|') : nullptr;
             if (pipePos != nullptr) {
                 *pipePos = '\0';
                 lines[lineCount].timestamp = atol(lineBuffer);
@@ -416,6 +511,7 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
                 lines[lineCount].message[sizeof(lines[lineCount].message) - 1] = '\0';
                 lineCount++;
             }
+            lineLen = 0;
         }
     }
     logFile.close();
@@ -468,9 +564,8 @@ void getLogsFromSDCard(const char* logFilename, String& jsonOutput) {
 
     free(lines);
     bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "]}");
-
-    jsonOutput = jsonBuffer;
-    free(jsonBuffer);
+    *jsonLength = bufferPos;
+    return jsonBuffer;
 }
 
 // SD card logger task - runs at lowest priority to avoid blocking other tasks.

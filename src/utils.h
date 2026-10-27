@@ -21,8 +21,8 @@ const char* wmoToText(int code, bool isDay);
 // Format a number with thousands separators (e.g. 1234567 → "1,234,567")
 void formatIntegerWithCommas(long long num, char* out, size_t outSize);
 
-// XOR checksum over a byte range
-uint8_t calculateChecksum(const void* dataPtr, size_t size);
+// CRC-32 (zlib/IEEE) over a byte range
+uint32_t crc32Calc(const void* dataPtr, size_t size);
 
 // Semantic version comparison ("major.minor.patch"); returns 1, 0, or -1
 int compareVersionsStr(const char* v1, const char* v2);

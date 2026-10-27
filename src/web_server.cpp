@@ -15,9 +15,15 @@ static bool webUploadRejected = false; // Current upload refused because a serve
 static String getUptime();
 
 static void getLogsJSON(const char* logFilename) {
-    String jsonOutput;
-    getLogsFromSDCard(logFilename, jsonOutput);
-    webServer.send(200, "application/json", jsonOutput);
+    size_t jsonLength = 0;
+    char* json = getLogsFromSDCard(logFilename, &jsonLength);
+    if (json == nullptr) {
+        webServer.send(200, "application/json", "{\"logs\":[],\"error\":\"Memory allocation failed\"}");
+        return;
+    }
+    // Sent straight from the buffer - copying ~200 KB into a String doubled the peak heap use
+    webServer.send_P(200, "application/json", json, jsonLength);
+    free(json);
 }
 
 // Registers all HTTP endpoints and starts the web server.

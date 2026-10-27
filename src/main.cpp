@@ -92,17 +92,35 @@ static bool restoreReadings() {
     return ok;
 }
 
+// Forces a terminator into a fixed-size string field restored from SD, so a file that
+// passes its CRC but holds unexpected bytes can never produce an unterminated string.
+template <size_t N> static void terminate(char (&field)[N]) {
+    field[N - 1] = '\0';
+}
+
+static void terminateRestoredStrings() {
+    terminate(weather.windDir);
+    terminate(weather.description);
+    terminate(weather.timeString);
+    terminate(weather.sunrise);
+    terminate(weather.sunset);
+    terminate(weather.mountainSet);
+    terminate(uv.timeString);
+    terminate(airQuality.timeString);
+    terminate(solar.time);
+    terminate(solarToken.token);
+    terminate(solarForecast.todayFull);
+    terminate(solarForecast.tomorrowFull);
+    for (int i = 0; i < numberOfReadings; i++) {
+        terminate(readings[i].output);
+    }
+}
+
 // Shutdown handler to log reboot to SD card
 void shutdownHandler(void) {
-    // Write directly to SD card (can't use queue as system is shutting down)
-    File logFile = SD_MMC.open(ERROR_LOG_FILENAME, FILE_APPEND);
-    if (logFile) {
-        time_t now = time(nullptr);
-        char logLine[CHAR_LEN + 50];
-        snprintf(logLine, sizeof(logLine), "%ld|SYSTEM REBOOT - Watchdog or manual reboot triggered\n", now);
-        logFile.print(logLine);
-        logFile.close();
-    }
+    // Write directly to SD card (can't use queue as system is shutting down). Skipped
+    // rather than risk corrupting the card if another task is mid-write.
+    sdcard_append_line_now(ERROR_LOG_FILENAME, "SYSTEM REBOOT - Watchdog or manual reboot triggered", SHUTDOWN_SD_TIMEOUT_MS);
 
     // Print to serial as well
     Serial.println("SYSTEM REBOOT - Logging to SD card");
@@ -126,12 +144,20 @@ void setup() {
         // by default. Redirect them to Serial so all output appears on the same USB port.
         // Note: ROM bootloader output at the very start of boot always goes to UART only.
         delay(500); // Give the USB host time to enumerate the CDC port
+        // The hook runs on whichever task logs, including small system tasks, so format
+        // into a shared static buffer rather than 256 bytes of their stack. If another
+        // task is using it, fall back to the default UART output instead of waiting.
+        static SemaphoreHandle_t logHookMutex = xSemaphoreCreateMutex();
         esp_log_set_vprintf([](const char* fmt, va_list args) -> int {
-            char buf[256];
+            static char buf[256];
+            if (logHookMutex == nullptr || xSemaphoreTake(logHookMutex, 0) != pdTRUE) {
+                return vprintf(fmt, args);
+            }
             int len = vsnprintf(buf, sizeof(buf), fmt, args);
             // vsnprintf returns the untruncated length - only write what fits in buf
             if (len > 0)
                 Serial.write((const uint8_t*)buf, std::min(len, (int)sizeof(buf) - 1));
+            xSemaphoreGive(logHookMutex);
             return len;
         });
     }
@@ -195,13 +221,9 @@ void setup() {
         logAndPublish("SD Card initialized");
 
         // Log reset reason to SD card for persistent diagnostics
-        File errorLog = SD_MMC.open(ERROR_LOG_FILENAME, FILE_APPEND);
-        if (errorLog) {
-            char logLine[CHAR_LEN + 50];
-            snprintf(logLine, sizeof(logLine), "%ld|BOOT - Reset reason: %s (%d)\n", time(nullptr), reasonStr, reason);
-            errorLog.print(logLine);
-            errorLog.close();
-        }
+        char bootLine[CHAR_LEN];
+        snprintf(bootLine, sizeof(bootLine), "BOOT - Reset reason: %s (%d)", reasonStr, reason);
+        sdcard_append_line_now(ERROR_LOG_FILENAME, bootLine, MUTEX_TIMEOUT_SD_MS);
 
         if (loadDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar))) {
             logAndPublish("Solar state restored OK");
@@ -247,6 +269,7 @@ void setup() {
         } else {
             logAndPublish("Solar forecast state restore failed");
         }
+        terminateRestoredStrings();
     }
 
     // Add unique topics for MQTT logging
