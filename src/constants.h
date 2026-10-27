@@ -206,8 +206,11 @@ static const int WIFI_MODE_SETUP_DELAY_MS = 100;       // Settle time after WiFi
 static const int WIFI_RECONNECT_GROUP = 5;             // Run a full setup_wifi() every Nth failed attempt; others rely on autoReconnect
 static const int WIFI_RECONNECT_CHECK_DELAY_MS = 5000; // Delay between connectivity_manager WiFi check loops when disconnected
 static const int CONNECTION_CHECK_INTERVAL_MS = 5000;  // Delay at end of connectivity_manager main loop
-static const int MQTT_RECONNECT_DELAY_MS = 1000;       // Delay after successful MQTT reconnect before re-checking
 static const int MQTT_WAIT_CONNECTED_MS = 1000;        // Delay in MQTT task when broker not yet connected
+static const int MQTT_POLL_INTERVAL_MS = 100;          // Delay between MQTT task poll/publish passes
+static const int MQTT_CONNECTION_TIMEOUT_MS = 5000;    // Max wait for CONNACK/SUBACK (library default 30 s)
+static const int MQTT_TX_QUEUE_SIZE = 20;              // Slots in the queue of log/error messages waiting to be published
+static const int MQTT_TX_MAX_PER_PASS = 10;            // Max queued messages published per MQTT task pass
 
 // Main loop and periodic update timing
 static const int LOOP_DELAY_MS = 20;                      // Main loop vTaskDelay to yield CPU between LVGL frames
@@ -224,7 +227,6 @@ static const int SOLAR_TOKEN_REFRESH_SEC = 43200; // Refresh Solarman JWT after 
 
 // Mutex timeout values (in ms) — use the named constant that matches the call site's tolerance
 static const int MUTEX_TIMEOUT_SD_MS = 5000;  // SD operations can be slow; wait up to 5 s
-static const int MUTEX_TIMEOUT_MQTT_MS = 500; // MQTT parse window; short wait is fine
 static constexpr int MUTEX_NOWAIT = 0;        // Non-blocking: try once, skip if unavailable
 
 static const int WIFI_RETRIES = 10; // Number of times to retry the wifi before a restart

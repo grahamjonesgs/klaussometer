@@ -24,13 +24,10 @@ Arduino Core 0
 #include "web_server.h"
 
 // Create network objects
-WiFiClient espClient;
-MqttClient mqttClient(espClient);
 HTTPClient http;
 WiFiClientSecure httpsClient;                      // Shared TLS transport for every http.begin() (API manager task only)
 static const int HTTP_TIMEOUT_MS = 10000;          // 10 second timeout for API calls
 static const int HTTPS_HANDSHAKE_TIMEOUT_SEC = 20; // Default is 120 s, longer than the 60 s task watchdog
-SemaphoreHandle_t mqttMutex;
 SemaphoreHandle_t dataMutex;
 
 // Global variables
@@ -178,14 +175,14 @@ void setup() {
 
     // Setup queues and mutexes
     statusMessageQueue = xQueueCreate(STATUS_MESSAGE_QUEUE_SIZE, sizeof(StatusMessage));
-    mqttMutex = xSemaphoreCreateMutex();
     dataMutex = xSemaphoreCreateMutex();
+    mqtt_init();
     sdcard_init();
 
     if (statusMessageQueue == nullptr) {
         Serial.println("Error: Failed to create status message queue");
     }
-    if (mqttMutex == nullptr || dataMutex == nullptr) {
+    if (dataMutex == nullptr) {
         Serial.println("Error: Failed to create mutex! Restarting...");
         delay(1000);
         esp_restart();
@@ -304,7 +301,7 @@ void setup() {
     // Keep background tasks at low priority to avoid starving the display loop
     xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, nullptr, 0, nullptr, 1); // Core 1, priority 0 (lowest)
     xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_MEDIUM, nullptr, 2, nullptr,
-                            1); // Core 1, priority 2 - MEDIUM needed: update_readings() has deep call chain + multiple char[255] buffers
+                            1); // Core 1, priority 2 - owns the MQTT client; MEDIUM: message handlers have a deep call chain + char[255] buffers
     xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_SMALL, nullptr, 1, nullptr, 1);
     xTaskCreatePinnedToCore(connectivity_manager_t, "Connectivity", TASK_STACK_SMALL, nullptr, 1, nullptr, 1);
     xTaskCreatePinnedToCore(api_manager_t, "API Manager", TASK_STACK_MEDIUM, nullptr, 1, nullptr, 1); // HTTPS - replaces 7 API tasks + OTA check

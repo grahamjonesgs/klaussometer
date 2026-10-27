@@ -1,12 +1,30 @@
 #include "mqtt.h"
 #include "SDCard.h"
 
-extern MqttClient mqttClient;
-extern SemaphoreHandle_t mqttMutex;
 extern Readings readings[];
 extern const int numberOfReadings;
 extern InsideAirQuality insideAirQuality;
 extern SolarForecast solarForecast;
+extern char logTopic[CHAR_LEN];
+extern char errorTopic[CHAR_LEN];
+
+// The MQTT client is owned by the receive task: it is the only task that connects,
+// subscribes, polls and publishes. ArduinoMqttClient is not thread-safe (each packet
+// builder points a shared member at the caller's stack), so other tasks hand their
+// publishes over through mqttTxQueue instead of touching the client.
+static WiFiClient espClient;
+static MqttClient mqttClient(espClient);
+static std::atomic<bool> mqttConnected(false);
+
+struct MqttTxMessage {
+    char payload[CHAR_LEN];
+    bool isError; // true = errorTopic (retained), false = logTopic
+};
+static QueueHandle_t mqttTxQueue = nullptr;
+
+// Receive buffers - only used from the message callback, which runs on the receive task
+static char topicBuffer[MQTT_TOPIC_LEN];
+static char recMessage[MQTT_PAYLOAD_LEN];
 
 // Track last logged value per reading (compared against to detect meaningful changes)
 static float lastLoggedValue[MAX_READINGS] = {0};
@@ -29,16 +47,159 @@ static bool updateInsideTracking(float value, float* lastLogged, bool* hasLogged
     return changed;
 }
 
-// Get mqtt messages
+static void onMqttMessage(int messageSize);
+
+void mqtt_init() {
+    mqttTxQueue = xQueueCreate(MQTT_TX_QUEUE_SIZE, sizeof(MqttTxMessage));
+    if (mqttTxQueue == nullptr) {
+        Serial.println("Error: Failed to create MQTT TX queue");
+    }
+    mqttClient.setUsernamePassword(MQTT_USER, MQTT_PASSWORD);
+    // Default is 30 s per CONNACK/SUBACK wait - too close to the 60 s task watchdog
+    mqttClient.setConnectionTimeout(MQTT_CONNECTION_TIMEOUT_MS);
+    // With a callback the library hands every PUBLISH to us from poll(), including
+    // retained messages that arrive while subscribe() is waiting for its SUBACK
+    // (without one those are discarded), and resets its parser for zero-length payloads.
+    mqttClient.onMessage(onMqttMessage);
+}
+
+bool mqttIsConnected() {
+    return mqttConnected;
+}
+
+bool mqttQueuePublish(const char* message, bool isError) {
+    if (mqttTxQueue == nullptr) {
+        return false;
+    }
+    MqttTxMessage msg;
+    snprintf(msg.payload, sizeof(msg.payload), "%s", message);
+    msg.isError = isError;
+    return xQueueSend(mqttTxQueue, &msg, 0) == pdTRUE; // Never block the caller
+}
+
+// Connects to the broker and subscribes to every topic. Runs on the receive task only.
+static bool mqtt_connect() {
+    char messageBuffer[CHAR_LEN];
+    snprintf(messageBuffer, sizeof(messageBuffer), "Connecting to MQTT broker %s", MQTT_SERVER);
+    logAndPublish(messageBuffer);
+    esp_task_wdt_reset();
+    if (!mqttClient.connect(MQTT_SERVER, MQTT_PORT)) {
+        snprintf(messageBuffer, sizeof(messageBuffer), "MQTT connection failed (error %d)", mqttClient.connectError());
+        logAndPublish(messageBuffer);
+        return false;
+    }
+    logAndPublish("Connected to the MQTT broker");
+
+    const char* otherTopics[] = {
+        MQTT_INSIDE_CO2_TOPIC, MQTT_INSIDE_PM1_TOPIC,
+        MQTT_INSIDE_PM25_TOPIC, MQTT_INSIDE_PM10_TOPIC,
+        MQTT_SOLAR_FORECAST_TOPIC
+    };
+    const int topicCount = numberOfReadings + (int)(sizeof(otherTopics) / sizeof(otherTopics[0]));
+    for (int i = 0; i < topicCount; i++) {
+        const char* topic = i < numberOfReadings ? readings[i].topic : otherTopics[i - numberOfReadings];
+        esp_task_wdt_reset();
+        if (!mqttClient.subscribe(topic)) {
+            // A timed-out subscribe has already closed the connection, so every later
+            // one would fail too - give up and reconnect on the next pass
+            snprintf(messageBuffer, sizeof(messageBuffer), "MQTT subscribe failed for topic: %s", topic);
+            errorPublish(messageBuffer);
+            mqttClient.stop();
+            return false;
+        }
+    }
+    return true;
+}
+
+// Sends queued log/error messages. Runs on the receive task only.
+static void drainTxQueue() {
+    MqttTxMessage msg;
+    for (int i = 0; i < MQTT_TX_MAX_PER_PASS && xQueueReceive(mqttTxQueue, &msg, 0) == pdTRUE; i++) {
+        mqttClient.beginMessage(msg.isError ? errorTopic : logTopic, msg.isError);
+        mqttClient.print(msg.payload);
+        if (!mqttClient.endMessage()) {
+            break; // Connection problem - the next pass reconnects
+        }
+    }
+}
+
+// Message callback, called by mqttClient.poll() (or subscribe()) on the receive task
+// once a PUBLISH header has been parsed. The payload must be read here; anything left
+// unread is discarded by the library.
+static void onMqttMessage(int messageSize) {
+    int topicLength = mqttClient.messageTopic().length();
+    if (topicLength >= (int)sizeof(topicBuffer)) {
+        logAndPublish("MQTT topic exceeds buffer size");
+        return;
+    }
+    mqttClient.messageTopic().toCharArray(topicBuffer, sizeof(topicBuffer));
+
+    if (messageSize == 0) {
+        char logMsg[CHAR_LEN];
+        snprintf(logMsg, sizeof(logMsg), "Empty MQTT message on topic: %s", topicBuffer);
+        logAndPublish(logMsg);
+        return;
+    }
+    if (messageSize >= MQTT_PAYLOAD_LEN) {
+        logAndPublish("MQTT message exceeds buffer size");
+        return;
+    }
+
+    int bytesRead = mqttClient.read((unsigned char*)recMessage, messageSize);
+    if (bytesRead != messageSize) {
+        char logMsg[CHAR_LEN];
+        snprintf(logMsg, sizeof(logMsg), "MQTT read mismatch: expected %d, got %d", messageSize, bytesRead);
+        logAndPublish(logMsg);
+        return;
+    }
+    recMessage[bytesRead] = '\0';
+    if (recMessage[0] == '\0') {
+        char logMsg[CHAR_LEN];
+        snprintf(logMsg, sizeof(logMsg), "Empty MQTT message on topic: %s", topicBuffer);
+        logAndPublish(logMsg);
+        return;
+    }
+
+    bool messageProcessed = false;
+    for (int i = 0; i < numberOfReadings; i++) {
+        if (strcmp(topicBuffer, readings[i].topic) == 0) {
+            if (readings[i].dataType == DATA_TEMPERATURE || readings[i].dataType == DATA_HUMIDITY || readings[i].dataType == DATA_BATTERY) {
+                updateReadings(recMessage, i, readings[i].dataType);
+                messageProcessed = true;
+            }
+            break; // Found matching topic, no need to continue loop
+        }
+    }
+
+    if (messageProcessed) {
+        // Throttle persistence: saving ~15 KB on every sensor message wears the
+        // SD card out. Readings expire after an hour anyway, so losing up to
+        // READINGS_SAVE_INTERVAL_SEC of state across a reboot is acceptable.
+        static time_t lastReadingsSave = 0;
+        time_t now = time(nullptr);
+        if (now - lastReadingsSave >= READINGS_SAVE_INTERVAL_SEC) {
+            lastReadingsSave = now;
+            saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings);
+        }
+    } else if (strcmp(topicBuffer, MQTT_INSIDE_CO2_TOPIC) == 0 ||
+               strcmp(topicBuffer, MQTT_INSIDE_PM1_TOPIC) == 0 ||
+               strcmp(topicBuffer, MQTT_INSIDE_PM25_TOPIC) == 0 ||
+               strcmp(topicBuffer, MQTT_INSIDE_PM10_TOPIC) == 0) {
+        updateInsideAirQuality(topicBuffer, recMessage);
+    } else if (strcmp(topicBuffer, MQTT_SOLAR_FORECAST_TOPIC) == 0) {
+        updateSolarForecast(recMessage);
+    }
+}
+
+// FreeRTOS task: owns the MQTT client. Connects (and reconnects) when WiFi is up,
+// polls for incoming messages (dispatched to onMqttMessage) and sends queued publishes.
 void receive_mqtt_messages_t(void* pvParameters) {
     // Subscribe this task to the watchdog
     esp_task_wdt_add(nullptr);
 
-    int messageSize = 0;
-    char topicBuffer[CHAR_LEN];
-    char recMessage[MQTT_PAYLOAD_LEN];
-    int index;
     unsigned long lastHwmLog = 0;
+    unsigned long lastConnectAttempt = 0;
+    bool everAttempted = false;
 
     while (true) {
         // Reset watchdog at the start of each loop iteration
@@ -51,89 +212,24 @@ void receive_mqtt_messages_t(void* pvParameters) {
             logAndPublish(hwmMsg);
         }
 
-        // Reconnect if necessary
         if (!mqttClient.connected()) {
-            vTaskDelay(pdMS_TO_TICKS(MQTT_WAIT_CONNECTED_MS));
-            continue;
-        }
-
-        if (xSemaphoreTake(mqttMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_MQTT_MS)) == pdTRUE) {
-            messageSize = mqttClient.parseMessage();
-            if (messageSize) {
-                // Clear buffers at the start of each message processing
-                memset(topicBuffer, 0, sizeof(topicBuffer));
-                memset(recMessage, 0, sizeof(recMessage));
-
-                int topicLength = mqttClient.messageTopic().length();
-                if (topicLength >= (int)sizeof(topicBuffer)) {
-                    xSemaphoreGive(mqttMutex);
-                    logAndPublish("MQTT topic exceeds buffer size");
-                    continue;
-                }
-                mqttClient.messageTopic().toCharArray(topicBuffer, topicLength + 1);
-
-                // Check message size before reading
-                if (messageSize >= MQTT_PAYLOAD_LEN) {
-                    xSemaphoreGive(mqttMutex);
-                    logAndPublish("MQTT message exceeds buffer size");
-                    continue;
-                }
-
-                // Read exactly messageSize bytes
-                int bytesRead = mqttClient.read((unsigned char*)recMessage, messageSize);
-                xSemaphoreGive(mqttMutex);
-
-                if (bytesRead != messageSize) {
-                    char logMsg[CHAR_LEN];
-                    snprintf(logMsg, sizeof(logMsg), "MQTT read mismatch: expected %d, got %d", messageSize, bytesRead);
-                    logAndPublish(logMsg);
-                    continue;
-                }
-
-                // Additional validation - check if message is empty or just whitespace
-                if (messageSize == 0 || recMessage[0] == '\0') {
-                    char logMsg[CHAR_LEN];
-                    snprintf(logMsg, sizeof(logMsg), "Empty MQTT message on topic: %s", topicBuffer);
-                    logAndPublish(logMsg);
-                    continue;
-                }
-
-                bool messageProcessed = false;
-                for (int i = 0; i < numberOfReadings; i++) {
-                    if (strcmp(topicBuffer, readings[i].topic) == 0) {
-                        index = i;
-                        if (readings[i].dataType == DATA_TEMPERATURE || readings[i].dataType == DATA_HUMIDITY || readings[i].dataType == DATA_BATTERY) {
-                            updateReadings(recMessage, index, readings[i].dataType);
-                            messageProcessed = true;
-                        }
-                        break; // Found matching topic, no need to continue loop
-                    }
-                }
-
-                if (messageProcessed) {
-                    // Throttle persistence: saving ~15 KB on every sensor message wears the
-                    // SD card out. Readings expire after an hour anyway, so losing up to
-                    // READINGS_SAVE_INTERVAL_SEC of state across a reboot is acceptable.
-                    static time_t lastReadingsSave = 0;
-                    time_t now = time(nullptr);
-                    if (now - lastReadingsSave >= READINGS_SAVE_INTERVAL_SEC) {
-                        lastReadingsSave = now;
-                        saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings);
-                    }
-                } else if (strcmp(topicBuffer, MQTT_INSIDE_CO2_TOPIC) == 0 ||
-                           strcmp(topicBuffer, MQTT_INSIDE_PM1_TOPIC) == 0 ||
-                           strcmp(topicBuffer, MQTT_INSIDE_PM25_TOPIC) == 0 ||
-                           strcmp(topicBuffer, MQTT_INSIDE_PM10_TOPIC) == 0) {
-                    updateInsideAirQuality(topicBuffer, recMessage);
-                } else if (strcmp(topicBuffer, MQTT_SOLAR_FORECAST_TOPIC) == 0) {
-                    updateSolarForecast(recMessage);
-                }
-            } else {
-                // No message
-                xSemaphoreGive(mqttMutex);
+            mqttConnected = false;
+            if (WiFi.status() != WL_CONNECTED ||
+                (everAttempted && millis() - lastConnectAttempt < MQTT_RETRY_DELAY_SEC * 1000UL)) {
+                vTaskDelay(pdMS_TO_TICKS(MQTT_WAIT_CONNECTED_MS));
+                continue;
+            }
+            everAttempted = true;
+            lastConnectAttempt = millis();
+            if (!mqtt_connect()) {
+                continue;
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        mqttConnected = true;
+
+        mqttClient.poll(); // Keep-alive, and delivers any waiting messages to onMqttMessage
+        drainTxQueue();
+        vTaskDelay(pdMS_TO_TICKS(MQTT_POLL_INTERVAL_MS));
     }
 }
 

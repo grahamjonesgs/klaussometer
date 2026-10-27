@@ -1,9 +1,6 @@
 #include "connections.h"
 #include "OTA.h"
 
-extern MqttClient mqttClient;
-extern Readings readings[];
-extern const int numberOfReadings;
 
 void setup_wifi() {
     int counter = 0;
@@ -35,39 +32,6 @@ void setup_wifi() {
     char messageBuffer[CHAR_LEN];
     snprintf(messageBuffer, sizeof(messageBuffer), "Connected to WiFi SSID: %s, IP: %s, RSSI: %d", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
     logAndPublish(messageBuffer);
-}
-
-void mqtt_connect() {
-    esp_task_wdt_reset(); // Feed watchdog before potentially long MQTT connect
-    mqttClient.setUsernamePassword(MQTT_USER, MQTT_PASSWORD);
-    char messageBuffer[CHAR_LEN];
-    snprintf(messageBuffer, sizeof(messageBuffer), "Connecting to MQTT broker %s", MQTT_SERVER);
-    logAndPublish(messageBuffer);
-    if (!mqttClient.connected()) {
-        if (!mqttClient.connect(MQTT_SERVER, MQTT_PORT)) {
-            logAndPublish("MQTT receive connection failed");
-            vTaskDelay(pdMS_TO_TICKS(MQTT_RETRY_DELAY_SEC * 1000));
-            return;
-        }
-    }
-    logAndPublish("Connected to the MQTT broker");
-    for (int i = 0; i < numberOfReadings; i++) {
-        if (!mqttClient.subscribe(readings[i].topic)) {
-            snprintf(messageBuffer, sizeof(messageBuffer), "MQTT subscribe failed for topic: %s", readings[i].topic);
-            errorPublish(messageBuffer);
-        }
-    }
-    const char* otherTopics[] = {
-        MQTT_INSIDE_CO2_TOPIC, MQTT_INSIDE_PM1_TOPIC,
-        MQTT_INSIDE_PM25_TOPIC, MQTT_INSIDE_PM10_TOPIC,
-        MQTT_SOLAR_FORECAST_TOPIC
-    };
-    for (const char* topic : otherTopics) {
-        if (!mqttClient.subscribe(topic)) {
-            snprintf(messageBuffer, sizeof(messageBuffer), "MQTT subscribe failed for topic: %s", topic);
-            errorPublish(messageBuffer);
-        }
-    }
 }
 
 void time_init() {
@@ -125,11 +89,7 @@ void connectivity_manager_t(void* pvParameters) {
             logAndPublish(messageBuffer);
             time_init();
         }
-        if (!mqttClient.connected()) {
-            logAndPublish("MQTT is reconnecting");
-            mqtt_connect();
-            vTaskDelay(pdMS_TO_TICKS(MQTT_RECONNECT_DELAY_MS));
-        }
+        // MQTT (re)connection is handled by the MQTT receive task, which owns the client
 
         vTaskDelay(pdMS_TO_TICKS(CONNECTION_CHECK_INTERVAL_MS)); // Check connection status every 5 seconds
     }

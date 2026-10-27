@@ -1,8 +1,8 @@
 
 #include "display.h"
 #include "board.h"
+#include "mqtt.h"
 #include <Arduino.h>
-#include <ArduinoMqttClient.h>
 #include <WiFi.h>
 #include <cstdio>
 
@@ -12,7 +12,6 @@ extern AirQuality airQuality;
 extern InsideAirQuality insideAirQuality;
 extern SolarForecast solarForecast;
 extern char chipId[CHAR_LEN];
-extern MqttClient mqttClient;
 
 // Sets both the indicator and knob color of an arc widget in one call.
 static void setArcColor(lv_obj_t* arc, lv_color_t color) {
@@ -564,7 +563,7 @@ static void updatePeriodicStatus(unsigned long currentMillis) {
         lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_RED), LV_PART_MAIN);
     }
 
-    if (mqttClient.connected()) {
+    if (mqttIsConnected()) {
         lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
     } else {
         lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);

@@ -1,15 +1,12 @@
 #include "SDCard.h"
+#include "mqtt.h"
 #include "types.h"
-#include <ArduinoMqttClient.h>
 
 extern QueueHandle_t statusMessageQueue;
-extern MqttClient mqttClient;
-extern SemaphoreHandle_t mqttMutex;
-extern char logTopic[CHAR_LEN];
-extern char errorTopic[CHAR_LEN];
 
-// Shared implementation: serial print, queued SD write, and non-blocking MQTT publish.
-static void publishMessageInternal(const char* messageBuffer, const char* filename, const char* topic, bool retained) {
+// Shared implementation: serial print, queued SD write, and queued MQTT publish.
+// Never blocks, so it is safe to call from any task, including with a mutex held.
+static void publishMessageInternal(const char* messageBuffer, const char* filename, bool isError) {
     Serial.println(messageBuffer);  // Native USB CDC port
     Serial0.println(messageBuffer); // Hardware UART mirror
 
@@ -21,21 +18,17 @@ static void publishMessageInternal(const char* messageBuffer, const char* filena
         xQueueSend(sdLogQueue, &logMsg, 0); // Don't block if queue is full
     }
 
-    // Try to send to MQTT without blocking - if mutex isn't available, skip it
-    if (xSemaphoreTake(mqttMutex, MUTEX_NOWAIT) == pdTRUE) {
-        esp_task_wdt_reset();
-        if (mqttClient.connected()) {
-            mqttClient.beginMessage(topic, retained);
-            mqttClient.print(messageBuffer);
-            mqttClient.endMessage();
-        }
-        xSemaphoreGive(mqttMutex);
-    }
-    // If we can't get the mutex immediately, just skip MQTT (log still goes to SD/Serial)
+    // The MQTT receive task owns the client and publishes from this queue; if it is
+    // full (e.g. broker down for a while) the message still went to Serial and SD
+    mqttQueuePublish(messageBuffer, isError);
+
+    // Long-running paths (connect, HTTPS, OTA) log between their blocking steps, and
+    // have always relied on this to feed the watchdog. A no-op for unsubscribed tasks.
+    esp_task_wdt_reset();
 }
 
 void logAndPublish(const char* messageBuffer) {
-    publishMessageInternal(messageBuffer, NORMAL_LOG_FILENAME, logTopic, false);
+    publishMessageInternal(messageBuffer, NORMAL_LOG_FILENAME, false);
 
     StatusMessage msg;
     snprintf(msg.text, sizeof(msg.text), "%s", messageBuffer);
@@ -44,5 +37,5 @@ void logAndPublish(const char* messageBuffer) {
 }
 
 void errorPublish(const char* messageBuffer) {
-    publishMessageInternal(messageBuffer, ERROR_LOG_FILENAME, errorTopic, true);
+    publishMessageInternal(messageBuffer, ERROR_LOG_FILENAME, true);
 }
