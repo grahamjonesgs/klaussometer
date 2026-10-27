@@ -1,11 +1,8 @@
 #include "staleness.h"
+#include "types.h"
+#include <Arduino.h>
+#include "state.h"
 
-extern Readings readings[];
-extern const int numberOfReadings;
-extern Weather weather;
-extern UV uv;
-extern AirQuality airQuality;
-extern InsideAirQuality insideAirQuality;
 
 // Age out sensor and API data that has stopped updating, so the display shows
 // stale (grey/red) or "--" rather than old values. Called once a second from loop().

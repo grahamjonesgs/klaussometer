@@ -1,14 +1,17 @@
 #ifndef APIS_H
 #define APIS_H
 
-#include "types.h"
-#include "utils.h"
-#include <ArduinoJson.h>
-#include <HTTPClient.h>
-#include <WiFi.h>
+class HTTPClient;
+class WiFiClientSecure;
 
+// Configures the shared HTTP client (timeouts, keep-alive, TLS). Call once in setup().
+void api_init();
+// FreeRTOS task that runs every API fetch and the OTA check on a schedule.
 void api_manager_t(void* pvParameters);
-int readChunkedPayload(WiFiClient* stream, char* buffer, size_t bufferSize);
-int readFixedLengthPayload(WiFiClient* stream, char* buffer, size_t bufferSize, size_t contentLength);
+
+// The single HTTP client and TLS transport. Only used from the API manager task
+// (including the OTA check it runs), so no locking is needed.
+HTTPClient& apiHttp();
+WiFiClientSecure& apiTls();
 
 #endif // APIS_H

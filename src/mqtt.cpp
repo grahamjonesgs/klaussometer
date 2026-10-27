@@ -1,12 +1,15 @@
 #include "mqtt.h"
+#include "config.h"
+#include "logging.h"
+#include "types.h"
+#include <Arduino.h>
+#include <esp_task_wdt.h>
+#include <ArduinoJson.h>
+#include <ArduinoMqttClient.h>
+#include <WiFi.h>
 #include "SDCard.h"
+#include "state.h"
 
-extern Readings readings[];
-extern const int numberOfReadings;
-extern InsideAirQuality insideAirQuality;
-extern SolarForecast solarForecast;
-extern char logTopic[CHAR_LEN];
-extern char errorTopic[CHAR_LEN];
 
 // The MQTT client is owned by the receive task: it is the only task that connects,
 // subscribes, polls and publishes. ArduinoMqttClient is not thread-safe (each packet
@@ -48,6 +51,9 @@ static bool updateInsideTracking(float value, float* lastLogged, bool* hasLogged
 }
 
 static void onMqttMessage(int messageSize);
+static void updateReadings(char* recMessage, int index, int dataType);
+static void updateInsideAirQuality(const char* topic, char* recMessage);
+static void updateSolarForecast(const char* recMessage);
 
 void mqtt_init() {
     mqttTxQueue = xQueueCreate(MQTT_TX_QUEUE_SIZE, sizeof(MqttTxMessage));
@@ -234,7 +240,7 @@ void receive_mqtt_messages_t(void* pvParameters) {
     }
 }
 
-void updateReadings(char* recMessage, int index, int dataType) {
+static void updateReadings(char* recMessage, int index, int dataType) {
     float averageHistory;
     float totalHistory = 0.0;
     const char* logMessageSuffix;
@@ -374,7 +380,7 @@ void updateReadings(char* recMessage, int index, int dataType) {
     }
 }
 
-void updateInsideAirQuality(const char* topic, char* recMessage) {
+static void updateInsideAirQuality(const char* topic, char* recMessage) {
     char* endptr;
     float parsedValue = strtof(recMessage, &endptr);
 
@@ -466,7 +472,7 @@ static void copyFullTime(JsonVariantConst value, char* dest, size_t destLen) {
 
 // Parses the retained solar/forecast JSON, e.g.
 // {"ts":..,"at":"14:51","today":{"exp":22.6,"pot":25.6,"made":19.7,"full":"14:00"},"tomorrow":{"exp":14.4,"pot":14.4,"full":null}}
-void updateSolarForecast(const char* recMessage) {
+static void updateSolarForecast(const char* recMessage) {
     JsonDocument root;
     DeserializationError err = deserializeJson(root, recMessage);
     if (err || !root["ts"].is<long long>() || !root["today"]["exp"].is<float>() || !root["tomorrow"]["exp"].is<float>()) {

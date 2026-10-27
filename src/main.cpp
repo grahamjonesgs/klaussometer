@@ -11,46 +11,16 @@
 #include "display.h"
 #include "mqtt.h"
 #include "staleness.h"
+#include "state.h"
 #include "types.h"
 #include "web_server.h"
-
-// Create network objects
-HTTPClient http;
-WiFiClientSecure httpsClient;                      // Shared TLS transport for every http.begin() (API manager task only)
-static const int HTTP_TIMEOUT_MS = 10000;          // 10 second timeout for API calls
-static const int HTTPS_HANDSHAKE_TIMEOUT_SEC = 20; // Default is 120 s, longer than the 60 s task watchdog
-SemaphoreHandle_t dataMutex;
-
-// Global variables
-Weather weather = {0.0, 0.0, 0.0, 0.0, 0.0, false, 0, "", "", "--:--:--"};
-UV uv = {0, 0, "--:--:--"};
-Solar solar = {0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, "--:--:--", 100, 0, 0, 0.0, 0.0};
-SolarToken solarToken = {};
-AirQuality airQuality = {0.0, 0.0, 0.0, 0, 0, "--:--:--"};
-InsideAirQuality insideAirQuality = {};
-SolarForecast solarForecast = {};
-Readings readings[]{READINGS_ARRAY};
-extern const int numberOfReadings = sizeof(readings) / sizeof(readings[0]);
-// mqtt.cpp sizes its per-reading arrays with MAX_READINGS, and the display reads the
-// table as ROOM_COUNT temperatures, then humidities, then batteries
-static_assert(sizeof(readings) / sizeof(readings[0]) <= MAX_READINGS, "Raise MAX_READINGS");
-static_assert(sizeof(readings) / sizeof(readings[0]) == 3 * ROOM_COUNT, "READINGS_ARRAY must be temps, humidities, batteries for each room");
-QueueHandle_t statusMessageQueue;
-char logTopic[CHAR_LEN];
-char errorTopic[CHAR_LEN];
-char chipId[CHAR_LEN];
-char macAddress[18]; // "AA:BB:CC:DD:EE:FF" + null
-
-// Status messages
-char statusMessageValue[CHAR_LEN];
-
-// Dirty flags for display update groups (set by producers, cleared by loop)
-std::atomic<bool> dirtyRooms(true);
-std::atomic<bool> dirtySolar(true);
-std::atomic<bool> dirtyWeather(true);
-std::atomic<bool> dirtyUv(true);
-std::atomic<bool> dirtyInsideAQ(false);
-std::atomic<bool> dirtySolarForecast(true);
+#include "config.h"
+#include "logging.h"
+#include "types.h"
+#include <Arduino.h>
+#include <esp_task_wdt.h>
+#include <lvgl.h>
+#include <WiFi.h>
 
 // Restores persisted sensor state from SD without touching the compiled-in
 // description/topic/dataType fields (they are const, and blindly overwriting
@@ -58,14 +28,15 @@ std::atomic<bool> dirtySolarForecast(true);
 // Loads into a temporary buffer, then copies only the runtime fields across,
 // and only for entries whose saved topic still matches the compiled-in one.
 static bool restoreReadings() {
-    Readings* temp = (Readings*)heap_caps_malloc(sizeof(readings), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    const size_t readingsSize = sizeof(Readings) * numberOfReadings;
+    Readings* temp = (Readings*)heap_caps_malloc(readingsSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!temp) {
-        temp = (Readings*)malloc(sizeof(readings));
+        temp = (Readings*)malloc(readingsSize);
     }
     if (!temp) {
         return false;
     }
-    bool ok = loadDataBlock(READINGS_DATA_FILENAME, temp, sizeof(readings));
+    bool ok = loadDataBlock(READINGS_DATA_FILENAME, temp, readingsSize);
     if (ok) {
         for (int i = 0; i < numberOfReadings; i++) {
             if (strncmp(temp[i].topic, readings[i].topic, sizeof(readings[i].topic)) != 0) {
@@ -128,9 +99,8 @@ void setup() {
     // are visible when only the UART port is connected (see publishMessageInternal).
     Serial0.begin(115200);
 
-    // Auto-detect board type by probing I2C on GPIO 8/9 for the Waveshare expander at 0x24
-    isWaveshare = detectWaveshare();
-    board = isWaveshare ? &BOARD_CFG_WAVESHARE : &BOARD_CFG_MATOUCH;
+    // Auto-detect board type by probing I2C on GPIO 8/9 for the Waveshare expander
+    const bool isWaveshare = board_select();
     Serial.printf("Board: %s\n", isWaveshare ? "Waveshare" : "Matouch");
     if (isWaveshare) {
         // The expander drives SD CS as well as the LCD reset and backlight - set it up
@@ -199,19 +169,13 @@ void setup() {
     Serial.printf("Reset reason: %s (%d)\n", reasonStr, reason);
 
     // Setup queues and mutexes
-    statusMessageQueue = xQueueCreate(STATUS_MESSAGE_QUEUE_SIZE, sizeof(StatusMessage));
-    dataMutex = xSemaphoreCreateMutex();
-    mqtt_init();
-    sdcard_init();
-
-    if (statusMessageQueue == nullptr) {
-        Serial.println("Error: Failed to create status message queue");
-    }
-    if (dataMutex == nullptr) {
+    if (!state_init()) {
         Serial.println("Error: Failed to create mutex! Restarting...");
         delay(1000);
         esp_restart();
     }
+    mqtt_init();
+    sdcard_init();
 
     // Initialize the SD card
     if (!sdcard_mount()) {
@@ -282,11 +246,7 @@ void setup() {
     display_init();
 
     configTime(TIME_OFFSET, 0, NTP_SERVER); // Setup as used to display time from stored values
-    http.setTimeout(HTTP_TIMEOUT_MS);       // Set read timeout for all API calls
-    http.setReuse(false);                   // Disable keep-alive - single task calls different hosts/protocols
-    // Certificates are not verified yet - the same as http.begin(url) without a CA did before
-    httpsClient.setInsecure();
-    httpsClient.setHandshakeTimeout(HTTPS_HANDSHAKE_TIMEOUT_SEC);
+    api_init();
 
     // Register web server handlers exactly once, before the connectivity task starts.
     // WebServer::on() appends (never replaces) handlers, so calling this from
@@ -324,7 +284,7 @@ void loop() {
     }
 
     lv_timer_handler(); // Run GUI - do this BEFORE delays
-    webServer.handleClient();
+    web_server_handle();
     vTaskDelay(pdMS_TO_TICKS(LOOP_DELAY_MS));
 
     display_update(currentMillis);

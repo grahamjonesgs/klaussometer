@@ -26,34 +26,6 @@ static constexpr int MAX_READINGS = 20; // Upper bound for per-reading tracking 
 // clang-format on
 
 static constexpr int ROOM_COUNT = 5;
-#define ROOM_NAME_LABELS {&ui_RoomName1, &ui_RoomName2, &ui_RoomName3, &ui_RoomName4, &ui_RoomName5}
-#define TEMP_ARC_LABELS {&ui_TempArc1, &ui_TempArc2, &ui_TempArc3, &ui_TempArc4, &ui_TempArc5}
-#define TEMP_LABELS {&ui_TempLabel1, &ui_TempLabel2, &ui_TempLabel3, &ui_TempLabel4, &ui_TempLabel5}
-#define BATTERY_LABELS {&ui_BatteryLabel1, &ui_BatteryLabel2, &ui_BatteryLabel3, &ui_BatteryLabel4, &ui_BatteryLabel5}
-#define DIRECTION_LABELS {&ui_Direction1, &ui_Direction2, &ui_Direction3, &ui_Direction4, &ui_Direction5}
-#define HUMIDITY_LABELS {&ui_HumidLabel1, &ui_HumidLabel2, &ui_HumidLabel3, &ui_HumidLabel4, &ui_HumidLabel5}
-
-// All text labels that receive a uniform color in day/night mode (used by set_basic_text_color).
-// clang-format off
-#define TEXT_COLOR_LABELS { \
-    &ui_TempLabelFC,      &ui_UVLabel,             &ui_UsingLabel,           &ui_SolarLabel,           &ui_BatteryLabel,     \
-    &ui_RoomName1,        &ui_RoomName2,           &ui_RoomName3,            &ui_RoomName4,            &ui_RoomName5,        \
-    &ui_TempLabel1,       &ui_TempLabel2,          &ui_TempLabel3,           &ui_TempLabel4,           &ui_TempLabel5,       \
-    &ui_HumidLabel1,      &ui_HumidLabel2,         &ui_HumidLabel3,          &ui_HumidLabel4,          &ui_HumidLabel5,      \
-    &ui_StatusMessage,    &ui_Time,                &ui_TextRooms,            &ui_TextForecastName,     &ui_TextBattery,      \
-    &ui_TextSolar,        &ui_TextUsing,           &ui_TextUV,               &ui_FCConditions,         &ui_FCWindSpeed,      \
-    &ui_FCUpdateTime,     &ui_UVUpdateTime,        &ui_ChargingLabel,        &ui_AsofTimeLabel,        &ui_ChargingTime,     \
-    &ui_TextKlaussometer, &ui_SolarMinMax,         &ui_GridBought,           &ui_GridTodayEnergy,      &ui_GridMonthEnergy,  \
-    &ui_GridTodayCost,    &ui_GridMonthCost,       &ui_GridTodayPercentage,  &ui_GridMonthPercentage,  &ui_GridTitlekWh,     \
-    &ui_GridTitleCost,    &ui_GridTitlePercentage, &ui_FCMin,                &ui_FCMax,                &ui_UVMax,            \
-    &ui_SolarTodayEnergy, &ui_SolarMonthEnergy,    &ui_GridTitleSolar,                                                                         \
-    &ui_Direction1,       &ui_Direction2,          &ui_Direction3,           &ui_Direction4,           &ui_Direction5,       \
-    &ui_FCAQI,            &ui_FCAQIUpdateTime,     &ui_InsideAirQualityCO2,  &ui_InsideAirQualityPM25,                       \
-    &ui_UVMin,            &ui_FCSunrise,           &ui_FCSunset,             &ui_FCMountainSet,        &ui_SolarForecast,    \
-    &ui_SolarForecastTitle,                                                                                                  \
-    &ui_Version,                                                                                                             \
-}
-// clang-format on
 
 static const int CHAR_LEN = 255;
 // Field sizes for strings stored in the data structs (including the null terminator)
@@ -291,6 +263,10 @@ static const int POWER_ARC_SCALE = 10;           // Multiplier to convert kW val
 static const int UV_ARC_SCALE = 10;              // Multiplier to convert UV index to arc range
 static const int TEMP_ARC_SCALE = 10;            // Forecast temperature arc works in tenths of a degree
 static const int UV_ARC_DEFAULT_MAX = 13;        // UV arc full-scale when no daily max is available
+
+// HTTP client
+static const int HTTP_TIMEOUT_MS = 10000;          // Read timeout for API calls
+static const int HTTPS_HANDSHAKE_TIMEOUT_SEC = 20; // Default is 120 s, longer than the 60 s task watchdog
 
 // OTA
 static const int OTA_BUFFER_SIZE = 2048;        // Byte buffer for OTA firmware download chunks (static, not on the stack)

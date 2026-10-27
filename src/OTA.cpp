@@ -1,11 +1,20 @@
 #include "OTA.h"
+#include "APIs.h"
+#include "config.h"
+#include "logging.h"
+#include "types.h"
+#include <Arduino.h>
+#include <esp_task_wdt.h>
+#include <HTTPClient.h>
+#include <Update.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <atomic>
 #include "SDCard.h"
 #include "utils.h"
 #include <Preferences.h>
 
 unsigned long lastOTAUpdateCheck = 0;
-extern HTTPClient http;
-extern WiFiClientSecure httpsClient;
 
 // Set while either OTA path (server check or web upload) owns the global Update object
 static std::atomic<bool> otaInProgress(false);
@@ -52,9 +61,10 @@ void checkForUpdates() {
     if (time(nullptr) < TIME_SYNC_THRESHOLD)
         return;
 
+    HTTPClient& http = apiHttp();
     char url[CHAR_LEN];
     snprintf(url, sizeof(url), "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_VERSION_PATH);
-    http.begin(httpsClient, url);
+    http.begin(apiTls(), url);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
         String serverVersion = http.getString();
@@ -96,9 +106,10 @@ void checkForUpdates() {
 void updateFirmware() {
     // The version check before this was a full HTTPS round trip - feed before the next one
     esp_task_wdt_reset();
+    HTTPClient& http = apiHttp();
     char binUrl[CHAR_LEN];
     snprintf(binUrl, sizeof(binUrl), "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_BIN_PATH);
-    http.begin(httpsClient, binUrl);
+    http.begin(apiTls(), binUrl);
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
         int contentLength = http.getSize();

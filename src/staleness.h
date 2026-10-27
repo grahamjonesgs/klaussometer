@@ -1,7 +1,6 @@
 #ifndef STALENESS_H
 #define STALENESS_H
 
-#include "types.h"
 
 void invalidateOldReadings();
 void invalidateInsideAirQuality();

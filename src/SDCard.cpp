@@ -1,6 +1,14 @@
 #include "SDCard.h"
-SemaphoreHandle_t sdMutex;
-QueueHandle_t sdLogQueue;
+#include "config.h"
+#include "logging.h"
+#include "types.h"
+#include <Arduino.h>
+#include <esp_task_wdt.h>
+#include "utils.h"
+#include <SD_MMC.h>
+#include "state.h"
+static SemaphoreHandle_t sdMutex;
+static QueueHandle_t sdLogQueue = nullptr;
 
 static const char* const TEMP_LOG_FILENAME = "/temp_log.txt";
 static const size_t SD_IO_BUFFER_SIZE = 512; // Block size for buffered log reads and copies
@@ -20,6 +28,16 @@ void sdcard_init() {
         delay(1000);
         esp_restart();
     }
+}
+
+bool sdcard_queue_log(const char* message, const char* logFilename) {
+    if (sdLogQueue == nullptr) {
+        return false;
+    }
+    SDLogMessage logMsg;
+    snprintf(logMsg.message, sizeof(logMsg.message), "%s", message);
+    snprintf(logMsg.filename, sizeof(logMsg.filename), "%s", logFilename);
+    return xQueueSend(sdLogQueue, &logMsg, 0) == pdTRUE; // Don't block if queue is full
 }
 
 // Cache line counts for faster log reading

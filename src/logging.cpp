@@ -1,8 +1,11 @@
+#include "logging.h"
+#include <Arduino.h>
+#include <esp_task_wdt.h>
 #include "SDCard.h"
 #include "mqtt.h"
+#include "state.h"
 #include "types.h"
 
-extern QueueHandle_t statusMessageQueue;
 
 // Shared implementation: serial print, queued SD write, and queued MQTT publish.
 // Never blocks, so it is safe to call from any task, including with a mutex held.
@@ -11,12 +14,7 @@ static void publishMessageInternal(const char* messageBuffer, const char* filena
     Serial0.println(messageBuffer); // Hardware UART mirror
 
     // Queue SD card write (non-blocking)
-    if (sdLogQueue != nullptr) {
-        SDLogMessage logMsg;
-        snprintf(logMsg.message, sizeof(logMsg.message), "%s", messageBuffer);
-        snprintf(logMsg.filename, sizeof(logMsg.filename), "%s", filename);
-        xQueueSend(sdLogQueue, &logMsg, 0); // Don't block if queue is full
-    }
+    sdcard_queue_log(messageBuffer, filename);
 
     // The MQTT receive task owns the client and publishes from this queue; if it is
     // full (e.g. broker down for a while) the message still went to Serial and SD

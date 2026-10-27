@@ -1,24 +1,78 @@
 #include "board.h"
 #include "UI/ui.h"
 #include "board_waveshare.h"
-#include "types.h"
+#include "constants.h"
 #include <Arduino_GFX_Library.h>
 #include <Wire.h>
 #include <lvgl.h>
 
 // Display and backlight hardware for both supported boards (Matouch and Waveshare).
 
-const int MAX_DUTY_CYCLE = (int)(pow(2, PWMResolution) - 1);
-const float DAYTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MAX_BRIGHTNESS);
-const float NIGHTTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MIN_BRIGHTNESS);
+static const int MAX_DUTY_CYCLE = (1 << PWMResolution) - 1;
+static const float DAYTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MAX_BRIGHTNESS);
+static const float NIGHTTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MIN_BRIGHTNESS);
 
-// Board detection — set in setup() before any hardware init
-bool isWaveshare = false;
-const BoardConfig* board = nullptr;
+// Per-board hardware configuration. Populated from compile-time constants and
+// selected at runtime after probing the I2C bus in setup().
+struct BoardConfig {
+    // LCD RGB panel pins
+    int lcdDe, lcdVsync, lcdHsync, lcdPclk;
+    int lcdR[5], lcdG[6], lcdB[5];
+    // LCD timing
+    int hsyncPolarity, hsyncFront, hsyncPulse, hsyncBack;
+    int vsyncPolarity, vsyncFront, vsyncPulse, vsyncBack;
+    int pclkActiveNeg, preferSpeed;
+    // Backlight: GPIO pin for LEDC PWM, or -1 if controlled via I2C expander (Waveshare)
+    int tftBl;
+};
 
-// Screen config — initialized in setup() after board detection
-Arduino_ESP32RGBPanel* rgbpanel = nullptr;
-Arduino_RGB_Display* gfx = nullptr;
+// Matouch ESP32-S3 4.3" board
+static const BoardConfig BOARD_CFG_MATOUCH = {
+    // LCD: DE, VSYNC, HSYNC, PCLK
+    40, 41, 39, 42,
+    // R0-R4
+    {45, 48, 47, 21, 14},
+    // G0-G5
+    {5, 6, 7, 15, 16, 4},
+    // B0-B4
+    {8, 3, 46, 9, 1},
+    // HSYNC: polarity, front porch, pulse width, back porch
+    0, 40, 8, 128,
+    // VSYNC: polarity, front porch, pulse width, back porch
+    1, 13, 8, 45,
+    // PCLK active neg, prefer speed
+    1, 12000000,
+    // TFT backlight GPIO
+    10
+};
+
+// Waveshare ESP32-S3-Touch-LCD-7B
+static const BoardConfig BOARD_CFG_WAVESHARE = {
+    // LCD: DE, VSYNC, HSYNC, PCLK
+    5, 3, 46, 7,
+    // R0-R4
+    {1, 2, 42, 41, 40},
+    // G0-G5
+    {39, 0, 45, 48, 47, 21},
+    // B0-B4
+    {14, 38, 18, 17, 10},
+    // HSYNC: polarity, front porch, pulse width, back porch
+    0, 48, 162, 152,
+    // VSYNC: polarity, front porch, pulse width, back porch
+    0, 3, 45, 13,
+    // PCLK active neg, prefer speed
+    0, 12000000,
+    // TFT backlight GPIO (-1 = controlled via I2C expander)
+    -1
+};
+
+// Board selection — set by board_select() before any hardware init
+static bool isWaveshare = false;
+static const BoardConfig* board = nullptr;
+
+// Screen config — initialized after board selection
+static Arduino_ESP32RGBPanel* rgbpanel = nullptr;
+static Arduino_RGB_Display* gfx = nullptr;
 
 // Screen setting
 static uint32_t screenWidth = LCD_WIDTH;
@@ -31,7 +85,7 @@ static uint8_t* dispDrawBuf;
 // expander MCU still booting, a bus glitch) can't boot a Waveshare with the Matouch
 // pin map. GPIO 8/9 are safe to probe at boot — they are LCD data pins on Matouch but
 // are not driven by the RGB panel until gfx->begin() is called.
-bool detectWaveshare() {
+static bool detectWaveshare() {
     Wire.begin(WS_I2C_SDA, WS_I2C_SCL, WS_I2C_FREQ_HZ);
     bool found = false;
     for (int attempt = 0; attempt < BOARD_DETECT_ATTEMPTS && !found; attempt++) {
@@ -45,6 +99,12 @@ bool detectWaveshare() {
     return found;
 }
 
+bool board_select() {
+    isWaveshare = detectWaveshare();
+    board = isWaveshare ? &BOARD_CFG_WAVESHARE : &BOARD_CFG_MATOUCH;
+    return isWaveshare;
+}
+
 // Sets screen backlight to day (full) or night (dim) brightness.
 void setBacklight(bool day) {
     if (isWaveshare) {
@@ -56,7 +116,7 @@ void setBacklight(bool day) {
 }
 
 // Flush function for LVGL
-void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
+static void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
@@ -75,7 +135,7 @@ void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
 // Initialise the backlight PWM. On Waveshare the backlight is behind the I2C expander,
 // which setup() initialises right after board detection (before the SD card is mounted,
 // as the expander also drives the SD card's CS line).
-void pinInit() {
+static void pinInit() {
     if (!isWaveshare) {
         pinMode(board->tftBl, OUTPUT);
         ledcSetup(PWMChannel, PWMFreq, PWMResolution);
@@ -84,9 +144,9 @@ void pinInit() {
     }
 }
 
-// Creates the RGB panel for the detected board, initialises the backlight and
-// LVGL, then builds the SquareLine UI. Call after detectWaveshare() has selected
-// the board config. The touch controller is not used.
+// Creates the RGB panel for the selected board, initialises the backlight and
+// LVGL, then builds the SquareLine UI. Call after board_select(). The touch
+// controller is not used.
 void display_hardware_init() {
     rgbpanel = new Arduino_ESP32RGBPanel(
         board->lcdDe, board->lcdVsync, board->lcdHsync, board->lcdPclk,

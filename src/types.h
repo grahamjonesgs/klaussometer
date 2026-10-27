@@ -1,20 +1,8 @@
 #ifndef TYPES_H
 #define TYPES_H
 
-// Lightweight universal headers - safe to include everywhere
-#include "config.h"
+// Data struct definitions only - no secrets, no hardware or RTOS dependencies
 #include "constants.h"
-#include "logging.h"
-#include <atomic>
-#include <cctype>
-#include <cmath>
-#include <cstring>
-#include <esp_system.h>
-#include <esp_task_wdt.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/queue.h>
-#include <freertos/semphr.h>
-#include <freertos/task.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <time.h>
@@ -135,19 +123,5 @@ struct SDLogMessage {
     char message[CHAR_LEN];
     char filename[50];
 };
-
-// Guards the shared data structs (readings, weather, uv, solar, airQuality,
-// insideAirQuality, statusMessageValue) against torn reads between the producer
-// tasks (MQTT, API, status) and the display loop. Hold only around the actual
-// struct reads/writes — never across HTTP or SD card operations.
-extern SemaphoreHandle_t dataMutex;
-
-// Dirty flags for display update groups (set by data producers, cleared by loop)
-extern std::atomic<bool> dirtyRooms;
-extern std::atomic<bool> dirtySolar;
-extern std::atomic<bool> dirtyWeather;
-extern std::atomic<bool> dirtyUv;
-extern std::atomic<bool> dirtyInsideAQ;
-extern std::atomic<bool> dirtySolarForecast;
 
 #endif // TYPES_H

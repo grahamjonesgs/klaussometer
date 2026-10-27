@@ -1,9 +1,7 @@
 #ifndef SDCARD_H
 #define SDCARD_H
 
-#include "types.h"
-#include "utils.h"
-#include <SD_MMC.h>
+#include <stddef.h>
 
 bool sdcard_mount();
 bool saveDataBlock(const char* filename, const void* dataPtr, size_t size);
@@ -18,7 +16,7 @@ bool sdcard_append_line_now(const char* logFilename, const char* message, int ti
 void sdcard_logger_t(void* pvParameters);
 void sdcard_init();
 
-extern SemaphoreHandle_t sdMutex;
-extern QueueHandle_t sdLogQueue;
+// Queues a line for the SD logger task. Never blocks; returns false if the queue is full.
+bool sdcard_queue_log(const char* message, const char* logFilename);
 
 #endif // SDCARD_H

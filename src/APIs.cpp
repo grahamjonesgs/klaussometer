@@ -1,17 +1,39 @@
 
 #include "APIs.h"
+#include "config.h"
+#include "logging.h"
+#include "types.h"
+#include <Arduino.h>
+#include <esp_task_wdt.h>
+#include "utils.h"
+#include <ArduinoJson.h>
+#include <HTTPClient.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include "OTA.h"
 #include "SDCard.h"
+#include "state.h"
 #include "mountain_sunset.h"
 
-extern Weather weather;
-extern UV uv;
-extern Solar solar;
-extern SolarToken solarToken;
-extern AirQuality airQuality;
 
-extern HTTPClient http;
-extern WiFiClientSecure httpsClient;
+static HTTPClient http;
+static WiFiClientSecure httpsClient; // Shared TLS transport for every http.begin()
+
+HTTPClient& apiHttp() {
+    return http;
+}
+
+WiFiClientSecure& apiTls() {
+    return httpsClient;
+}
+
+void api_init() {
+    http.setTimeout(HTTP_TIMEOUT_MS); // Set read timeout for all API calls
+    http.setReuse(false);             // Disable keep-alive - single task calls different hosts/protocols
+    // Certificates are not verified yet - the same as http.begin(url) without a CA did before
+    httpsClient.setInsecure();
+    httpsClient.setHandshakeTimeout(HTTPS_HANDSHAKE_TIMEOUT_SEC);
+}
 
 // Per-API retry tracking. lastAttemptTime records when a fetch was last
 // tried regardless of outcome, so retry pacing never has to fake the data's
@@ -91,12 +113,15 @@ static void reportHttpError(const char* label, int httpCode) {
     errorPublish(logMessage);
 }
 
-const size_t JSON_PAYLOAD_SIZE = 4096;
-char payloadBuffer[JSON_PAYLOAD_SIZE] = {0};
-const size_t URL_BUFFER_SIZE = 512;
-char urlBuffer[URL_BUFFER_SIZE] = {0};
-const size_t POST_BUFFER_SIZE = 512;
-char postBuffer[POST_BUFFER_SIZE] = {0};
+static const size_t JSON_PAYLOAD_SIZE = 4096;
+static char payloadBuffer[JSON_PAYLOAD_SIZE] = {0};
+static const size_t URL_BUFFER_SIZE = 512;
+static char urlBuffer[URL_BUFFER_SIZE] = {0};
+static const size_t POST_BUFFER_SIZE = 512;
+static char postBuffer[POST_BUFFER_SIZE] = {0};
+
+static int readChunkedPayload(WiFiClient* stream, char* buffer, size_t bufferSize);
+static int readFixedLengthPayload(WiFiClient* stream, char* buffer, size_t bufferSize, size_t contentLength);
 
 
 // Auto-detect Content-Length vs chunked transfer and read the payload
@@ -700,7 +725,7 @@ void api_manager_t(void* pvParameters) {
 // Returns total bytes read, or -1 on overflow, a short read, bad framing, or a body
 // that ended before the terminating zero-size chunk (so a truncated body is never
 // passed on as success).
-int readChunkedPayload(WiFiClient* stream, char* buffer, size_t bufferSize) {
+static int readChunkedPayload(WiFiClient* stream, char* buffer, size_t bufferSize) {
     size_t totalRead = 0;
     bool complete = false;
 
@@ -752,7 +777,7 @@ int readChunkedPayload(WiFiClient* stream, char* buffer, size_t bufferSize) {
 
 // Reads exactly content_length bytes from stream into buffer (Content-Length style).
 // Returns bytes read, or -1 if content_length >= buffer_size or the body was short.
-int readFixedLengthPayload(WiFiClient* stream, char* buffer, size_t bufferSize, size_t contentLength) {
+static int readFixedLengthPayload(WiFiClient* stream, char* buffer, size_t bufferSize, size_t contentLength) {
     // Check for buffer overflow before starting the read
     if (contentLength >= bufferSize) {
         // Discard the entire body to free the stream

@@ -1,17 +1,50 @@
 
 #include "display.h"
+#include "UI/ui.h"
+#include "config.h"
+#include "logging.h"
+#include "types.h"
+#include <Arduino.h>
+#include <esp_task_wdt.h>
+#include "utils.h"
+#include <lvgl.h>
 #include "board.h"
 #include "mqtt.h"
+#include "state.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <cstdio>
 
-extern Readings readings[];
-extern UV uv;
-extern AirQuality airQuality;
-extern InsideAirQuality insideAirQuality;
-extern SolarForecast solarForecast;
-extern char chipId[CHAR_LEN];
+
+// UI widget lists (SquareLine object pointers), one entry per room
+#define ROOM_NAME_LABELS {&ui_RoomName1, &ui_RoomName2, &ui_RoomName3, &ui_RoomName4, &ui_RoomName5}
+#define TEMP_ARC_LABELS {&ui_TempArc1, &ui_TempArc2, &ui_TempArc3, &ui_TempArc4, &ui_TempArc5}
+#define TEMP_LABELS {&ui_TempLabel1, &ui_TempLabel2, &ui_TempLabel3, &ui_TempLabel4, &ui_TempLabel5}
+#define BATTERY_LABELS {&ui_BatteryLabel1, &ui_BatteryLabel2, &ui_BatteryLabel3, &ui_BatteryLabel4, &ui_BatteryLabel5}
+#define DIRECTION_LABELS {&ui_Direction1, &ui_Direction2, &ui_Direction3, &ui_Direction4, &ui_Direction5}
+#define HUMIDITY_LABELS {&ui_HumidLabel1, &ui_HumidLabel2, &ui_HumidLabel3, &ui_HumidLabel4, &ui_HumidLabel5}
+
+// All text labels that receive a uniform color in day/night mode (used by set_basic_text_color).
+// clang-format off
+#define TEXT_COLOR_LABELS { \
+    &ui_TempLabelFC,      &ui_UVLabel,             &ui_UsingLabel,           &ui_SolarLabel,           &ui_BatteryLabel,     \
+    &ui_RoomName1,        &ui_RoomName2,           &ui_RoomName3,            &ui_RoomName4,            &ui_RoomName5,        \
+    &ui_TempLabel1,       &ui_TempLabel2,          &ui_TempLabel3,           &ui_TempLabel4,           &ui_TempLabel5,       \
+    &ui_HumidLabel1,      &ui_HumidLabel2,         &ui_HumidLabel3,          &ui_HumidLabel4,          &ui_HumidLabel5,      \
+    &ui_StatusMessage,    &ui_Time,                &ui_TextRooms,            &ui_TextForecastName,     &ui_TextBattery,      \
+    &ui_TextSolar,        &ui_TextUsing,           &ui_TextUV,               &ui_FCConditions,         &ui_FCWindSpeed,      \
+    &ui_FCUpdateTime,     &ui_UVUpdateTime,        &ui_ChargingLabel,        &ui_AsofTimeLabel,        &ui_ChargingTime,     \
+    &ui_TextKlaussometer, &ui_SolarMinMax,         &ui_GridBought,           &ui_GridTodayEnergy,      &ui_GridMonthEnergy,  \
+    &ui_GridTodayCost,    &ui_GridMonthCost,       &ui_GridTodayPercentage,  &ui_GridMonthPercentage,  &ui_GridTitlekWh,     \
+    &ui_GridTitleCost,    &ui_GridTitlePercentage, &ui_FCMin,                &ui_FCMax,                &ui_UVMax,            \
+    &ui_SolarTodayEnergy, &ui_SolarMonthEnergy,    &ui_GridTitleSolar,                                                                         \
+    &ui_Direction1,       &ui_Direction2,          &ui_Direction3,           &ui_Direction4,           &ui_Direction5,       \
+    &ui_FCAQI,            &ui_FCAQIUpdateTime,     &ui_InsideAirQualityCO2,  &ui_InsideAirQualityPM25,                       \
+    &ui_UVMin,            &ui_FCSunrise,           &ui_FCSunset,             &ui_FCMountainSet,        &ui_SolarForecast,    \
+    &ui_SolarForecastTitle,                                                                                                  \
+    &ui_Version,                                                                                                             \
+}
+// clang-format on
 
 // Sets a label's text colour only if it differs from the current one. Every style set
 // invalidates the widget, so unconditional per-second updates forced needless redraws.
@@ -34,10 +67,6 @@ static void setArcColor(lv_obj_t* arc, lv_color_t color) {
     lv_obj_set_style_arc_color(arc, color, LV_PART_INDICATOR | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(arc, color, LV_PART_KNOB | LV_STATE_DEFAULT);
 }
-extern Weather weather;
-extern Solar solar;
-extern QueueHandle_t statusMessageQueue;
-extern char statusMessageValue[CHAR_LEN];
 
 // Updates battery arc colour (by state of charge) and the charge/discharge status labels.
 // Shows remaining time to empty (discharging) or full (charging).
@@ -155,7 +184,7 @@ static void updateGridMetrics() {
 // charge/discharge status and estimated time remaining, daily min/max battery,
 // grid energy totals, cost (in Rand), and self-sufficiency percentages.
 // Does nothing if solar data has never been received (currentUpdateTime == 0).
-void set_solar_values() {
+static void set_solar_values() {
     if (solar.currentUpdateTime == 0)
         return;
     char tempString[CHAR_LEN];
@@ -192,7 +221,7 @@ void set_solar_values() {
 }
 
 // Sets all text fields to the given color for day/night mode.
-void set_basic_text_color(lv_color_t color) {
+static void set_basic_text_color(lv_color_t color) {
     lv_obj_t** elements[] = TEXT_COLOR_LABELS;
     for (size_t i = 0; i < sizeof(elements) / sizeof(elements[0]); i++) {
         lv_obj_set_style_text_color(*elements[i], color, LV_PART_MAIN);
@@ -200,7 +229,7 @@ void set_basic_text_color(lv_color_t color) {
 }
 
 // Sets arc colors for day/night mode
-void set_arc_night_mode(bool isNight) {
+static void set_arc_night_mode(bool isNight) {
     uint32_t trackColor = isNight ? COLOR_ARC_TRACK_NIGHT : COLOR_ARC_TRACK_DAY;
     lv_opa_t indicatorOpa = isNight ? ARC_OPACITY_NIGHT : ARC_OPACITY_DAY;
 

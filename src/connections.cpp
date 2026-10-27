@@ -1,8 +1,13 @@
 #include "connections.h"
-#include "OTA.h"
+#include "config.h"
+#include "logging.h"
+#include "types.h"
+#include <Arduino.h>
+#include <esp_task_wdt.h>
+#include <WiFi.h>
 
 
-void setup_wifi() {
+static void setup_wifi() {
     int counter = 0;
     WiFi.disconnect(true); // Full radio reset for clean state after reboots
     vTaskDelay(pdMS_TO_TICKS(WIFI_DISCONNECT_DELAY_MS));
@@ -34,7 +39,7 @@ void setup_wifi() {
     logAndPublish(messageBuffer);
 }
 
-void time_init() {
+static void time_init() {
     struct tm local;
     if (!getLocalTime(&local)) {
         logAndPublish("Failed to obtain time");

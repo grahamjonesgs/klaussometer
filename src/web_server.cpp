@@ -1,13 +1,18 @@
 #include "web_server.h"
+#include "config.h"
+#include "logging.h"
+#include "types.h"
+#include <Arduino.h>
+#include <esp_task_wdt.h>
 #include "OTA.h"
 #include "SDCard.h"
+#include "state.h"
 #include "html.h"
+#include <WebServer.h>
 #include <Update.h>
 #include <WiFi.h>
 
-WebServer webServer(80);
-extern char macAddress[18];
-extern char chipId[CHAR_LEN];
+static WebServer webServer(80);
 static bool webUpdateWritten = false;  // Set when a web upload completes and verifies
 static bool webOwnsOta = false;        // This upload path holds the OTA claim (see otaTryBegin)
 static bool webUploadRejected = false; // Current upload refused because a server OTA is running
@@ -149,6 +154,10 @@ void setup_web_server() {
         });
 
     webServer.begin();
+}
+
+void web_server_handle() {
+    webServer.handleClient();
 }
 
 // Returns a human-readable uptime string, e.g. "3 days, 04:22:15".

@@ -63,21 +63,22 @@ klaussometer/
 │   ├── config.h            # User configuration (not in git — see config.example.h)
 │   ├── config.example.h    # Configuration template
 │   ├── constants.h         # Pin mappings, thresholds, intervals, colours
-│   ├── types.h             # Data structures, shared mutex and dirty flags
+│   ├── types.h             # Data struct definitions
 │   ├── html.h              # Web interface HTML templates
 │   ├── lv_conf.h           # LVGL configuration
 │   ├── mountain_sunset.h   # Generated mountain-sunset lookup table (see mountain-sunset/)
 │   ├── APIs.cpp            # Consolidated API manager (weather, solar, UV, AQI, OTA check)
-│   ├── board.cpp           # Board detection, backlight, LCD panel, touch and LVGL bring-up
+│   ├── board.cpp           # Board detection and pin maps, backlight, LCD panel and LVGL bring-up
 │   ├── board_waveshare.cpp # Waveshare I2C IO expander driver
-│   ├── connections.cpp     # WiFi, MQTT, and NTP setup
+│   ├── connections.cpp     # WiFi reconnection and NTP
 │   ├── display.cpp         # All screen updates, day/night mode and status messages
 │   ├── logging.cpp         # Log to serial, SD card and MQTT
-│   ├── mqtt.cpp            # MQTT message handling and sensor updates
+│   ├── mqtt.cpp            # MQTT client owner: connect, receive, publish queued logs
 │   ├── OTA.cpp             # Firmware update check and download from the OTA server
-│   ├── SDCard.cpp          # Persistent storage with checksum validation, log files
+│   ├── SDCard.cpp          # Persistent storage with CRC validation, log files
 │   ├── staleness.cpp       # Ages out sensor and API data that has stopped updating
-│   ├── utils.cpp           # Pure helpers (formatting, colours, checksums, versions)
+│   ├── state.cpp           # Shared data structs, dataMutex, dirty flags, device identity
+│   ├── utils.cpp           # Pure helpers (formatting, colours, CRC-32, versions)
 │   ├── web_server.cpp      # Local web interface: info, logs, reboot, firmware upload
 │   └── UI/                 # SquareLine Studio generated UI (screens, fonts, helpers)
 └── SL/                     # SquareLine Studio project files
