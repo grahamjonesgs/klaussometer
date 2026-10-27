@@ -203,7 +203,7 @@ static const int MQTT_RETRY_DELAY_SEC = 5; // Delay between MQTT connection atte
 // WiFi / MQTT connection management delays
 static const int WIFI_DISCONNECT_DELAY_MS = 500;       // Settle time after WiFi.disconnect(true) before re-init
 static const int WIFI_MODE_SETUP_DELAY_MS = 100;       // Settle time after WiFi.mode() before beginning
-static const int WIFI_RECONNECT_GROUP = 5;             // Run a full setup_wifi() every Nth failed attempt; others rely on autoReconnect
+static const int WIFI_AUTORECONNECT_GRACE_CHECKS = 2;  // After a drop, checks to leave autoReconnect alone before a full setup_wifi()
 static const int WIFI_RECONNECT_CHECK_DELAY_MS = 5000; // Delay between connectivity_manager WiFi check loops when disconnected
 static const int CONNECTION_CHECK_INTERVAL_MS = 5000;  // Delay at end of connectivity_manager main loop
 static const int MQTT_WAIT_CONNECTED_MS = 1000;        // Delay in MQTT task when broker not yet connected
@@ -294,9 +294,10 @@ static const int TEMP_ARC_SCALE = 10;            // Forecast temperature arc wor
 static const int UV_ARC_DEFAULT_MAX = 13;        // UV arc full-scale when no daily max is available
 
 // OTA
-static const int OTA_BUFFER_SIZE = 128;         // Byte buffer for OTA firmware download chunks
+static const int OTA_BUFFER_SIZE = 2048;        // Byte buffer for OTA firmware download chunks (static, not on the stack)
 static const int OTA_LOG_INTERVAL_PERCENT = 10; // Log OTA download progress every N percent
-static const int OTA_YIELD_DELAY_MS = 1;        // vTaskDelay in OTA download loop to yield CPU
+static const int OTA_YIELD_DELAY_MS = 1;        // vTaskDelay in OTA download loop while waiting for data
 static const unsigned long OTA_STALL_TIMEOUT_MS = 15000; // Abort the OTA download after this long with no data
+static const int OTA_RETRY_SAME_VERSION_SEC = 86400;     // Don't retry installing the same server version within this time
 
 #endif // CONSTANTS_H

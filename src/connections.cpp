@@ -52,6 +52,7 @@ void connectivity_manager_t(void* pvParameters) {
     esp_task_wdt_add(nullptr);
 
     bool wasDisconnected = false;
+    bool everConnected = false;
     int wifiFailCount = 0;
     unsigned long lastHwmLog = 0;
     while (true) {
@@ -68,19 +69,23 @@ void connectivity_manager_t(void* pvParameters) {
         if (WiFi.status() != WL_CONNECTED) {
             wasDisconnected = true;
             wifiFailCount++;
-            if (wifiFailCount == 1 || wifiFailCount % WIFI_RECONNECT_GROUP == 0) {
-                // Full reconnect on first failure and every 5th attempt
+            // After a drop, autoReconnect (enabled once we have connected) usually recovers
+            // within a few seconds, and setup_wifi() would cut it short with a full radio
+            // reset - so leave it a short grace period first. Before the first connection,
+            // or once a setup_wifi() has failed (it switches the radio off), there is nothing
+            // running in the background, so retry the full setup on every check.
+            if (!everConnected || wifiFailCount > WIFI_AUTORECONNECT_GRACE_CHECKS) {
                 char messageBuffer[CHAR_LEN];
-                snprintf(messageBuffer, sizeof(messageBuffer), "WiFi reconnecting (attempt group %d, status: %d)", wifiFailCount, WiFi.status());
+                snprintf(messageBuffer, sizeof(messageBuffer), "WiFi reconnecting (check %d, status: %d)", wifiFailCount, WiFi.status());
                 logAndPublish(messageBuffer);
                 setup_wifi();
             }
-            // Otherwise let autoReconnect work in the background
             vTaskDelay(pdMS_TO_TICKS(WIFI_RECONNECT_CHECK_DELAY_MS));
             continue;
         }
 
         // WiFi is connected
+        everConnected = true;
         if (wasDisconnected) {
             wasDisconnected = false;
             wifiFailCount = 0;

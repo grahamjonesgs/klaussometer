@@ -1,4 +1,5 @@
 #include "web_server.h"
+#include "OTA.h"
 #include "SDCard.h"
 #include "html.h"
 #include <Update.h>
@@ -7,7 +8,9 @@
 WebServer webServer(80);
 extern char macAddress[18];
 extern char chipId[CHAR_LEN];
-static bool webUpdateWritten = false; // Set when a web upload completes and verifies
+static bool webUpdateWritten = false;  // Set when a web upload completes and verifies
+static bool webOwnsOta = false;        // This upload path holds the OTA claim (see otaTryBegin)
+static bool webUploadRejected = false; // Current upload refused because a server OTA is running
 
 static String getUptime();
 
@@ -82,7 +85,7 @@ void setup_web_server() {
         "/update", HTTP_POST,
         []() {
             // Only reboot into a complete, verified image
-            bool ok = webUpdateWritten && !Update.hasError();
+            bool ok = !webUploadRejected && webUpdateWritten && !Update.hasError();
             webServer.sendHeader("Connection", "close");
             webServer.send(200, "text/plain", ok ? "OK" : "FAIL");
             if (ok) {
@@ -97,12 +100,24 @@ void setup_web_server() {
             HTTPUpload& upload = webServer.upload();
             if (upload.status == UPLOAD_FILE_START) {
                 webUpdateWritten = false;
+                // The API task's server OTA uses the same global Update object - never
+                // abort it from here. A claim this path still holds is left over from
+                // an earlier upload that was cancelled, so reuse it.
+                if (!webOwnsOta && !otaTryBegin()) {
+                    webUploadRejected = true;
+                    logAndPublish("Web firmware upload rejected: server OTA in progress");
+                    return;
+                }
+                webOwnsOta = true;
+                webUploadRejected = false;
                 if (Update.isRunning()) {
                     Update.abort(); // Left over from an earlier upload that was cancelled
                 }
                 if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { // Start with unknown size
                     Update.printError(Serial);
                 }
+            } else if (webUploadRejected) {
+                return; // Drain the rejected upload without touching Update
             } else if (upload.status == UPLOAD_FILE_WRITE) {
                 if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
                     Update.printError(Serial);
@@ -115,10 +130,14 @@ void setup_web_server() {
                 } else {
                     Update.printError(Serial);
                 }
+                otaEnd();
+                webOwnsOta = false;
             } else if (upload.status == UPLOAD_FILE_ABORTED) {
                 // Browser cancelled or the connection dropped - without this the session
                 // stays "running" and blocks every later OTA until reboot
                 Update.abort();
+                otaEnd();
+                webOwnsOta = false;
                 logAndPublish("Web firmware upload aborted");
             }
         });
