@@ -1,15 +1,16 @@
 #include <unity.h>
+#include <cstring>
 #include "utils.h"
 
 void setUp(void) {}
 void tearDown(void) {}
 
-// --- uv_color ---
-void test_uv_below_1()      { TEST_ASSERT_EQUAL_HEX(0x658D1B, uv_color(0.0f)); }
-void test_uv_boundary_1()   { TEST_ASSERT_EQUAL_HEX(0x84BD00, uv_color(1.0f)); }
-void test_uv_boundary_5()   { TEST_ASSERT_EQUAL_HEX(0xFFCD00, uv_color(5.0f)); }
-void test_uv_extreme()      { TEST_ASSERT_EQUAL_HEX(0x4B1E88, uv_color(11.0f)); }
-void test_uv_very_high()    { TEST_ASSERT_EQUAL_HEX(0x4B1E88, uv_color(15.0f)); }
+// --- uvColor ---
+void test_uv_below_1()      { TEST_ASSERT_EQUAL_HEX(0x658D1B, uvColor(0.0f)); }
+void test_uv_boundary_1()   { TEST_ASSERT_EQUAL_HEX(0x84BD00, uvColor(1.0f)); }
+void test_uv_boundary_5()   { TEST_ASSERT_EQUAL_HEX(0xFFCD00, uvColor(5.0f)); }
+void test_uv_extreme()      { TEST_ASSERT_EQUAL_HEX(0x4B1E88, uvColor(11.0f)); }
+void test_uv_very_high()    { TEST_ASSERT_EQUAL_HEX(0x4B1E88, uvColor(15.0f)); }
 
 // --- degreesToDirection ---
 void test_dir_north()       { TEST_ASSERT_EQUAL_STRING("N",  degreesToDirection(0.0)); }
@@ -34,47 +35,54 @@ void test_ver_equal()       { TEST_ASSERT_EQUAL( 0, compareVersionsStr("4.1.35",
 void test_ver_major_wins()  { TEST_ASSERT_EQUAL( 1, compareVersionsStr("5.0.0",  "4.9.9")); }
 void test_ver_minor_wins()  { TEST_ASSERT_EQUAL(-1, compareVersionsStr("4.0.9",  "4.1.0")); }
 
-// --- calculateChecksum ---
-void test_csum_empty() {
-    TEST_ASSERT_EQUAL_HEX(0x00, calculateChecksum(nullptr, 0));
+// --- crc32Calc ---
+void test_crc_empty() {
+    TEST_ASSERT_EQUAL_HEX32(0x00000000, crc32Calc(nullptr, 0));
 }
-void test_csum_single() {
-    uint8_t d[] = {0x42};
-    TEST_ASSERT_EQUAL_HEX(0x42, calculateChecksum(d, 1));
+void test_crc_check_value() {
+    // The standard CRC-32 (zlib/IEEE) check value
+    const char* d = "123456789";
+    TEST_ASSERT_EQUAL_HEX32(0xCBF43926, crc32Calc(d, strlen(d)));
 }
-void test_csum_xor() {
-    uint8_t d[] = {0xAA, 0xBB, 0xAA};  // 0xAA^0xBB^0xAA = 0xBB
-    TEST_ASSERT_EQUAL_HEX(0xBB, calculateChecksum(d, 3));
-}
-void test_csum_self_cancels() {
-    uint8_t d[] = {0xFF, 0xFF};
-    TEST_ASSERT_EQUAL_HEX(0x00, calculateChecksum(d, 2));
+void test_crc_detects_swap() {
+    // Reordered bytes - the old XOR checksum gave the same result for both
+    uint8_t a[] = {0x01, 0x02};
+    uint8_t b[] = {0x02, 0x01};
+    TEST_ASSERT_NOT_EQUAL(crc32Calc(a, 2), crc32Calc(b, 2));
 }
 
-// --- format_integer_with_commas ---
+// --- gridPercentage ---
+void test_grid_no_usage()   { TEST_ASSERT_EQUAL(-1,  gridPercentage(0.0f, 0.0f)); }
+void test_grid_all_solar()  { TEST_ASSERT_EQUAL(0,   gridPercentage(0.0f, 10.0f)); }
+void test_grid_half()       { TEST_ASSERT_EQUAL(50,  gridPercentage(5.0f, 10.0f)); }
+void test_grid_rounds()     { TEST_ASSERT_EQUAL(1,   gridPercentage(0.06f, 10.0f)); } // 0.6% rounds up, not down to 0
+void test_grid_clamps_high(){ TEST_ASSERT_EQUAL(100, gridPercentage(12.0f, 10.0f)); }
+void test_grid_clamps_low() { TEST_ASSERT_EQUAL(0,   gridPercentage(-1.0f, 10.0f)); }
+
+// --- formatIntegerWithCommas ---
 void test_fmt_zero() {
     char buf[32];
-    format_integer_with_commas(0, buf, sizeof(buf));
+    formatIntegerWithCommas(0, buf, sizeof(buf));
     TEST_ASSERT_EQUAL_STRING("0", buf);
 }
 void test_fmt_small() {
     char buf[32];
-    format_integer_with_commas(999, buf, sizeof(buf));
+    formatIntegerWithCommas(999, buf, sizeof(buf));
     TEST_ASSERT_EQUAL_STRING("999", buf);
 }
 void test_fmt_thousands() {
     char buf[32];
-    format_integer_with_commas(1000, buf, sizeof(buf));
+    formatIntegerWithCommas(1000, buf, sizeof(buf));
     TEST_ASSERT_EQUAL_STRING("1,000", buf);
 }
 void test_fmt_millions() {
     char buf[32];
-    format_integer_with_commas(1234567, buf, sizeof(buf));
+    formatIntegerWithCommas(1234567, buf, sizeof(buf));
     TEST_ASSERT_EQUAL_STRING("1,234,567", buf);
 }
 void test_fmt_negative() {
     char buf[32];
-    format_integer_with_commas(-1000, buf, sizeof(buf));
+    formatIntegerWithCommas(-1000, buf, sizeof(buf));
     TEST_ASSERT_EQUAL_STRING("-1,000", buf);
 }
 
@@ -107,10 +115,16 @@ int main() {
     RUN_TEST(test_ver_major_wins);
     RUN_TEST(test_ver_minor_wins);
 
-    RUN_TEST(test_csum_empty);
-    RUN_TEST(test_csum_single);
-    RUN_TEST(test_csum_xor);
-    RUN_TEST(test_csum_self_cancels);
+    RUN_TEST(test_crc_empty);
+    RUN_TEST(test_crc_check_value);
+    RUN_TEST(test_crc_detects_swap);
+
+    RUN_TEST(test_grid_no_usage);
+    RUN_TEST(test_grid_all_solar);
+    RUN_TEST(test_grid_half);
+    RUN_TEST(test_grid_rounds);
+    RUN_TEST(test_grid_clamps_high);
+    RUN_TEST(test_grid_clamps_low);
 
     RUN_TEST(test_fmt_zero);
     RUN_TEST(test_fmt_small);

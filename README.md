@@ -144,6 +144,9 @@ pio run --target upload
 
 # Monitor serial output
 pio run --target monitor
+
+# Run the host unit tests for src/utils.cpp (no board needed)
+pio test -e native
 ```
 
 ## Web Interface
