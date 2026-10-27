@@ -24,7 +24,7 @@ The display automatically switches between day and night modes based on sunrise/
 |---|---|
 | Microcontroller | ESP32-S3-DevKitC-1 (16MB flash, PSRAM) |
 | Display | 1024x600 RGB parallel LCD panel |
-| Touch | TAMC GT911 capacitive touch (I2C) |
+| Touch | GT911 present on both boards but not used (Waveshare holds it in reset) |
 | Storage | microSD card (SDMMC interface) |
 | Room sensors | Wireless temperature/humidity sensors reporting via MQTT |
 | Solar inverter | SolarEdge (accessed via HTTPS API) |
@@ -33,7 +33,6 @@ The display automatically switches between day and night modes based on sunrise/
 
 | Function | Pins |
 |---|---|
-| I2C (touch) | SDA: 17, SCL: 18, RST: 38 |
 | SD card | CMD: 11, CLK: 12, D0: 13 |
 | Backlight PWM | GPIO 10 |
 | LCD control | DE: 40, VSYNC: 41, HSYNC: 39, PCLK: 42 |
@@ -45,14 +44,14 @@ The firmware runs on FreeRTOS with the following task structure:
 
 | Task | Core | Stack | Purpose |
 |---|---|---|---|
-| `loop()` | 1 | — | LVGL display updates, web server, UI refresh (~5ms cycle) |
+| `loop()` | 1 | — | LVGL rendering (inline, `LV_OS_NONE`), web server, UI refresh (20 ms cycle) |
 | `api_manager_t` | 1 | 8KB | All external API calls (weather, solar, UV, AQI, OTA) with exponential backoff |
-| `receive_mqtt_messages_t` | 1 | 4KB | MQTT message reception and sensor data parsing |
-| `connectivity_manager_t` | 1 | 4KB | WiFi and MQTT connection management with auto-reconnect |
+| `receive_mqtt_messages_t` | 1 | 8KB | Sole owner of the MQTT client: connect/subscribe, receive, and publish queued log messages |
+| `connectivity_manager_t` | 1 | 4KB | WiFi reconnection and NTP |
 | `sdcard_logger_t` | 1 | 4KB | Asynchronous SD card log writing via FreeRTOS queue |
 | `displayStatusMessages_t` | 1 | 4KB | Status message display queue |
 
-Shared resources are protected by mutexes (`mqttMutex`, `sdMutex`). A 60-second watchdog timer triggers a reboot if the main loop hangs.
+Shared data structs are guarded by `dataMutex` and the SD card by `sdMutex`. Other tasks never touch the MQTT client: `logAndPublish`/`errorPublish` queue messages for the receive task. A 60-second task watchdog reboots the device if a task hangs.
 
 ## Project Structure
 
@@ -179,15 +178,18 @@ The device publishes logs to:
 
 ## Data Persistence
 
-Sensor data, solar metrics, and weather data are persisted to the SD card as binary files with XOR checksums. On boot, the device restores the last known state so the display is populated immediately while fresh data is fetched.
+Sensor data, solar metrics, and weather data are persisted to the SD card as binary files, each with a header (magic, format version, size, CRC-32). Saves go to `<file>.tmp` first and are then swapped in, so a power cut mid-save keeps the previous copy. On boot, the device restores the last known state so the display is populated immediately while fresh data is fetched; a file that fails any header check is ignored and refetched.
 
 | File | Contents |
 |---|---|
-| `/solar_data.bin` | Current, daily, and monthly solar metrics + OAuth2 token |
+| `/solar_data.bin` | Current, daily, and monthly solar metrics, today's battery min/max |
+| `/solar_token.bin` | Solarman access token |
 | `/weather_data.bin` | Temperature, wind, conditions |
 | `/uv_data.bin` | UV index |
 | `/readings_data.bin` | Room sensor readings |
 | `/air_quality_data.bin` | PM and ozone levels |
+| `/inside_aq_data.bin` | Inside CO2 and particulates |
+| `/solar_forecast.bin` | Solar generation forecast |
 | `/normal_log.txt` | System log (1MB max, rotated) |
 | `/error_log.txt` | Error log with reboot reasons |
 
@@ -198,7 +200,15 @@ Sensor data, solar metrics, and weather data are persisted to the SD card as bin
 | [GFX Library for Arduino](https://github.com/moononournation/Arduino_GFX) | 1.5.0 | RGB LCD panel driver |
 | [ArduinoMqttClient](https://github.com/arduino-libraries/ArduinoMqttClient) | ^0.1.8 | MQTT protocol |
 | [ArduinoJson](https://github.com/bblanchon/ArduinoJson) | ^7.4.2 | JSON parsing for API responses |
-| [TAMC_GT911](https://github.com/tamctec/TAMC_GT911) | ^1.0.2 | Capacitive touch driver |
 | [LVGL](https://github.com/lvgl/lvgl) | ^9.4.0 | GUI framework |
 
-Built on the espressif32 platform v6.10.0 with the Arduino framework.
+Built on the espressif32 platform v6.10.0 with the Arduino framework (Arduino-ESP32 2.x).
+
+### Why not Arduino-ESP32 3.x
+
+pioarduino builds (55.03.31 and 55.03.36 tried) crash at boot on this board's early ESP32-S3 silicon with `LoadProhibited` in `systimer_ll_enable_alarm_int`, before any user code runs. The code no longer carries 3.x `#if` branches. An upgrade would need:
+
+- `esp_task_wdt_reconfigure()` with an `esp_task_wdt_config_t` instead of `esp_task_wdt_init(60, true)`
+- `ledcAttachChannel()` instead of `ledcSetup()`/`ledcAttachPin()`, and `ledcWrite(pin, ...)` instead of `ledcWrite(channel, ...)`
+- `RGB565_BLACK` instead of `BLACK`
+- GFX Library for Arduino `^1.6.5`

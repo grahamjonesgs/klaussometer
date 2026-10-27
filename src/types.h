@@ -136,11 +136,6 @@ struct SDLogMessage {
     char filename[50];
 };
 
-struct LogEntry {
-    char message[CHAR_LEN];
-    time_t timestamp;
-};
-
 // Guards the shared data structs (readings, weather, uv, solar, airQuality,
 // insideAirQuality, statusMessageValue) against torn reads between the producer
 // tasks (MQTT, API, status) and the display loop. Hold only around the actual

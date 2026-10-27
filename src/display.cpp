@@ -266,7 +266,7 @@ static void updateSolarForecastDisplay();
 static void updatePeriodicStatus(unsigned long currentMillis);
 static void adjustDayNightMode();
 static void updateClock();
-static void getBatteryStatus(float batteryValue, int readingIndex, char* iconChar, lv_color_t* colorPtr);
+static void getBatteryStatus(float batteryValue, char* iconChar, lv_color_t* colorPtr);
 
 // Arrays of UI objects
 static lv_obj_t** roomNames[ROOM_COUNT] = ROOM_NAME_LABELS;
@@ -312,7 +312,7 @@ static void updateRoomDisplay() {
         lv_label_set_text(*humidityLabels[i], readings[i + ROOM_COUNT].output);
     }
     for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
-        getBatteryStatus(readings[i + 2 * ROOM_COUNT].currentValue, readings[i + 2 * ROOM_COUNT].readingIndex, &batteryIcon, &batteryColor);
+        getBatteryStatus(readings[i + 2 * ROOM_COUNT].currentValue, &batteryIcon, &batteryColor);
         snprintf(tempString, sizeof(tempString), "%c", batteryIcon);
         lv_label_set_text(*batteryLabels[i], tempString);
         lv_obj_set_style_text_color(*batteryLabels[i], batteryColor, LV_PART_MAIN);
@@ -642,7 +642,7 @@ static void adjustDayNightMode() {
     }
 }
 
-static void getBatteryStatus(float batteryValue, int readingIndex, char* iconChar, lv_color_t* colorPtr) {
+static void getBatteryStatus(float batteryValue, char* iconChar, lv_color_t* colorPtr) {
     if (batteryValue > BATTERY_OK) {
         // Battery is ok
         *iconChar = CHAR_BATTERY_GOOD;

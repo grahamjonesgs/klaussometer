@@ -1,16 +1,6 @@
-/* Set ESP32 type to ESP-S3 Dev Module
- lvgl 9.4.0, GFX Lib Arduino 1.5.0, TAMC GT911 1.0.2, Squareline 1.54.0 and
-esp32 3.3.
-
-Arduino IDE Tools menu:
-Board: ESP32 Dev Module
-Flash Size: 16M Flash
-Flash Mode QIO 80Mhz
-Partition Scheme: 16MB (2MB App/...)
-PSRAM: OPI PSRAM
-Events Core 1
-Arduino Core 0
-*/
+/* Klaussometer firmware. Built with PlatformIO - see platformio.ini for the board,
+ framework (Arduino-ESP32 2.x, deliberately not 3.x) and library versions, and
+ README.md for the hardware, task layout and setup. */
 
 #include "APIs.h"
 #include "OTA.h"
@@ -41,6 +31,10 @@ InsideAirQuality insideAirQuality = {};
 SolarForecast solarForecast = {};
 Readings readings[]{READINGS_ARRAY};
 extern const int numberOfReadings = sizeof(readings) / sizeof(readings[0]);
+// mqtt.cpp sizes its per-reading arrays with MAX_READINGS, and the display reads the
+// table as ROOM_COUNT temperatures, then humidities, then batteries
+static_assert(sizeof(readings) / sizeof(readings[0]) <= MAX_READINGS, "Raise MAX_READINGS");
+static_assert(sizeof(readings) / sizeof(readings[0]) == 3 * ROOM_COUNT, "READINGS_ARRAY must be temps, humidities, batteries for each room");
 QueueHandle_t statusMessageQueue;
 char logTopic[CHAR_LEN];
 char errorTopic[CHAR_LEN];
@@ -304,12 +298,7 @@ void setup() {
 
     // Configure and enable the Task Watchdog Timer for the loop task
     // 60 second timeout - will reboot if loop hangs for this long
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-    esp_task_wdtConfig_t wdtConfig = {.timeout_ms = 60000, .idle_core_mask = 0, .trigger_panic = true};
-    esp_task_wdt_reconfigure(&wdtConfig);
-#else
     esp_task_wdt_init(60, true);
-#endif
     esp_task_wdt_add(nullptr); // Add current task (loop task) to watchdog
 
     // Start tasks

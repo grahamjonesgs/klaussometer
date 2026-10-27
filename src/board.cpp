@@ -51,11 +51,7 @@ void setBacklight(bool day) {
         waveshare_backlight_set(day ? WS_BACKLIGHT_DAY_PERCENT : WS_BACKLIGHT_NIGHT_PERCENT);
     } else {
         float duty = day ? DAYTIME_DUTY : NIGHTTIME_DUTY;
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-        ledcWrite(board->tftBl, duty);
-#else
         ledcWrite(PWMChannel, duty);
-#endif
     }
 }
 
@@ -82,14 +78,9 @@ void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
 void pinInit() {
     if (!isWaveshare) {
         pinMode(board->tftBl, OUTPUT);
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-        ledcAttachChannel(board->tftBl, PWMFreq, PWMResolution, PWMChannel);
-        ledcWrite(board->tftBl, NIGHTTIME_DUTY); // Start dim
-#else
         ledcSetup(PWMChannel, PWMFreq, PWMResolution);
         ledcAttachPin(board->tftBl, PWMChannel);
         ledcWrite(PWMChannel, NIGHTTIME_DUTY); // Start dim
-#endif
     }
 }
 
@@ -112,11 +103,7 @@ void display_hardware_init() {
 
     // Init Display Hardware
     gfx->begin();
-#if ESP_ARDUINO_VERSION_MAJOR >= 3
-    gfx->fillScreen(RGB565_BLACK);
-#else
     gfx->fillScreen(BLACK);
-#endif
     lv_init();
     screenWidth = gfx->width();
     screenHeight = gfx->height();

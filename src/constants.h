@@ -5,7 +5,7 @@
 #include <time.h>
 
 static constexpr int STORED_READING = 6;
-static constexpr int MAX_READINGS = 20; // Safe upper bound for per-reading tracking arrays (currently 15)
+static constexpr int MAX_READINGS = 20; // Upper bound for per-reading tracking arrays (static_assert in main.cpp)
 // clang-format off
 #define READINGS_ARRAY                                                                                                                    \
         {"Cave",        "cave/tempset-ambient/set",        NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0}, \
@@ -55,9 +55,6 @@ static constexpr int ROOM_COUNT = 5;
 }
 // clang-format on
 
-static const char* const LOG_TOPIC = "klaussometer/log";
-static const char* const ERROR_TOPIC = "klaussometer/error";
-
 static const int CHAR_LEN = 255;
 // Field sizes for strings stored in the data structs (including the null terminator)
 static const int TIME_STR_LEN = 9;        // "HH:MM:SS"
@@ -82,7 +79,6 @@ static const char* const WIFI_HIGH = "\xEE\x93\xAA";   // U+E4EA
 static const char* const WIFI_MEDIUM = "\xEE\x93\xAE"; // U+E4EE
 static const char* const WIFI_LOW = "\xEE\x93\xAC";    // U+E4EC
 static const char* const WIFI_NONE = "\xEE\x93\xB0";   // U+E4F0
-static const char* const WIFI_SLASH = "\xEE\x93\xB2";  // U+E4F2
 static const char* const WIFI_X = "\xEE\x93\xB4";      // U+E4F4
 
 // WiFi signal strength thresholds (RSSI in dBm)
@@ -159,8 +155,6 @@ static const char* const MQTT_SOLAR_FORECAST_TOPIC = "solar/forecast";
 // Data type definition for array
 static const int DATA_TEMPERATURE = 0;
 static const int DATA_HUMIDITY = 1;
-static const int DATA_SETTING = 2;
-static const int DATA_ONOFF = 3;
 static const int DATA_BATTERY = 4;
 
 // Minimum change required to log a new sensor reading (avoids log spam for noise)
@@ -181,15 +175,12 @@ static const int MAX_API_DATA_AGE_SEC = 7200;             // Seconds before API-
 static const int SOLAR_FORECAST_STALE_SEC = 7200;         // Forecast age (from its ts) before the label turns grey (two missed hourly runs)
 static const int SOLAR_FORECAST_OLD_SEC = 21600;          // Forecast age before the label turns red
 
-static const int TIME_RETRIES = 100;                      // Number of time to retry getting the time during setup
 static const int WEATHER_UPDATE_INTERVAL_SEC = 300;       // Interval between weather updates
 static const int UV_UPDATE_INTERVAL_SEC = 3600;           // Interval between UV updates
 static const int SOLAR_CURRENT_UPDATE_INTERVAL_SEC = 60;  // Interval between solar updates
 static const int SOLAR_MONTHLY_UPDATE_INTERVAL_SEC = 300; // Interval between solar current updates
 static const int SOLAR_DAILY_UPDATE_INTERVAL_SEC = 300;   // Interval between solar daily updates
 static const int AIR_QUALITY_UPDATE_INTERVAL_SEC = 1800;  // Interval between air quality updates (30 min)
-static const int SOLAR_TOKEN_WAIT_SEC = 10;               // Time to wait for solar token to be available
-static const int API_SEMAPHORE_WAIT_SEC = 10;             // Time to wait for http semaphore
 static const int API_FAIL_DELAY_SEC = 30;                 // Initial delay when API call fails
 static const int API_MAX_BACKOFF_SEC = 300;               // Maximum backoff delay (5 minutes)
 static const int API_LOOP_DELAY_SEC = 10;                 // Time delay at end of API loops
@@ -228,7 +219,6 @@ static const int SOLAR_TOKEN_REFRESH_SEC = 43200; // Refresh Solarman JWT after 
 
 // Mutex timeout values (in ms) — use the named constant that matches the call site's tolerance
 static const int MUTEX_TIMEOUT_SD_MS = 5000;  // SD operations can be slow; wait up to 5 s
-static constexpr int MUTEX_NOWAIT = 0;        // Non-blocking: try once, skip if unavailable
 static const int SHUTDOWN_SD_TIMEOUT_MS = 200; // Max wait for the SD card in the shutdown handler
 
 static const int WIFI_RETRIES = 10; // Number of times to retry the wifi before a restart
@@ -266,7 +256,6 @@ static const float MAX_BRIGHTNESS = 1.0;
 static const float MIN_BRIGHTNESS = 0.1;
 
 // microSD card
-static const int SD_CS_PIN = 5;
 static const char* const SOLAR_DATA_FILENAME = "/solar_data.bin";
 static const char* const SOLAR_TOKEN_FILENAME = "/solar_token.bin";
 static const char* const WEATHER_DATA_FILENAME = "/weather_data.bin";
@@ -290,7 +279,6 @@ static constexpr int MAX_LOG_ENTRIES_TO_READ = 500;   // Max entries to read whe
 // FreeRTOS task stack sizes (in bytes)
 static const int TASK_STACK_SMALL = 4096;  // For simple tasks like SD logger
 static const int TASK_STACK_MEDIUM = 8192; // For most tasks (MQTT, connectivity, etc.)
-static const int TASK_STACK_LARGE = 16384; // For memory-intensive tasks if needed
 
 // FreeRTOS queue sizes
 static const int STATUS_MESSAGE_QUEUE_SIZE = 20; // Slots in the status message display queue
