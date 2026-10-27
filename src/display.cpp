@@ -13,6 +13,22 @@ extern InsideAirQuality insideAirQuality;
 extern SolarForecast solarForecast;
 extern char chipId[CHAR_LEN];
 
+// Sets a label's text colour only if it differs from the current one. Every style set
+// invalidates the widget, so unconditional per-second updates forced needless redraws.
+static void setTextColorIfChanged(lv_obj_t* obj, lv_color_t color) {
+    if (!lv_color_eq(lv_obj_get_style_text_color(obj, LV_PART_MAIN), color)) {
+        lv_obj_set_style_text_color(obj, color, LV_PART_MAIN);
+    }
+}
+
+// Sets a label's text only if it differs - set_text re-lays out and redraws the label.
+static void setTextIfChanged(lv_obj_t* label, const char* text) {
+    const char* current = lv_label_get_text(label);
+    if (current == nullptr || strcmp(current, text) != 0) {
+        lv_label_set_text(label, text);
+    }
+}
+
 // Sets both the indicator and knob color of an arc widget in one call.
 static void setArcColor(lv_obj_t* arc, lv_color_t color) {
     lv_obj_set_style_arc_color(arc, color, LV_PART_INDICATOR | LV_STATE_DEFAULT);
@@ -103,13 +119,10 @@ static void updateGridMetrics() {
     formatIntegerWithCommas((long long)floor(solar.todayBuy * ELECTRICITY_PRICE), boughtTodayBuf, sizeof(boughtTodayBuf));
     formatIntegerWithCommas((long long)floor(solar.monthBuy * ELECTRICITY_PRICE), boughtMonthBuf, sizeof(boughtMonthBuf));
 
-    // Calculate self-sufficiency percentages
-    int todaySelfSufficiency = (solar.todayUse > 0.0) ? (int)(((solar.todayUse - solar.todayBuy) / solar.todayUse) * 100) : 0;
-    int monthSelfSufficiency = (solar.monthUse > 0.0) ? (int)(((solar.monthUse - solar.monthBuy) / solar.monthUse) * 100) : 0;
-    int todayGridPercentage = 100 - todaySelfSufficiency;
-    int monthGridPercentage = 100 - monthSelfSufficiency;
-    todayGridPercentage = todayGridPercentage > 100 ? 100 : (todayGridPercentage < 0 ? 0 : todayGridPercentage);
-    monthGridPercentage = monthGridPercentage > 100 ? 100 : (monthGridPercentage < 0 ? 0 : monthGridPercentage);
+    // Share of usage bought from the grid; -1 (shown as "--") when there was no usage yet,
+    // e.g. just after midnight when the daily totals reset
+    int todayGridPercentage = gridPercentage(solar.todayBuy, solar.todayUse);
+    int monthGridPercentage = gridPercentage(solar.monthBuy, solar.monthUse);
 
     snprintf(tempString, sizeof(tempString), "%.0f", solar.todayBuy);
     lv_label_set_text(ui_GridTodayEnergy, tempString);
@@ -119,9 +132,17 @@ static void updateGridMetrics() {
     lv_label_set_text(ui_GridTodayCost, tempString);
     snprintf(tempString, sizeof(tempString), "R%s", boughtMonthBuf);
     lv_label_set_text(ui_GridMonthCost, tempString);
-    snprintf(tempString, sizeof(tempString), "%d%%", todayGridPercentage);
+    if (todayGridPercentage < 0) {
+        snprintf(tempString, sizeof(tempString), "--");
+    } else {
+        snprintf(tempString, sizeof(tempString), "%d%%", todayGridPercentage);
+    }
     lv_label_set_text(ui_GridTodayPercentage, tempString);
-    snprintf(tempString, sizeof(tempString), "%d%%", monthGridPercentage);
+    if (monthGridPercentage < 0) {
+        snprintf(tempString, sizeof(tempString), "--");
+    } else {
+        snprintf(tempString, sizeof(tempString), "%d%%", monthGridPercentage);
+    }
     lv_label_set_text(ui_GridMonthPercentage, tempString);
 
     snprintf(tempString, sizeof(tempString), "%.0f", solar.todayGeneration);
@@ -256,9 +277,12 @@ static lv_obj_t** directionLabels[ROOM_COUNT] = DIRECTION_LABELS;
 static lv_obj_t** humidityLabels[ROOM_COUNT] = HUMIDITY_LABELS;
 
 // Colors a status indicator green if data is fresh, red if it exceeds maxAgeSec.
+// Never-fetched data (updateTime 0) and an unsynced clock (age meaningless - it would
+// read as fresh, or as negative for timestamps restored from SD) count as stale.
 static void setStatusColor(lv_obj_t* label, time_t updateTime, int maxAgeSec) {
-    bool stale = (time(nullptr) - updateTime) > maxAgeSec;
-    lv_obj_set_style_text_color(label, lv_color_hex(stale ? COLOR_RED : COLOR_GREEN), LV_PART_MAIN);
+    time_t now = time(nullptr);
+    bool stale = updateTime == 0 || now < TIME_SYNC_THRESHOLD || (now - updateTime) > maxAgeSec;
+    setTextColorIfChanged(label, lv_color_hex(stale ? COLOR_RED : COLOR_GREEN));
 }
 
 // Updates room temperature, humidity, trend arrows and sensor battery icons.
@@ -407,15 +431,29 @@ static void updateWeatherDisplay() {
     xSemaphoreGive(dataMutex);
 }
 
-// Updates CO2 and PM2.5 labels; red when stale, default text colour otherwise.
+// Inside air quality label colour: green/amber/red by threshold, grey when stale
+// (matching the room temperatures), the default text colour when there is no data.
+static lv_color_t insideAQColor(ReadingState state, float value, float amberAt, float redAt, lv_color_t defaultColor) {
+    if (state == ReadingState::NO_DATA)
+        return defaultColor;
+    if (state == ReadingState::STALE)
+        return lv_color_hex(COLOR_STALE);
+    if (value >= redAt)
+        return lv_color_hex(COLOR_RED);
+    if (value >= amberAt)
+        return lv_color_hex(COLOR_AMBER);
+    return lv_color_hex(COLOR_GREEN);
+}
+
+// Updates CO2 and PM2.5 labels and their threshold colours.
 static void updateInsideAQDisplay() {
     if (!dirtyInsideAQ)
         return;
     dirtyInsideAQ = false;
 
     char tempString[CHAR_LEN];
-    lv_color_t defaultColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
     xSemaphoreTake(dataMutex, portMAX_DELAY);
+    lv_color_t defaultColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
 
     // CO2 label
     if (insideAirQuality.co2State == ReadingState::NO_DATA) {
@@ -426,7 +464,8 @@ static void updateInsideAQDisplay() {
         snprintf(tempString, sizeof(tempString), "CO2: %s", co2Buf);
         lv_label_set_text(ui_InsideAirQualityCO2, tempString);
     }
-    lv_obj_set_style_text_color(ui_InsideAirQualityCO2, insideAirQuality.co2State == ReadingState::STALE ? lv_color_hex(COLOR_RED) : defaultColor, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_InsideAirQualityCO2,
+                                insideAQColor(insideAirQuality.co2State, insideAirQuality.co2, CO2_THRESHOLD_YELLOW, CO2_THRESHOLD_RED, defaultColor), LV_PART_MAIN);
 
     // PM2.5 label
     if (insideAirQuality.pm25State == ReadingState::NO_DATA) {
@@ -435,7 +474,8 @@ static void updateInsideAQDisplay() {
         snprintf(tempString, sizeof(tempString), "PM2.5: %.1f", insideAirQuality.pm25);
         lv_label_set_text(ui_InsideAirQualityPM25, tempString);
     }
-    lv_obj_set_style_text_color(ui_InsideAirQualityPM25, insideAirQuality.pm25State == ReadingState::STALE ? lv_color_hex(COLOR_RED) : defaultColor, LV_PART_MAIN);
+    lv_obj_set_style_text_color(ui_InsideAirQualityPM25,
+                                insideAQColor(insideAirQuality.pm25State, insideAirQuality.pm25, PM25_THRESHOLD_YELLOW, PM25_THRESHOLD_RED, defaultColor), LV_PART_MAIN);
     xSemaphoreGive(dataMutex);
 }
 
@@ -478,7 +518,8 @@ static void updateSolarForecastDisplay() {
     bool synced = now > TIME_SYNC_THRESHOLD;
     if (synced && fc.ts != 0) {
         struct tm tsTm, nowTm;
-        localtime_r(&fc.ts, &tsTm);
+        time_t fcTs = fc.ts; // Never take the address of a packed struct member
+        localtime_r(&fcTs, &tsTm);
         localtime_r(&now, &nowTm);
         tsTm.tm_hour = tsTm.tm_min = tsTm.tm_sec = 0;
         nowTm.tm_hour = nowTm.tm_min = nowTm.tm_sec = 0;
@@ -551,30 +592,27 @@ static void updatePeriodicStatus(unsigned long currentMillis) {
     setStatusColor(ui_UVUpdateTime, uv.updateTime, 2 * UV_UPDATE_INTERVAL_SEC);
     setStatusColor(ui_FCAQIUpdateTime, airQuality.updateTime, 2 * AIR_QUALITY_UPDATE_INTERVAL_SEC);
 
+    // Everything below runs every second but only touches a widget when its value changes
     if (WiFi.status() == WL_CONNECTED) {
-        lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
+        setTextColorIfChanged(ui_WiFiStatus, lv_color_hex(COLOR_GREEN));
         lv_color_t wifiIconColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
         int rssi = WiFi.RSSI();
-        lv_label_set_text(ui_WiFiIcon, getWiFiIcon(rssi));
-        lv_obj_set_style_text_color(ui_WiFiIcon, wifiIconColor, LV_PART_MAIN);
+        setTextIfChanged(ui_WiFiIcon, getWiFiIcon(rssi));
+        setTextColorIfChanged(ui_WiFiIcon, wifiIconColor);
     } else {
-        lv_obj_set_style_text_color(ui_WiFiStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-        lv_label_set_text(ui_WiFiIcon, WIFI_X);
-        lv_obj_set_style_text_color(ui_WiFiIcon, lv_color_hex(COLOR_RED), LV_PART_MAIN);
+        setTextColorIfChanged(ui_WiFiStatus, lv_color_hex(COLOR_RED));
+        setTextIfChanged(ui_WiFiIcon, WIFI_X);
+        setTextColorIfChanged(ui_WiFiIcon, lv_color_hex(COLOR_RED));
     }
 
-    if (mqttIsConnected()) {
-        lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
-    } else {
-        lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-    }
+    setTextColorIfChanged(ui_ServerStatus, lv_color_hex(mqttIsConnected() ? COLOR_GREEN : COLOR_RED));
 
     if (WiFi.status() == WL_CONNECTED) {
         snprintf(tempString, sizeof(tempString), "IP: %s | Chip ID: %s | Firmware: V%s", WiFi.localIP().toString().c_str(), chipId, FIRMWARE_VERSION);
     } else {
         snprintf(tempString, sizeof(tempString), "Chip ID: %s | Firmware: V%s", chipId, FIRMWARE_VERSION);
     }
-    lv_label_set_text(ui_Version, tempString);
+    setTextIfChanged(ui_Version, tempString);
 }
 
 // Adjusts screen brightness and text/arc colours when the day/night state changes.
@@ -586,6 +624,7 @@ static void adjustDayNightMode() {
     dirtyRooms = true;    // Re-apply stale label colours after set_basic_text_color resets them
     dirtyInsideAQ = true; // Re-apply stale/default colour with new day/night defaultColor
     dirtySolarForecast = true;
+    dirtyUv = true; // The UV update time is only shown during the day
     if (!weather.isDay) {
         setBacklight(false);
         set_basic_text_color(lv_color_hex(COLOR_WHITE));

@@ -240,3 +240,16 @@ int compareVersionsStr(const char* v1, const char* v2) {
     }
     return 0;
 }
+
+// Share of energy use bought from the grid, as a whole percentage clamped to 0-100.
+// Returns -1 when there was no usage (nothing to divide by - e.g. just after midnight).
+int gridPercentage(float bought, float used) {
+    if (!(used > 0.0f)) {
+        return -1;
+    }
+    long pct = lroundf(bought / used * 100.0f);
+    if (pct < 0) {
+        return 0;
+    }
+    return pct > 100 ? 100 : (int)pct;
+}

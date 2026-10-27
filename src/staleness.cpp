@@ -8,7 +8,7 @@ extern AirQuality airQuality;
 extern InsideAirQuality insideAirQuality;
 
 // Age out sensor and API data that has stopped updating, so the display shows
-// stale (grey/red) or "--" rather than old values. Called every loop() pass.
+// stale (grey/red) or "--" rather than old values. Called once a second from loop().
 
 void invalidateOldReadings() {
     if (time(nullptr) > TIME_SYNC_THRESHOLD) {
@@ -122,7 +122,11 @@ void invalidateStaleApiData() {
             struct tm nowTm;
             localtime_r(&now, &nowTm);
             int nowMin = nowTm.tm_hour * 60 + nowTm.tm_min;
-            weather.isDay = nowMin >= riseMin && nowMin < setMin;
+            bool isDay = nowMin >= riseMin && nowMin < setMin;
+            if (isDay != weather.isDay) {
+                weather.isDay = isDay;
+                dirtyUv = true; // The UV panel shows its update time only by day
+            }
         }
     }
     // At night the API manager pins the UV index to zero once and stops

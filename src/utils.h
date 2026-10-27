@@ -33,6 +33,9 @@ const char* getAQIRating(int aqi);
 // RSSI (dBm) to Phosphor WiFi icon glyph string
 const char* getWiFiIcon(int rssi);
 
+// Grid share of energy use as 0-100 %, or -1 when used <= 0
+int gridPercentage(float bought, float used);
+
 // Format a time_t as "HH:MM:SS" into buf
 void formatTimeHMS(time_t t, char* buf, size_t bufSize);
 

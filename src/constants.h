@@ -141,11 +141,11 @@ static const float CO2_MIN_VALID = 400.0f;      // SCD41 minimum reading (ppm)
 static const float CO2_MAX_VALID = 40000.0f;    // SCD41 maximum reading (ppm)
 static const float PM_MAX_VALID = 1000.0f;      // Maximum plausible particulate reading (µg/m³)
 
-// Inside air quality display thresholds (colour coding on labels)
-static const float CO2_THRESHOLD_YELLOW  = 800.0f;  // CO2 ppm: above this shows yellow
-static const float CO2_THRESHOLD_RED     = 1200.0f; // CO2 ppm: above this shows red
-static const float PM25_THRESHOLD_YELLOW = 12.0f;   // PM2.5 µg/m³: above this shows yellow (WHO guideline)
-static const float PM25_THRESHOLD_RED    = 35.0f;   // PM2.5 µg/m³: above this shows red
+// Inside air quality display thresholds (colour coding on labels: green below amber)
+static const float CO2_THRESHOLD_YELLOW  = 800.0f;  // CO2 ppm: at or above this shows amber
+static const float CO2_THRESHOLD_RED     = 1200.0f; // CO2 ppm: at or above this shows red
+static const float PM25_THRESHOLD_YELLOW = 12.0f;   // PM2.5 µg/m³: at or above this shows amber (WHO guideline)
+static const float PM25_THRESHOLD_RED    = 35.0f;   // PM2.5 µg/m³: at or above this shows red
 
 // Inside sensor MQTT topics (full broker path)
 static const char* const MQTT_INSIDE_CO2_TOPIC  = "kitchen/co2/set";
@@ -214,7 +214,8 @@ static const int MQTT_TX_MAX_PER_PASS = 10;            // Max queued messages pu
 
 // Main loop and periodic update timing
 static const int LOOP_DELAY_MS = 20;                      // Main loop vTaskDelay to yield CPU between LVGL frames
-static const int PERIODIC_STATUS_INTERVAL_MS = 1000;      // How often updatePeriodicStatus() refreshes clock/WiFi/status
+static const int PERIODIC_STATUS_INTERVAL_MS = 1000;      // How often updatePeriodicStatus() refreshes WiFi/server/data status
+static const int STALENESS_CHECK_INTERVAL_MS = 1000;      // How often loop() ages out stale readings and API data
 static const int STATUS_MESSAGE_QUEUE_TIMEOUT_MS = 60000; // Queue receive timeout in displayStatusMessages_t (1 min)
 static const int REMAINING_TIME_ROUND_MIN = 10;           // Round battery remaining time to nearest N minutes for display
 

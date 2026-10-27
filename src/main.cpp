@@ -346,7 +346,13 @@ void loop() {
     vTaskDelay(pdMS_TO_TICKS(LOOP_DELAY_MS));
 
     display_update(currentMillis);
-    invalidateOldReadings();
-    invalidateInsideAirQuality();
-    invalidateStaleApiData();
+
+    // Staleness works in tens of minutes - no need to take dataMutex every 20 ms frame
+    static unsigned long lastStalenessCheck = 0;
+    if (currentMillis - lastStalenessCheck >= STALENESS_CHECK_INTERVAL_MS) {
+        lastStalenessCheck = currentMillis;
+        invalidateOldReadings();
+        invalidateInsideAirQuality();
+        invalidateStaleApiData();
+    }
 }
