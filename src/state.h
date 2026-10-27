@@ -48,4 +48,8 @@ extern char errorTopic[CHAR_LEN];
 // returns false if the mutex could not be created.
 bool state_init();
 
+// Restores every persisted data block from SD (call once in setup(), after the card is
+// mounted and before the tasks start). A block that fails to load keeps its defaults.
+void restorePersistedState();
+
 #endif // STATE_H

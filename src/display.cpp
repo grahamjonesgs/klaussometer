@@ -1,20 +1,20 @@
-
 #include "display.h"
 #include "UI/ui.h"
+#include "board.h"
 #include "config.h"
 #include "logging.h"
-#include "types.h"
-#include <Arduino.h>
-#include <esp_task_wdt.h>
-#include "utils.h"
-#include <lvgl.h>
-#include "board.h"
 #include "mqtt.h"
 #include "state.h"
+#include "types.h"
+#include "utils.h"
 #include <Arduino.h>
 #include <WiFi.h>
+#include <algorithm>
 #include <cstdio>
+#include <lvgl.h>
 
+// Each panel update copies the data it needs under dataMutex, releases it, then
+// renders from the copy - the MQTT and API tasks never wait on an LVGL relayout.
 
 // UI widget lists (SquareLine object pointers), one entry per room
 #define ROOM_NAME_LABELS {&ui_RoomName1, &ui_RoomName2, &ui_RoomName3, &ui_RoomName4, &ui_RoomName5}
@@ -46,6 +46,11 @@
 }
 // clang-format on
 
+// Default text colour for the day (black) or night (white) theme.
+static lv_color_t themeTextColor(bool isDay) {
+    return isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
+}
+
 // Sets a label's text colour only if it differs from the current one. Every style set
 // invalidates the widget, so unconditional per-second updates forced needless redraws.
 static void setTextColorIfChanged(lv_obj_t* obj, lv_color_t color) {
@@ -70,15 +75,15 @@ static void setArcColor(lv_obj_t* arc, lv_color_t color) {
 
 // Updates battery arc colour (by state of charge) and the charge/discharge status labels.
 // Shows remaining time to empty (discharging) or full (charging).
-static void updateChargingStatus() {
+static void updateChargingStatus(const Solar& s) {
     char tempString[CHAR_LEN];
-    if (solar.batteryPower > BATTERY_POWER_DISCHARGE_THRESHOLD) {
-        snprintf(tempString, sizeof(tempString), "Discharging %2.1fkW", solar.batteryPower);
+    if (s.batteryPower > BATTERY_POWER_DISCHARGE_THRESHOLD) {
+        snprintf(tempString, sizeof(tempString), "Discharging %2.1fkW", s.batteryPower);
         lv_label_set_text(ui_ChargingLabel, tempString);
 
         // Time remaining = usable capacity left / current draw rate
         // Usable capacity = (SoC% - min%) * total kWh; power is in kW
-        float remainHours = (solar.batteryCharge / 100.0 - BATTERY_MIN) * BATTERY_CAPACITY / solar.batteryPower;
+        float remainHours = (s.batteryCharge / 100.0 - BATTERY_MIN) * BATTERY_CAPACITY / s.batteryPower;
         int remainMinutes = 60.0 * remainHours;
         int remainMinutesRound = REMAINING_TIME_ROUND_MIN * (int)lroundf((float)remainMinutes / REMAINING_TIME_ROUND_MIN);
         // Derive hours and minutes from the same rounded total so they can't
@@ -86,7 +91,7 @@ static void updateChargingStatus() {
         int wholeHours = remainMinutesRound / 60;
         int wholeMins = remainMinutesRound % 60;
 
-        time_t endTime = solar.currentUpdateTime + remainMinutesRound * 60;
+        time_t endTime = s.currentUpdateTime + remainMinutesRound * 60;
         char timeBufEnd[CHAR_LEN];
         formatTimeHMS(endTime, timeBufEnd, sizeof(timeBufEnd));
 
@@ -100,12 +105,12 @@ static void updateChargingStatus() {
             tempString[0] = '\0'; // Don't print for too long time
         }
         lv_label_set_text(ui_ChargingTime, tempString);
-    } else if (solar.batteryPower < BATTERY_POWER_CHARGE_THRESHOLD) {
-        snprintf(tempString, sizeof(tempString), "Charging %2.1fkW", -solar.batteryPower);
+    } else if (s.batteryPower < BATTERY_POWER_CHARGE_THRESHOLD) {
+        snprintf(tempString, sizeof(tempString), "Charging %2.1fkW", -s.batteryPower);
         lv_label_set_text(ui_ChargingLabel, tempString);
 
         // Time to full = remaining capacity to fill / charge rate (batteryPower is negative when charging)
-        float remainHours = -(BATTERY_CHARGE_FULL_THRESHOLD - solar.batteryCharge / 100) * BATTERY_CAPACITY / solar.batteryPower;
+        float remainHours = -(BATTERY_CHARGE_FULL_THRESHOLD - s.batteryCharge / 100) * BATTERY_CAPACITY / s.batteryPower;
         int remainMinutes = 60.0 * remainHours;
         int remainMinutesRound = REMAINING_TIME_ROUND_MIN * (int)lroundf((float)remainMinutes / REMAINING_TIME_ROUND_MIN);
         int wholeHours = remainMinutesRound / 60;
@@ -128,9 +133,9 @@ static void updateChargingStatus() {
 
     // Battery arc colour follows state of charge: red when low, green when nearly full, amber between
     int batteryColor = COLOR_AMBER;
-    if (solar.batteryCharge < BATTERY_ARC_RED_BELOW_PCT) {
+    if (s.batteryCharge < BATTERY_ARC_RED_BELOW_PCT) {
         batteryColor = COLOR_RED;
-    } else if (solar.batteryCharge > BATTERY_ARC_GREEN_ABOVE_PCT) {
+    } else if (s.batteryCharge > BATTERY_ARC_GREEN_ABOVE_PCT) {
         batteryColor = COLOR_GREEN;
     }
     setArcColor(ui_BatteryArc, lv_color_hex(batteryColor));
@@ -138,24 +143,24 @@ static void updateChargingStatus() {
 }
 
 // Updates grid energy totals, Rand cost and self-sufficiency percentage labels.
-static void updateGridMetrics() {
-    if (solar.todayUse <= 0.0 && solar.monthUse <= 0.0)
+static void updateGridMetrics(const Solar& s) {
+    if (s.todayUse <= 0.0 && s.monthUse <= 0.0)
         return;
     char tempString[CHAR_LEN];
     char boughtTodayBuf[32];
     char boughtMonthBuf[32];
 
-    formatIntegerWithCommas((long long)floor(solar.todayBuy * ELECTRICITY_PRICE), boughtTodayBuf, sizeof(boughtTodayBuf));
-    formatIntegerWithCommas((long long)floor(solar.monthBuy * ELECTRICITY_PRICE), boughtMonthBuf, sizeof(boughtMonthBuf));
+    formatIntegerWithCommas((long long)floor(s.todayBuy * ELECTRICITY_PRICE), boughtTodayBuf, sizeof(boughtTodayBuf));
+    formatIntegerWithCommas((long long)floor(s.monthBuy * ELECTRICITY_PRICE), boughtMonthBuf, sizeof(boughtMonthBuf));
 
     // Share of usage bought from the grid; -1 (shown as "--") when there was no usage yet,
     // e.g. just after midnight when the daily totals reset
-    int todayGridPercentage = gridPercentage(solar.todayBuy, solar.todayUse);
-    int monthGridPercentage = gridPercentage(solar.monthBuy, solar.monthUse);
+    int todayGridPercentage = gridPercentage(s.todayBuy, s.todayUse);
+    int monthGridPercentage = gridPercentage(s.monthBuy, s.monthUse);
 
-    snprintf(tempString, sizeof(tempString), "%.0f", solar.todayBuy);
+    snprintf(tempString, sizeof(tempString), "%.0f", s.todayBuy);
     lv_label_set_text(ui_GridTodayEnergy, tempString);
-    snprintf(tempString, sizeof(tempString), "%.0f", solar.monthBuy);
+    snprintf(tempString, sizeof(tempString), "%.0f", s.monthBuy);
     lv_label_set_text(ui_GridMonthEnergy, tempString);
     snprintf(tempString, sizeof(tempString), "R%s", boughtTodayBuf);
     lv_label_set_text(ui_GridTodayCost, tempString);
@@ -174,9 +179,9 @@ static void updateGridMetrics() {
     }
     lv_label_set_text(ui_GridMonthPercentage, tempString);
 
-    snprintf(tempString, sizeof(tempString), "%.0f", solar.todayGeneration);
+    snprintf(tempString, sizeof(tempString), "%.0f", s.todayGeneration);
     lv_label_set_text(ui_SolarTodayEnergy, tempString);
-    snprintf(tempString, sizeof(tempString), "%.0f", solar.monthGeneration);
+    snprintf(tempString, sizeof(tempString), "%.0f", s.monthGeneration);
     lv_label_set_text(ui_SolarMonthEnergy, tempString);
 }
 
@@ -185,39 +190,40 @@ static void updateGridMetrics() {
 // grid energy totals, cost (in Rand), and self-sufficiency percentages.
 // Does nothing if solar data has never been received (currentUpdateTime == 0).
 static void set_solar_values() {
-    if (solar.currentUpdateTime == 0)
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    Solar s = solar;
+    xSemaphoreGive(dataMutex);
+    if (s.currentUpdateTime == 0)
         return;
     char tempString[CHAR_LEN];
-    xSemaphoreTake(dataMutex, portMAX_DELAY);
 
     lv_obj_clear_flag(ui_BatteryArc, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(ui_SolarArc, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(ui_UsingArc, LV_OBJ_FLAG_HIDDEN);
 
-    lv_arc_set_value(ui_BatteryArc, solar.batteryCharge);
-    snprintf(tempString, sizeof(tempString), "%2.0f%%", solar.batteryCharge);
+    lv_arc_set_value(ui_BatteryArc, s.batteryCharge);
+    snprintf(tempString, sizeof(tempString), "%2.0f%%", s.batteryCharge);
     lv_label_set_text(ui_BatteryLabel, tempString);
 
-    lv_arc_set_value(ui_SolarArc, solar.solarPower * POWER_ARC_SCALE);
-    snprintf(tempString, sizeof(tempString), "%2.1fkW", solar.solarPower);
+    lv_arc_set_value(ui_SolarArc, s.solarPower * POWER_ARC_SCALE);
+    snprintf(tempString, sizeof(tempString), "%2.1fkW", s.solarPower);
     lv_label_set_text(ui_SolarLabel, tempString);
 
-    lv_arc_set_value(ui_UsingArc, solar.usingPower * POWER_ARC_SCALE);
-    snprintf(tempString, sizeof(tempString), "%2.1fkW", solar.usingPower);
+    lv_arc_set_value(ui_UsingArc, s.usingPower * POWER_ARC_SCALE);
+    snprintf(tempString, sizeof(tempString), "%2.1fkW", s.usingPower);
     lv_label_set_text(ui_UsingLabel, tempString);
 
-    updateChargingStatus();
+    updateChargingStatus(s);
 
-    snprintf(tempString, sizeof(tempString), "Min %2.0f\nMax %2.0f", solar.todayBatteryMin, solar.todayBatteryMax);
+    snprintf(tempString, sizeof(tempString), "Min %2.0f\nMax %2.0f", s.todayBatteryMin, s.todayBatteryMax);
     lv_label_set_text(ui_SolarMinMax, tempString);
 
     char timeBuf[CHAR_LEN];
-    formatTimeHMS(solar.currentUpdateTime, timeBuf, sizeof(timeBuf));
-    snprintf(tempString, sizeof(tempString), "Values as of %s\nReceived at %s", solar.time, timeBuf);
+    formatTimeHMS(s.currentUpdateTime, timeBuf, sizeof(timeBuf));
+    snprintf(tempString, sizeof(tempString), "Values as of %s\nReceived at %s", s.time, timeBuf);
     lv_label_set_text(ui_AsofTimeLabel, tempString);
 
-    updateGridMetrics();
-    xSemaphoreGive(dataMutex);
+    updateGridMetrics(s);
 }
 
 // Sets all text fields to the given color for day/night mode.
@@ -314,34 +320,50 @@ static void updateRoomDisplay() {
     if (!dirtyRooms)
         return;
     dirtyRooms = false;
+    // What one room shows, copied out of readings[] (temps, then humidities, then batteries)
+    struct RoomView {
+        float temperature;
+        char temperatureText[READING_OUTPUT_LEN];
+        ReadingState state;
+        char humidityText[READING_OUTPUT_LEN];
+        float batteryVolts;
+    };
+    RoomView rooms[ROOM_COUNT];
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    bool isDay = weather.isDay;
+    for (int i = 0; i < ROOM_COUNT; ++i) {
+        rooms[i].temperature = readings[i].currentValue;
+        memcpy(rooms[i].temperatureText, readings[i].output, READING_OUTPUT_LEN);
+        rooms[i].state = readings[i].readingState;
+        memcpy(rooms[i].humidityText, readings[i + ROOM_COUNT].output, READING_OUTPUT_LEN);
+        rooms[i].batteryVolts = readings[i + 2 * ROOM_COUNT].currentValue;
+    }
+    xSemaphoreGive(dataMutex);
+
     char tempString[CHAR_LEN];
     char batteryIcon;
     lv_color_t batteryColor;
-    xSemaphoreTake(dataMutex, portMAX_DELAY);
-    for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
-        lv_arc_set_value(*tempArcs[i], readings[i].currentValue);
-        lv_label_set_text(*tempLabels[i], readings[i].output);
-        if (readings[i].readingState == ReadingState::STALE) {
+    for (int i = 0; i < ROOM_COUNT; ++i) {
+        lv_arc_set_value(*tempArcs[i], rooms[i].temperature);
+        lv_label_set_text(*tempLabels[i], rooms[i].temperatureText);
+        if (rooms[i].state == ReadingState::STALE) {
             lv_obj_set_style_text_color(*tempLabels[i], lv_color_hex(COLOR_STALE), LV_PART_MAIN);
             lv_obj_clear_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
-        } else if (readings[i].readingState != ReadingState::NO_DATA) {
-            lv_color_t normalColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
-            lv_obj_set_style_text_color(*tempLabels[i], normalColor, LV_PART_MAIN);
+        } else if (rooms[i].state != ReadingState::NO_DATA) {
+            lv_obj_set_style_text_color(*tempLabels[i], themeTextColor(isDay), LV_PART_MAIN);
             lv_obj_clear_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(*tempArcs[i], LV_OBJ_FLAG_HIDDEN);
         }
-        snprintf(tempString, sizeof(tempString), "%c", readingStateGlyph(readings[i].readingState));
+        snprintf(tempString, sizeof(tempString), "%c", readingStateGlyph(rooms[i].state));
         lv_label_set_text(*directionLabels[i], tempString);
-        lv_label_set_text(*humidityLabels[i], readings[i + ROOM_COUNT].output);
-    }
-    for (unsigned char i = 0; i < ROOM_COUNT; ++i) {
-        getBatteryStatus(readings[i + 2 * ROOM_COUNT].currentValue, &batteryIcon, &batteryColor);
+        lv_label_set_text(*humidityLabels[i], rooms[i].humidityText);
+
+        getBatteryStatus(rooms[i].batteryVolts, &batteryIcon, &batteryColor);
         snprintf(tempString, sizeof(tempString), "%c", batteryIcon);
         lv_label_set_text(*batteryLabels[i], tempString);
         lv_obj_set_style_text_color(*batteryLabels[i], batteryColor, LV_PART_MAIN);
     }
-    xSemaphoreGive(dataMutex);
 }
 
 // Updates the UV arc, label and update-time label.
@@ -349,24 +371,30 @@ static void updateUVDisplay() {
     if (!dirtyUv)
         return;
     dirtyUv = false;
-    char tempString[CHAR_LEN];
     xSemaphoreTake(dataMutex, portMAX_DELAY);
-    if (uv.updateTime > 0) {
+    UV u = uv;
+    bool isDay = weather.isDay;
+    bool haveWeather = weather.updateTime > 0;
+    float forecastUvMax = weather.uvMax;
+    xSemaphoreGive(dataMutex);
+
+    char tempString[CHAR_LEN];
+    if (u.updateTime > 0) {
         lv_obj_clear_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
-        if (weather.isDay) {
-            snprintf(tempString, sizeof(tempString), "%s", uv.timeString);
+        if (isDay) {
+            snprintf(tempString, sizeof(tempString), "%s", u.timeString);
         } else {
             tempString[0] = '\0';
         }
         lv_label_set_text(ui_UVUpdateTime, tempString);
-        snprintf(tempString, sizeof(tempString), "%i", uv.index);
+        snprintf(tempString, sizeof(tempString), "%i", u.index);
         lv_label_set_text(ui_UVLabel, tempString);
         // Scale the arc to today's forecast max. The current index comes from a
         // different provider, so raise the max to it if it is higher. Without
         // weather data fall back to the fixed scale and hide the max label.
         int uvMax = UV_ARC_DEFAULT_MAX;
-        if (weather.updateTime > 0) {
-            uvMax = std::max((int)lroundf(weather.uvMax), uv.index);
+        if (haveWeather) {
+            uvMax = std::max((int)lroundf(forecastUvMax), u.index);
             snprintf(tempString, sizeof(tempString), "%i", uvMax);
             lv_label_set_text(ui_UVMax, tempString);
         } else {
@@ -375,16 +403,15 @@ static void updateUVDisplay() {
         // Set the range before the value — lv_arc_set_value clamps against the current range.
         // A range of 0..0 draws as a full arc, so keep at least one UV step.
         lv_arc_set_range(ui_UVArc, 0, std::max(uvMax, 1) * UV_ARC_SCALE);
-        lv_arc_set_value(ui_UVArc, uv.index * UV_ARC_SCALE);
-        lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(uvColor(uv.index)), LV_PART_INDICATOR | LV_STATE_DEFAULT);
-        lv_obj_set_style_bg_color(ui_UVArc, lv_color_hex(uvColor(uv.index)), LV_PART_KNOB | LV_STATE_DEFAULT);
+        lv_arc_set_value(ui_UVArc, u.index * UV_ARC_SCALE);
+        lv_obj_set_style_arc_color(ui_UVArc, lv_color_hex(uvColor(u.index)), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(ui_UVArc, lv_color_hex(uvColor(u.index)), LV_PART_KNOB | LV_STATE_DEFAULT);
     } else {
         lv_obj_add_flag(ui_UVArc, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(ui_UVLabel, "--");
         lv_label_set_text(ui_UVUpdateTime, "");
         lv_label_set_text(ui_UVMax, "");
     }
-    xSemaphoreGive(dataMutex);
 }
 
 // Updates weather forecast labels, the temperature arc and the AQI display.
@@ -392,50 +419,49 @@ static void updateWeatherDisplay() {
     if (!dirtyWeather)
         return;
     dirtyWeather = false;
-    char tempString[CHAR_LEN];
     xSemaphoreTake(dataMutex, portMAX_DELAY);
-    if (weather.updateTime > 0) {
-        lv_label_set_text(ui_FCConditions, weather.description);
-        snprintf(tempString, sizeof(tempString), "%s", weather.timeString);
+    Weather w = weather;
+    AirQuality aq = airQuality;
+    xSemaphoreGive(dataMutex);
+
+    char tempString[CHAR_LEN];
+    if (w.updateTime > 0) {
+        lv_label_set_text(ui_FCConditions, w.description);
+        snprintf(tempString, sizeof(tempString), "%s", w.timeString);
         lv_label_set_text(ui_FCUpdateTime, tempString);
-        snprintf(tempString, sizeof(tempString), "Wind %2.0f km/h %s", weather.windSpeed, weather.windDir);
+        snprintf(tempString, sizeof(tempString), "Wind %2.0f km/h %s", w.windSpeed, w.windDir);
         lv_label_set_text(ui_FCWindSpeed, tempString);
-        if (airQuality.updateTime > 0) {
-            const char* aqiRating = getAQIRating(airQuality.europeanAqi);
-            snprintf(tempString, sizeof(tempString), "AQI %d - %s", airQuality.europeanAqi, aqiRating);
+        if (aq.updateTime > 0) {
+            const char* aqiRating = getAQIRating(aq.europeanAqi);
+            snprintf(tempString, sizeof(tempString), "AQI %d - %s", aq.europeanAqi, aqiRating);
             lv_label_set_text(ui_FCAQI, tempString);
-            snprintf(tempString, sizeof(tempString), "AQI Updated %s", airQuality.timeString);
+            snprintf(tempString, sizeof(tempString), "AQI Updated %s", aq.timeString);
             lv_label_set_text(ui_FCAQIUpdateTime, tempString);
         } else {
             lv_label_set_text(ui_FCAQI, "AQI --");
             lv_label_set_text(ui_FCAQIUpdateTime, "");
         }
-        if (weather.temperature < weather.minTemp) {
-            weather.minTemp = weather.temperature;
-        }
-        if (weather.temperature > weather.maxTemp) {
-            weather.maxTemp = weather.temperature;
-        }
+        // fetchWeather() has already widened min/max to include the current temperature.
         // Set the range before the value — lv_arc_set_value clamps against the current range.
         // The arc works in integers, so scale to tenths of a degree and keep the range at
         // least one step wide (an empty range draws as a full arc).
-        int32_t arcMin = lroundf(weather.minTemp * TEMP_ARC_SCALE);
-        int32_t arcMax = std::max(arcMin + 1, (int32_t)lroundf(weather.maxTemp * TEMP_ARC_SCALE));
+        int32_t arcMin = lroundf(w.minTemp * TEMP_ARC_SCALE);
+        int32_t arcMax = std::max(arcMin + 1, (int32_t)lroundf(w.maxTemp * TEMP_ARC_SCALE));
         lv_arc_set_range(ui_TempArcFC, arcMin, arcMax);
-        lv_arc_set_value(ui_TempArcFC, lroundf(weather.temperature * TEMP_ARC_SCALE));
-        snprintf(tempString, sizeof(tempString), "%2.0f", weather.temperature);
+        lv_arc_set_value(ui_TempArcFC, lroundf(w.temperature * TEMP_ARC_SCALE));
+        snprintf(tempString, sizeof(tempString), "%2.0f", w.temperature);
         lv_label_set_text(ui_TempLabelFC, tempString);
-        snprintf(tempString, sizeof(tempString), "%2.0f°C", weather.minTemp);
+        snprintf(tempString, sizeof(tempString), "%2.0f°C", w.minTemp);
         lv_label_set_text(ui_FCMin, tempString);
-        snprintf(tempString, sizeof(tempString), "%2.0f°C", weather.maxTemp);
+        snprintf(tempString, sizeof(tempString), "%2.0f°C", w.maxTemp);
         lv_label_set_text(ui_FCMax, tempString);
         lv_obj_clear_flag(ui_TempArcFC, LV_OBJ_FLAG_HIDDEN);
         // Sun times. An empty string means unknown (API field missing / no table entry).
-        snprintf(tempString, sizeof(tempString), "Sunrise %s", weather.sunrise[0] ? weather.sunrise : "--:--");
+        snprintf(tempString, sizeof(tempString), "Sunrise %s", w.sunrise[0] ? w.sunrise : "--:--");
         lv_label_set_text(ui_FCSunrise, tempString);
-        snprintf(tempString, sizeof(tempString), "Sunset %s", weather.sunset[0] ? weather.sunset : "--:--");
+        snprintf(tempString, sizeof(tempString), "Sunset %s", w.sunset[0] ? w.sunset : "--:--");
         lv_label_set_text(ui_FCSunset, tempString);
-        snprintf(tempString, sizeof(tempString), "Mountain %s", weather.mountainSet[0] ? weather.mountainSet : "--:--");
+        snprintf(tempString, sizeof(tempString), "Mountain %s", w.mountainSet[0] ? w.mountainSet : "--:--");
         lv_label_set_text(ui_FCMountainSet, tempString);
     } else {
         // No weather data, or invalidateStaleApiData() has aged it out - blank the panel
@@ -452,7 +478,6 @@ static void updateWeatherDisplay() {
         lv_label_set_text(ui_FCSunset, "Sunset --:--");
         lv_label_set_text(ui_FCMountainSet, "Mountain --:--");
     }
-    xSemaphoreGive(dataMutex);
 }
 
 // Inside air quality label colour: green/amber/red by threshold, grey when stale
@@ -475,32 +500,34 @@ static void updateInsideAQDisplay() {
         return;
     dirtyInsideAQ = false;
 
-    char tempString[CHAR_LEN];
     xSemaphoreTake(dataMutex, portMAX_DELAY);
-    lv_color_t defaultColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
+    InsideAirQuality iaq = insideAirQuality;
+    lv_color_t defaultColor = themeTextColor(weather.isDay);
+    xSemaphoreGive(dataMutex);
+
+    char tempString[CHAR_LEN];
 
     // CO2 label
-    if (insideAirQuality.co2State == ReadingState::NO_DATA) {
+    if (iaq.co2State == ReadingState::NO_DATA) {
         lv_label_set_text(ui_InsideAirQualityCO2, "CO2: --");
     } else {
         char co2Buf[32];
-        formatIntegerWithCommas((long long)insideAirQuality.co2, co2Buf, sizeof(co2Buf));
+        formatIntegerWithCommas((long long)iaq.co2, co2Buf, sizeof(co2Buf));
         snprintf(tempString, sizeof(tempString), "CO2: %s", co2Buf);
         lv_label_set_text(ui_InsideAirQualityCO2, tempString);
     }
     lv_obj_set_style_text_color(ui_InsideAirQualityCO2,
-                                insideAQColor(insideAirQuality.co2State, insideAirQuality.co2, CO2_THRESHOLD_YELLOW, CO2_THRESHOLD_RED, defaultColor), LV_PART_MAIN);
+                                insideAQColor(iaq.co2State, iaq.co2, CO2_THRESHOLD_YELLOW, CO2_THRESHOLD_RED, defaultColor), LV_PART_MAIN);
 
     // PM2.5 label
-    if (insideAirQuality.pm25State == ReadingState::NO_DATA) {
+    if (iaq.pm25State == ReadingState::NO_DATA) {
         lv_label_set_text(ui_InsideAirQualityPM25, "PM2.5: --");
     } else {
-        snprintf(tempString, sizeof(tempString), "PM2.5: %.1f", insideAirQuality.pm25);
+        snprintf(tempString, sizeof(tempString), "PM2.5: %.1f", iaq.pm25);
         lv_label_set_text(ui_InsideAirQualityPM25, tempString);
     }
     lv_obj_set_style_text_color(ui_InsideAirQualityPM25,
-                                insideAQColor(insideAirQuality.pm25State, insideAirQuality.pm25, PM25_THRESHOLD_YELLOW, PM25_THRESHOLD_RED, defaultColor), LV_PART_MAIN);
-    xSemaphoreGive(dataMutex);
+                                insideAQColor(iaq.pm25State, iaq.pm25, PM25_THRESHOLD_YELLOW, PM25_THRESHOLD_RED, defaultColor), LV_PART_MAIN);
 }
 
 // Formats one forecast row for the right-hand column, e.g. "23 kWh, full by 14:00" or "14 kWh, will not fill".
@@ -533,9 +560,8 @@ static void updateSolarForecastDisplay() {
 
     xSemaphoreTake(dataMutex, portMAX_DELAY);
     SolarForecast fc = solarForecast;
+    lv_color_t color = themeTextColor(weather.isDay);
     xSemaphoreGive(dataMutex);
-
-    lv_color_t color = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
 
     // Whole local days between the forecast date and today (0 until NTP has synced)
     long dayDiff = 0;
@@ -609,20 +635,27 @@ static void updatePeriodicStatus(unsigned long currentMillis) {
         return;
     lastPeriodicMs = currentMillis;
 
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    time_t solarTime = solar.currentUpdateTime;
+    time_t weatherTime = weather.updateTime;
+    time_t uvTime = uv.updateTime;
+    time_t aqTime = airQuality.updateTime;
+    bool isDay = weather.isDay;
+    xSemaphoreGive(dataMutex);
+
     char tempString[CHAR_LEN];
 
-    setStatusColor(ui_SolarStatus, solar.currentUpdateTime, 2 * SOLAR_CURRENT_UPDATE_INTERVAL_SEC);
-    setStatusColor(ui_WeatherStatus, weather.updateTime, 2 * WEATHER_UPDATE_INTERVAL_SEC);
-    setStatusColor(ui_UVUpdateTime, uv.updateTime, 2 * UV_UPDATE_INTERVAL_SEC);
-    setStatusColor(ui_FCAQIUpdateTime, airQuality.updateTime, 2 * AIR_QUALITY_UPDATE_INTERVAL_SEC);
+    setStatusColor(ui_SolarStatus, solarTime, 2 * SOLAR_CURRENT_UPDATE_INTERVAL_SEC);
+    setStatusColor(ui_WeatherStatus, weatherTime, 2 * WEATHER_UPDATE_INTERVAL_SEC);
+    setStatusColor(ui_UVUpdateTime, uvTime, 2 * UV_UPDATE_INTERVAL_SEC);
+    setStatusColor(ui_FCAQIUpdateTime, aqTime, 2 * AIR_QUALITY_UPDATE_INTERVAL_SEC);
 
     // Everything below runs every second but only touches a widget when its value changes
     if (WiFi.status() == WL_CONNECTED) {
         setTextColorIfChanged(ui_WiFiStatus, lv_color_hex(COLOR_GREEN));
-        lv_color_t wifiIconColor = weather.isDay ? lv_color_hex(COLOR_BLACK) : lv_color_hex(COLOR_WHITE);
         int rssi = WiFi.RSSI();
         setTextIfChanged(ui_WiFiIcon, getWiFiIcon(rssi));
-        setTextColorIfChanged(ui_WiFiIcon, wifiIconColor);
+        setTextColorIfChanged(ui_WiFiIcon, themeTextColor(isDay));
     } else {
         setTextColorIfChanged(ui_WiFiStatus, lv_color_hex(COLOR_RED));
         setTextIfChanged(ui_WiFiIcon, WIFI_X);
@@ -639,31 +672,32 @@ static void updatePeriodicStatus(unsigned long currentMillis) {
     setTextIfChanged(ui_Version, tempString);
 }
 
+// Applies the day (black on white, full brightness) or night (white on black, dim) theme:
+// backlight, text and arc colours, background and container borders.
+static void applyTheme(bool isDay) {
+    setBacklight(isDay);
+    set_basic_text_color(themeTextColor(isDay));
+    set_arc_night_mode(!isDay);
+    lv_color_t background = isDay ? lv_color_hex(COLOR_WHITE) : lv_color_hex(COLOR_BLACK);
+    lv_obj_set_style_bg_color(lv_scr_act(), background, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(ui_Container1, themeTextColor(isDay), LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(ui_Container2, themeTextColor(isDay), LV_STATE_DEFAULT);
+}
+
 // Adjusts screen brightness and text/arc colours when the day/night state changes.
 static void adjustDayNightMode() {
     static bool lastIsDay = false;
-    if (weather.isDay == lastIsDay)
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    bool isDay = weather.isDay;
+    xSemaphoreGive(dataMutex);
+    if (isDay == lastIsDay)
         return;
-    lastIsDay = weather.isDay;
+    lastIsDay = isDay;
     dirtyRooms = true;    // Re-apply stale label colours after set_basic_text_color resets them
     dirtyInsideAQ = true; // Re-apply stale/default colour with new day/night defaultColor
     dirtySolarForecast = true;
     dirtyUv = true; // The UV update time is only shown during the day
-    if (!weather.isDay) {
-        setBacklight(false);
-        set_basic_text_color(lv_color_hex(COLOR_WHITE));
-        set_arc_night_mode(true);
-        lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
-        lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-        lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-    } else {
-        setBacklight(true);
-        set_basic_text_color(lv_color_hex(COLOR_BLACK));
-        set_arc_night_mode(false);
-        lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-        lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
-        lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
-    }
+    applyTheme(isDay);
 }
 
 static void getBatteryStatus(float batteryValue, char* iconChar, lv_color_t* colorPtr) {
@@ -743,12 +777,7 @@ void display_init() {
     lv_obj_set_style_text_color(ui_SolarStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
 
     // Set to night settings at first (until we determine if it's daytime)
-    setBacklight(false);
-    set_basic_text_color(lv_color_hex(COLOR_WHITE));
-    set_arc_night_mode(true);
-    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(COLOR_BLACK), LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(ui_Container1, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(ui_Container2, lv_color_hex(COLOR_WHITE), LV_STATE_DEFAULT);
+    applyTheme(false);
 
     lv_label_set_text(ui_GridBought, "\nToday:\nThis month:");
     lv_label_set_text(ui_GridTodayEnergy, "Pending");

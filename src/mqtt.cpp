@@ -33,26 +33,63 @@ static char recMessage[MQTT_PAYLOAD_LEN];
 static float lastLoggedValue[MAX_READINGS] = {0};
 static bool hasLoggedBefore[MAX_READINGS] = {false};
 
-// Track last logged values for inside air quality sensors
-static float lastLoggedInsideCO2  = 0.0f;
-static bool  hasLoggedInsideCO2   = false;
-static float lastLoggedInsidePM1  = 0.0f;
-static bool  hasLoggedInsidePM1   = false;
-static float lastLoggedInsidePM25 = 0.0f;
-static bool  hasLoggedInsidePM25  = false;
-static float lastLoggedInsidePM10 = 0.0f;
-static bool  hasLoggedInsidePM10  = false;
+// One inside air quality sensor topic (SCD41 CO2, PMS5003 PM1/PM2.5/PM10)
+struct InsideSensor {
+    const char* topic;
+    const char* label;   // Used in log lines, e.g. "PM2.5"
+    const char* unit;    // Used in log lines, e.g. "ug/m3"
+    int decimals;        // Decimal places in log lines
+    float minValid;      // Readings outside minValid..maxValid are rejected
+    float maxValid;
+    float logThreshold;  // Minimum change from the last logged value worth logging
+    void (*store)(float value, time_t now); // Writes the value, state and timestamp (dataMutex held)
+    float lastLogged;
+    bool hasLogged;
+};
 
-// Updates the last-logged tracking variables and returns true if the value changed enough to log.
-static bool updateInsideTracking(float value, float* lastLogged, bool* hasLogged, float threshold) {
-    bool changed = !(*hasLogged) || fabsf(value - *lastLogged) >= threshold;
-    if (changed) { *lastLogged = value; *hasLogged = true; }
-    return changed;
+static InsideSensor insideSensors[] = {
+    {MQTT_INSIDE_CO2_TOPIC, "CO2", "ppm", 0, CO2_MIN_VALID, CO2_MAX_VALID, LOG_CHANGE_THRESHOLD_CO2,
+     [](float v, time_t now) {
+         insideAirQuality.co2 = v;
+         insideAirQuality.co2State = ReadingState::FIRST_READING;
+         insideAirQuality.co2LastMessageTime = now;
+     },
+     0.0f, false},
+    {MQTT_INSIDE_PM1_TOPIC, "PM1", "ug/m3", 1, 0.0f, PM_MAX_VALID, LOG_CHANGE_THRESHOLD_PM,
+     [](float v, time_t now) {
+         insideAirQuality.pm1 = v;
+         insideAirQuality.pm1State = ReadingState::FIRST_READING;
+         insideAirQuality.pmLastMessageTime = now;
+     },
+     0.0f, false},
+    {MQTT_INSIDE_PM25_TOPIC, "PM2.5", "ug/m3", 1, 0.0f, PM_MAX_VALID, LOG_CHANGE_THRESHOLD_PM,
+     [](float v, time_t now) {
+         insideAirQuality.pm25 = v;
+         insideAirQuality.pm25State = ReadingState::FIRST_READING;
+         insideAirQuality.pmLastMessageTime = now;
+     },
+     0.0f, false},
+    {MQTT_INSIDE_PM10_TOPIC, "PM10", "ug/m3", 1, 0.0f, PM_MAX_VALID, LOG_CHANGE_THRESHOLD_PM,
+     [](float v, time_t now) {
+         insideAirQuality.pm10 = v;
+         insideAirQuality.pm10State = ReadingState::FIRST_READING;
+         insideAirQuality.pmLastMessageTime = now;
+     },
+     0.0f, false},
+};
+
+static InsideSensor* findInsideSensor(const char* topic) {
+    for (InsideSensor& sensor : insideSensors) {
+        if (strcmp(topic, sensor.topic) == 0) {
+            return &sensor;
+        }
+    }
+    return nullptr;
 }
 
 static void onMqttMessage(int messageSize);
 static void updateReadings(char* recMessage, int index, int dataType);
-static void updateInsideAirQuality(const char* topic, char* recMessage);
+static void updateInsideAirQuality(InsideSensor& sensor, char* recMessage);
 static void updateSolarForecast(const char* recMessage);
 
 void mqtt_init() {
@@ -188,11 +225,8 @@ static void onMqttMessage(int messageSize) {
             saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings)) {
             lastReadingsSave = now;
         }
-    } else if (strcmp(topicBuffer, MQTT_INSIDE_CO2_TOPIC) == 0 ||
-               strcmp(topicBuffer, MQTT_INSIDE_PM1_TOPIC) == 0 ||
-               strcmp(topicBuffer, MQTT_INSIDE_PM25_TOPIC) == 0 ||
-               strcmp(topicBuffer, MQTT_INSIDE_PM10_TOPIC) == 0) {
-        updateInsideAirQuality(topicBuffer, recMessage);
+    } else if (InsideSensor* sensor = findInsideSensor(topicBuffer)) {
+        updateInsideAirQuality(*sensor, recMessage);
     } else if (strcmp(topicBuffer, MQTT_SOLAR_FORECAST_TOPIC) == 0) {
         updateSolarForecast(recMessage);
     }
@@ -375,80 +409,36 @@ static void updateReadings(char* recMessage, int index, int dataType) {
     }
 }
 
-static void updateInsideAirQuality(const char* topic, char* recMessage) {
+static void updateInsideAirQuality(InsideSensor& sensor, char* recMessage) {
     char* endptr;
     float parsedValue = strtof(recMessage, &endptr);
+    char logMsg[CHAR_LEN];
 
     if (endptr == recMessage || *endptr != '\0' || isnan(parsedValue) || isinf(parsedValue)) {
-        char logMsg[CHAR_LEN];
-        snprintf(logMsg, sizeof(logMsg), "Invalid inside AQ value: '%s' on %s", recMessage, topic);
+        snprintf(logMsg, sizeof(logMsg), "Invalid inside AQ value: '%s' on %s", recMessage, sensor.topic);
+        logAndPublish(logMsg);
+        return;
+    }
+    if (parsedValue < sensor.minValid || parsedValue > sensor.maxValid) {
+        snprintf(logMsg, sizeof(logMsg), "Inside %s out of range: %.*f %s", sensor.label, sensor.decimals, parsedValue, sensor.unit);
         logAndPublish(logMsg);
         return;
     }
 
     time_t now = time(nullptr);
-    char logMsg[CHAR_LEN];
-    bool valueChanged = false;
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    sensor.store(parsedValue, now);
+    xSemaphoreGive(dataMutex);
+    dirtyInsideAQ = true;
 
-    if (strcmp(topic, MQTT_INSIDE_CO2_TOPIC) == 0) {
-        if (parsedValue < CO2_MIN_VALID || parsedValue > CO2_MAX_VALID) {
-            snprintf(logMsg, sizeof(logMsg), "Inside CO2 out of range: %.0f ppm", parsedValue);
-            logAndPublish(logMsg);
-            return;
-        }
-        xSemaphoreTake(dataMutex, portMAX_DELAY);
-        insideAirQuality.co2 = parsedValue;
-        insideAirQuality.co2State = ReadingState::FIRST_READING;
-        insideAirQuality.co2LastMessageTime = now;
-        xSemaphoreGive(dataMutex);
-        snprintf(logMsg, sizeof(logMsg), "Inside CO2: %.0f ppm", parsedValue);
-        valueChanged = updateInsideTracking(parsedValue, &lastLoggedInsideCO2, &hasLoggedInsideCO2, LOG_CHANGE_THRESHOLD_CO2);
-    } else if (strcmp(topic, MQTT_INSIDE_PM1_TOPIC) == 0) {
-        if (parsedValue < 0.0f || parsedValue > PM_MAX_VALID) {
-            snprintf(logMsg, sizeof(logMsg), "Inside PM1 out of range: %.1f ug/m3", parsedValue);
-            logAndPublish(logMsg);
-            return;
-        }
-        xSemaphoreTake(dataMutex, portMAX_DELAY);
-        insideAirQuality.pm1 = parsedValue;
-        insideAirQuality.pm1State = ReadingState::FIRST_READING;
-        insideAirQuality.pmLastMessageTime = now;
-        xSemaphoreGive(dataMutex);
-        snprintf(logMsg, sizeof(logMsg), "Inside PM1: %.1f ug/m3", parsedValue);
-        valueChanged = updateInsideTracking(parsedValue, &lastLoggedInsidePM1, &hasLoggedInsidePM1, LOG_CHANGE_THRESHOLD_PM);
-    } else if (strcmp(topic, MQTT_INSIDE_PM25_TOPIC) == 0) {
-        if (parsedValue < 0.0f || parsedValue > PM_MAX_VALID) {
-            snprintf(logMsg, sizeof(logMsg), "Inside PM2.5 out of range: %.1f ug/m3", parsedValue);
-            logAndPublish(logMsg);
-            return;
-        }
-        xSemaphoreTake(dataMutex, portMAX_DELAY);
-        insideAirQuality.pm25 = parsedValue;
-        insideAirQuality.pm25State = ReadingState::FIRST_READING;
-        insideAirQuality.pmLastMessageTime = now;
-        xSemaphoreGive(dataMutex);
-        snprintf(logMsg, sizeof(logMsg), "Inside PM2.5: %.1f ug/m3", parsedValue);
-        valueChanged = updateInsideTracking(parsedValue, &lastLoggedInsidePM25, &hasLoggedInsidePM25, LOG_CHANGE_THRESHOLD_PM);
-    } else if (strcmp(topic, MQTT_INSIDE_PM10_TOPIC) == 0) {
-        if (parsedValue < 0.0f || parsedValue > PM_MAX_VALID) {
-            snprintf(logMsg, sizeof(logMsg), "Inside PM10 out of range: %.1f ug/m3", parsedValue);
-            logAndPublish(logMsg);
-            return;
-        }
-        xSemaphoreTake(dataMutex, portMAX_DELAY);
-        insideAirQuality.pm10 = parsedValue;
-        insideAirQuality.pm10State = ReadingState::FIRST_READING;
-        insideAirQuality.pmLastMessageTime = now;
-        xSemaphoreGive(dataMutex);
-        snprintf(logMsg, sizeof(logMsg), "Inside PM10: %.1f ug/m3", parsedValue);
-        valueChanged = updateInsideTracking(parsedValue, &lastLoggedInsidePM10, &hasLoggedInsidePM10, LOG_CHANGE_THRESHOLD_PM);
-    } else {
-        return;
-    }
-    if (valueChanged) {
+    // Only log a meaningful change from the last logged value, so gradual drift still logs
+    if (!sensor.hasLogged || fabsf(parsedValue - sensor.lastLogged) >= sensor.logThreshold) {
+        sensor.lastLogged = parsedValue;
+        sensor.hasLogged = true;
+        snprintf(logMsg, sizeof(logMsg), "Inside %s: %.*f %s", sensor.label, sensor.decimals, parsedValue, sensor.unit);
         logAndPublish(logMsg);
     }
-    dirtyInsideAQ = true;
+
     // Throttled for the same SD-wear reason as the readings save above
     static time_t lastInsideAQSave = 0;
     if (now - lastInsideAQSave >= READINGS_SAVE_INTERVAL_SEC &&
@@ -456,6 +446,7 @@ static void updateInsideAirQuality(const char* topic, char* recMessage) {
         lastInsideAQSave = now;
     }
 }
+
 // Copies a "HH:MM" battery-full time into dest; null or anything malformed gives "" (won't fill).
 static void copyFullTime(JsonVariantConst value, char* dest, size_t destLen) {
     dest[0] = '\0';

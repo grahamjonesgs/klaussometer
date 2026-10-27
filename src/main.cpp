@@ -22,65 +22,6 @@
 #include <lvgl.h>
 #include <WiFi.h>
 
-// Restores persisted sensor state from SD without touching the compiled-in
-// description/topic/dataType fields (they are const, and blindly overwriting
-// them would resurrect renamed topics from an old firmware's save file).
-// Loads into a temporary buffer, then copies only the runtime fields across,
-// and only for entries whose saved topic still matches the compiled-in one.
-static bool restoreReadings() {
-    const size_t readingsSize = sizeof(Readings) * numberOfReadings;
-    Readings* temp = (Readings*)heap_caps_malloc(readingsSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!temp) {
-        temp = (Readings*)malloc(readingsSize);
-    }
-    if (!temp) {
-        return false;
-    }
-    bool ok = loadDataBlock(READINGS_DATA_FILENAME, temp, readingsSize);
-    if (ok) {
-        for (int i = 0; i < numberOfReadings; i++) {
-            if (strncmp(temp[i].topic, readings[i].topic, sizeof(readings[i].topic)) != 0) {
-                continue; // Topic changed since this file was saved — keep the fresh NO_DATA entry
-            }
-            memcpy(readings[i].output, temp[i].output, sizeof(readings[i].output));
-            readings[i].currentValue = temp[i].currentValue;
-            memcpy(readings[i].lastValue, temp[i].lastValue, sizeof(readings[i].lastValue));
-            readings[i].readingState = temp[i].readingState;
-            readings[i].hasEnoughData = temp[i].hasEnoughData;
-            // readingIndex indexes lastValue[] - never trust an out-of-range value from the file
-            int idx = temp[i].readingIndex;
-            readings[i].readingIndex = (idx >= 0 && idx <= STORED_READING) ? idx : 0;
-            readings[i].lastMessageTime = temp[i].lastMessageTime;
-        }
-    }
-    free(temp);
-    return ok;
-}
-
-// Forces a terminator into a fixed-size string field restored from SD, so a file that
-// passes its CRC but holds unexpected bytes can never produce an unterminated string.
-template <size_t N> static void terminate(char (&field)[N]) {
-    field[N - 1] = '\0';
-}
-
-static void terminateRestoredStrings() {
-    terminate(weather.windDir);
-    terminate(weather.description);
-    terminate(weather.timeString);
-    terminate(weather.sunrise);
-    terminate(weather.sunset);
-    terminate(weather.mountainSet);
-    terminate(uv.timeString);
-    terminate(airQuality.timeString);
-    terminate(solar.time);
-    terminate(solarToken.token);
-    terminate(solarForecast.todayFull);
-    terminate(solarForecast.tomorrowFull);
-    for (int i = 0; i < numberOfReadings; i++) {
-        terminate(readings[i].output);
-    }
-}
-
 // Shutdown handler to log reboot to SD card
 void shutdownHandler(void) {
     // Write directly to SD card (can't use queue as system is shutting down). Skipped
@@ -188,51 +129,10 @@ void setup() {
         snprintf(bootLine, sizeof(bootLine), "BOOT - Reset reason: %s (%d)", reasonStr, reason);
         sdcard_append_line_now(ERROR_LOG_FILENAME, bootLine, MUTEX_TIMEOUT_SD_MS);
 
-        if (loadDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar))) {
-            logAndPublish("Solar state restored OK");
-        } else {
-            logAndPublish("Solar state restore failed");
-        }
-        if (loadDataBlock(SOLAR_TOKEN_FILENAME, &solarToken, sizeof(solarToken))) {
-            logAndPublish("Solar token restored OK");
-        } else {
-            logAndPublish("Solar token restore failed");
-        }
-        if (loadDataBlock(WEATHER_DATA_FILENAME, &weather, sizeof(weather))) {
-            logAndPublish("Weather state restored OK");
-        } else {
-            logAndPublish("Weather state restore failed");
-        }
-        if (loadDataBlock(UV_DATA_FILENAME, &uv, sizeof(uv))) {
-            logAndPublish("UV state restored OK");
-        } else {
-            logAndPublish("UV state restore failed");
-        }
-        if (restoreReadings()) {
-            logAndPublish("Readings state restored OK");
-            invalidateOldReadings();
-        } else {
-            logAndPublish("Readings state restore failed");
-        }
-        if (loadDataBlock(AIR_QUALITY_DATA_FILENAME, &airQuality, sizeof(airQuality))) {
-            logAndPublish("Air quality state restored OK");
-        } else {
-            logAndPublish("Air quality state restore failed");
-        }
-        if (loadDataBlock(INSIDE_AIR_QUALITY_DATA_FILENAME, &insideAirQuality, sizeof(insideAirQuality))) {
-            logAndPublish("Inside air quality state restored OK");
-            invalidateInsideAirQuality(); // Mark stale if data is old
-            dirtyInsideAQ = true;         // Trigger display update with restored values
-        } else {
-            logAndPublish("Inside air quality state restore failed");
-        }
-        if (loadDataBlock(SOLAR_FORECAST_DATA_FILENAME, &solarForecast, sizeof(solarForecast))) {
-            logAndPublish("Solar forecast state restored OK");
-            dirtySolarForecast = true; // Trigger display update with restored values
-        } else {
-            logAndPublish("Solar forecast state restore failed");
-        }
-        terminateRestoredStrings();
+        restorePersistedState();
+        // Age out anything that went stale while the device was off (no-op until NTP syncs)
+        invalidateOldReadings();
+        invalidateInsideAirQuality();
     }
 
     // Add unique topics for MQTT logging
