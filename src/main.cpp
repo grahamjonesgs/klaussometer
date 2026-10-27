@@ -34,13 +34,12 @@ SemaphoreHandle_t dataMutex;
 // Global variables
 Weather weather = {0.0, 0.0, 0.0, 0.0, 0.0, false, 0, "", "", "--:--:--"};
 UV uv = {0, 0, "--:--:--"};
-Solar solar = {0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, "--:--:--", 100, 0, false, 0.0, 0.0};
+Solar solar = {0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, "--:--:--", 100, 0, 0, 0.0, 0.0};
 SolarToken solarToken = {};
 AirQuality airQuality = {0.0, 0.0, 0.0, 0, 0, "--:--:--"};
 InsideAirQuality insideAirQuality = {};
 SolarForecast solarForecast = {};
 Readings readings[]{READINGS_ARRAY};
-Preferences storage;
 extern const int numberOfReadings = sizeof(readings) / sizeof(readings[0]);
 QueueHandle_t statusMessageQueue;
 char logTopic[CHAR_LEN];
@@ -287,18 +286,6 @@ void setup() {
     display_hardware_init();
 
     display_init();
-
-    // Get old battery min and max
-    storage.begin("KO");
-    solar.todayBatteryMin = storage.getFloat("solarmin");
-    if (isnan(solar.todayBatteryMin)) {
-        solar.todayBatteryMin = 100;
-    }
-    solar.todayBatteryMax = storage.getFloat("solarmax");
-    if (isnan(solar.todayBatteryMax)) {
-        solar.todayBatteryMax = 0;
-    }
-    storage.end();
 
     configTime(TIME_OFFSET, 0, NTP_SERVER); // Setup as used to display time from stored values
     http.setTimeout(HTTP_TIMEOUT_MS);       // Set read timeout for all API calls

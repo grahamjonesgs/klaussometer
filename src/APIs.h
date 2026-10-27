@@ -5,7 +5,6 @@
 #include "utils.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
-#include <Preferences.h>
 #include <WiFi.h>
 
 void api_manager_t(void* pvParameters);

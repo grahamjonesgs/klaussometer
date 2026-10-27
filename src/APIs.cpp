@@ -9,7 +9,6 @@ extern UV uv;
 extern Solar solar;
 extern SolarToken solarToken;
 extern AirQuality airQuality;
-extern Preferences storage;
 
 extern HTTPClient http;
 extern WiFiClientSecure httpsClient;
@@ -369,7 +368,7 @@ static bool fetchSolarToken() {
 }
 
 // Fetches real-time solar data (power flows, battery SoC) from Solarman.
-// Also tracks daily battery min/max, resetting them at midnight.
+// Also tracks daily battery min/max, resetting them on the first fetch of each day.
 // Returns true on success or non-HTTP error, false on HTTP error.
 static bool fetchCurrentSolar() {
     if (WiFi.status() != WL_CONNECTED)
@@ -450,41 +449,23 @@ static bool fetchCurrentSolar() {
     solar.gridPower = recGridPower / 1000;
     snprintf(solar.time, sizeof(solar.time), "%s", timeBuf);
 
-    // Track daily battery min/max, resetting at midnight. NVS writes happen
-    // after the mutex is released — they can take tens of milliseconds.
-    bool saveMin = false;
-    bool saveMax = false;
-    if (nowTm.tm_hour == 0 && solar.isMinMaxReset == false) {
+    // Track daily battery min/max. They are reset on the first fetch of each local day,
+    // keyed on the date rather than "a fetch during hour 0", so an outage around
+    // midnight can't carry yesterday's values over. Persisted with the Solar block.
+    int32_t today = (nowTm.tm_year + 1900) * 1000 + nowTm.tm_yday;
+    if (nowT >= TIME_SYNC_THRESHOLD && solar.minMaxDay != today) {
         solar.todayBatteryMin = 100;
         solar.todayBatteryMax = 0;
-        solar.isMinMaxReset = true;
-        saveMin = true;
-        saveMax = true;
-    } else if (nowTm.tm_hour != 0) {
-        solar.isMinMaxReset = false;
+        solar.minMaxDay = today;
     }
     if ((solar.batteryCharge < solar.todayBatteryMin) && solar.batteryCharge != 0) {
         solar.todayBatteryMin = solar.batteryCharge;
-        saveMin = true;
     }
     if (solar.batteryCharge > solar.todayBatteryMax) {
         solar.todayBatteryMax = solar.batteryCharge;
-        saveMax = true;
     }
-    float minToSave = solar.todayBatteryMin;
-    float maxToSave = solar.todayBatteryMax;
     xSemaphoreGive(dataMutex);
 
-    if (saveMin || saveMax) {
-        storage.begin("KO");
-        if (saveMin) {
-            storage.putFloat("solarmin", minToSave);
-        }
-        if (saveMax) {
-            storage.putFloat("solarmax", maxToSave);
-        }
-        storage.end();
-    }
     dirtySolar = true;
     logAndPublish("Solar status updated");
     saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));

@@ -101,7 +101,7 @@ struct __attribute__((packed)) Solar {
     char time[TIME_STR_LEN];
     float todayBatteryMin;
     float todayBatteryMax;
-    bool isMinMaxReset;
+    int32_t minMaxDay; // Local day (year * 1000 + day of year) todayBatteryMin/Max belong to
     float todayBuy;
     float todayUse;
     float todayGeneration;
