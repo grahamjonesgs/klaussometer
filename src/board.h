@@ -9,7 +9,7 @@ bool detectWaveshare();
 // Sets screen backlight to day (full) or night (dim) brightness.
 void setBacklight(bool day);
 
-// Brings up the panel, backlight, touch, LVGL and the SquareLine UI for the detected board.
+// Brings up the panel, backlight, LVGL and the SquareLine UI for the detected board.
 void display_hardware_init();
 
 #endif // BOARD_H

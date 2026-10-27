@@ -19,20 +19,17 @@
 #define WS_EXPANDER_REG_PWM  0x05 // Backlight PWM 0–100 (hardware caps at 97)
 
 // IO pin assignments within the expander output register
-#define WS_IO_TOUCH_RST 1 // GT911 touch controller reset
+#define WS_IO_TOUCH_RST 1 // GT911 touch controller reset (held low - touch is not used)
 #define WS_IO_BACKLIGHT 2 // LCD backlight enable
 #define WS_IO_LCD_RST   3 // LCD panel reset
 #define WS_IO_SD_CS     4 // SD card chip select
-
-// GT911 touch INT is wired to this ESP32 GPIO (matches BOARD_CFG_WAVESHARE.touchInt)
-#define WS_TOUCH_INT 4
 
 // Backlight brightness levels used in day/night mode (0–97)
 static const int WS_BACKLIGHT_DAY_PERCENT   = 97; // Maximum usable brightness
 static const int WS_BACKLIGHT_NIGHT_PERCENT = 10; // Dim night-time brightness
 
-// Initialise the I2C expander, reset the LCD panel and GT911 touch controller.
-// Must be called before gfx->begin() and touchInit().
+// Initialise the I2C expander, reset the LCD panel and hold the GT911 touch
+// controller in reset. Must be called before gfx->begin().
 void waveshare_expander_init();
 
 // Set backlight brightness 0–100 %.

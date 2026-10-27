@@ -4,7 +4,6 @@
 extern MqttClient mqttClient;
 extern Readings readings[];
 extern const int numberOfReadings;
-extern struct tm timeinfo;
 
 void setup_wifi() {
     int counter = 0;
@@ -72,14 +71,15 @@ void mqtt_connect() {
 }
 
 void time_init() {
-    if (!getLocalTime(&timeinfo)) {
+    struct tm local;
+    if (!getLocalTime(&local)) {
         logAndPublish("Failed to obtain time");
         return;
     }
     logAndPublish("Time synchronized successfully");
 
     char timeStr[64];
-    strftime(timeStr, sizeof(timeStr), "%a %b %d %H:%M:%S %Y", &timeinfo);
+    strftime(timeStr, sizeof(timeStr), "%a %b %d %H:%M:%S %Y", &local);
     logAndPublish(timeStr);
 }
 

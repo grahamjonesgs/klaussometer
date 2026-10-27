@@ -11,8 +11,6 @@ struct BoardConfig {
     int hsyncPolarity, hsyncFront, hsyncPulse, hsyncBack;
     int vsyncPolarity, vsyncFront, vsyncPulse, vsyncBack;
     int pclkActiveNeg, preferSpeed;
-    // Touch / I2C
-    int i2cSda, i2cScl, touchInt, touchRst, touchRawMaxY;
     // Backlight: GPIO pin for LEDC PWM, or -1 if controlled via I2C expander (Waveshare)
     int tftBl;
 };
@@ -33,8 +31,6 @@ static const BoardConfig BOARD_CFG_MATOUCH = {
     1, 13, 8, 45,
     // PCLK active neg, prefer speed
     1, 12000000,
-    // Touch I2C: SDA, SCL, INT, RST, raw Y max
-    17, 18, -1, 38, 750,
     // TFT backlight GPIO
     10
 };
@@ -55,8 +51,6 @@ static const BoardConfig BOARD_CFG_WAVESHARE = {
     0, 3, 45, 13,
     // PCLK active neg, prefer speed
     0, 12000000,
-    // Touch I2C: SDA, SCL, INT, RST (via expander IO1), raw Y max
-    8, 9, 4, -1, 600,
     // TFT backlight GPIO (-1 = controlled via I2C expander)
     -1
 };

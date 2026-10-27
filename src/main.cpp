@@ -34,7 +34,6 @@ SemaphoreHandle_t mqttMutex;
 SemaphoreHandle_t dataMutex;
 
 // Global variables
-struct tm timeinfo;
 Weather weather = {0.0, 0.0, 0.0, 0.0, 0.0, false, 0, "", "", "--:--:--"};
 UV uv = {0, 0, "--:--:--"};
 Solar solar = {0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, "--:--:--", 100, 0, false, 0.0, 0.0};
@@ -258,7 +257,7 @@ void setup() {
     snprintf(logTopic, sizeof(logTopic), "klaussometer/%s/log", chipId);
     snprintf(errorTopic, sizeof(errorTopic), "klaussometer/%s/error", chipId);
 
-    // Display and touch hardware, LVGL and the SquareLine UI
+    // Display hardware, LVGL and the SquareLine UI
     display_hardware_init();
 
     display_init();

@@ -11,7 +11,6 @@ extern UV uv;
 extern AirQuality airQuality;
 extern InsideAirQuality insideAirQuality;
 extern SolarForecast solarForecast;
-extern struct tm timeinfo;
 extern char chipId[CHAR_LEN];
 extern MqttClient mqttClient;
 
@@ -246,10 +245,8 @@ static void updateInsideAQDisplay();
 static void updateSolarForecastDisplay();
 static void updatePeriodicStatus(unsigned long currentMillis);
 static void adjustDayNightMode();
-static void onTimeTouched(lv_event_t* e);
+static void updateClock();
 static void getBatteryStatus(float batteryValue, int readingIndex, char* iconChar, lv_color_t* colorPtr);
-
-static bool showDate = false; // when true, ui_Time shows date instead of time
 
 // Arrays of UI objects
 static lv_obj_t** roomNames[ROOM_COUNT] = ROOM_NAME_LABELS;
@@ -516,7 +513,32 @@ static void updateSolarForecastDisplay() {
     lv_obj_set_style_text_color(ui_SolarForecastTitle, color, LV_PART_MAIN);
 }
 
-// Updates status indicators, clock, WiFi icon and version string once per second.
+// Redraws the clock whenever the wall-clock second changes. Driven by time() rather
+// than a millis() interval so the display never drifts and skips a second, and never
+// blocks: getLocalTime() would wait up to 5 s per call until NTP has synced.
+static void updateClock() {
+    static time_t lastShown = -1;
+    static bool showingSyncing = false;
+    time_t now = time(nullptr);
+    if (now == lastShown)
+        return;
+    lastShown = now;
+    if (now < TIME_SYNC_THRESHOLD) {
+        if (!showingSyncing) {
+            lv_label_set_text(ui_Time, "Syncing");
+            showingSyncing = true;
+        }
+        return;
+    }
+    showingSyncing = false;
+    struct tm local;
+    localtime_r(&now, &local);
+    char timeString[TIME_STR_LEN];
+    strftime(timeString, sizeof(timeString), "%H:%M:%S", &local);
+    lv_label_set_text(ui_Time, timeString);
+}
+
+// Updates status indicators, WiFi icon and version string once per second.
 static void updatePeriodicStatus(unsigned long currentMillis) {
     static unsigned long lastPeriodicMs = 0;
     if (currentMillis - lastPeriodicMs < PERIODIC_STATUS_INTERVAL_MS)
@@ -546,14 +568,6 @@ static void updatePeriodicStatus(unsigned long currentMillis) {
         lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_GREEN), LV_PART_MAIN);
     } else {
         lv_obj_set_style_text_color(ui_ServerStatus, lv_color_hex(COLOR_RED), LV_PART_MAIN);
-    }
-
-    if (!getLocalTime(&timeinfo)) {
-        lv_label_set_text(ui_Time, "Syncing");
-    } else {
-        char timeString[CHAR_LEN];
-        strftime(timeString, sizeof(timeString), showDate ? "%a %d %b %Y" : "%H:%M:%S", &timeinfo);
-        lv_label_set_text(ui_Time, timeString);
     }
 
     if (WiFi.status() == WL_CONNECTED) {
@@ -590,16 +604,6 @@ static void adjustDayNightMode() {
     }
 }
 
-// Tap the time label to toggle between HH:MM:SS and day/date display.
-static void onTimeTouched(lv_event_t* e) {
-    showDate = !showDate;
-    if (getLocalTime(&timeinfo)) {
-        char buf[CHAR_LEN];
-        strftime(buf, sizeof(buf), showDate ? "%a %d %b %Y" : "%H:%M:%S", &timeinfo);
-        lv_label_set_text(ui_Time, buf);
-    }
-}
-
 static void getBatteryStatus(float batteryValue, int readingIndex, char* iconChar, lv_color_t* colorPtr) {
     if (batteryValue > BATTERY_OK) {
         // Battery is ok
@@ -623,13 +627,9 @@ static void getBatteryStatus(float batteryValue, int readingIndex, char* iconCha
     }
 }
 
-// Sets the initial (no data yet, night mode) state of every label and arc, and
-// registers the tap handler on the clock. Call once after ui_init().
+// Sets the initial (no data yet, night mode) state of every label and arc.
+// Call once after ui_init().
 void display_init() {
-    // Tap the time label to toggle between time and date
-    lv_obj_add_flag(ui_Time, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(ui_Time, onTimeTouched, LV_EVENT_CLICKED, nullptr);
-
     // Set initial UI values
     lv_label_set_text(ui_Version, "");
 
@@ -701,7 +701,7 @@ void display_init() {
     lv_timer_handler();
 }
 
-// Redraws any panel whose data has changed, plus the once-a-second status row.
+// Redraws any panel whose data has changed, the clock, and the once-a-second status row.
 // Call from loop() after lv_timer_handler().
 void display_update(unsigned long currentMillis) {
     updateRoomDisplay();
@@ -715,6 +715,7 @@ void display_update(unsigned long currentMillis) {
         set_solar_values();
     }
 
+    updateClock();
     updatePeriodicStatus(currentMillis);
     adjustDayNightMode();
 

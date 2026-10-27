@@ -3,11 +3,10 @@
 #include "board_waveshare.h"
 #include "types.h"
 #include <Arduino_GFX_Library.h>
-#include <TAMC_GT911.h>
 #include <Wire.h>
 #include <lvgl.h>
 
-// Display, touch and backlight hardware for both supported boards (Matouch and Waveshare).
+// Display and backlight hardware for both supported boards (Matouch and Waveshare).
 
 const int MAX_DUTY_CYCLE = (int)(pow(2, PWMResolution) - 1);
 const float DAYTIME_DUTY = MAX_DUTY_CYCLE * (1.0 - MAX_BRIGHTNESS);
@@ -20,12 +19,6 @@ const BoardConfig* board = nullptr;
 // Screen config — initialized in setup() after board detection
 Arduino_ESP32RGBPanel* rgbpanel = nullptr;
 Arduino_RGB_Display* gfx = nullptr;
-
-// Touch config — initialized in setup() after board detection
-TAMC_GT911* ts = nullptr;
-int touchLastX = 0;
-int touchLastY = 0;
-static bool touchAvailable = false; // set true only if GT911 responds on I2C
 
 // Screen setting
 static uint32_t screenWidth = LCD_WIDTH;
@@ -75,12 +68,12 @@ void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     lv_display_flush_ready(disp);
 }
 
-// Initialise pins for touch and backlight
+// Initialise backlight (and on Waveshare the IO expander)
 void pinInit() {
     if (isWaveshare) {
-        // Waveshare: backlight and LCD/touch reset are all behind the TCA9554 I2C expander.
-        // waveshare_expander_init() initialises Wire, resets the LCD panel and GT911, and
-        // leaves the backlight off until after display init.
+        // Waveshare: backlight and LCD/touch reset are all behind the I2C expander.
+        // waveshare_expander_init() initialises Wire, resets the LCD panel, holds the
+        // unused GT911 in reset, and leaves the backlight off until after display init.
         waveshare_expander_init();
     } else {
         pinMode(board->tftBl, OUTPUT);
@@ -95,75 +88,9 @@ void pinInit() {
     }
 }
 
-// Probes the two possible GT911 I2C addresses. The chip latches 0x5D or 0x14
-// from the level of its INT pin at the rising edge of reset. Returns the
-// address that responded, or 0 if the controller isn't on the bus.
-static uint8_t probeGT911Address() {
-    for (uint8_t addr : {(uint8_t)0x5D, (uint8_t)0x14}) {
-        Wire.beginTransmission(addr);
-        if (Wire.endTransmission() == 0) {
-            return addr;
-        }
-    }
-    return 0;
-}
-
-// Initialise touch screen
-void touchInit(void) {
-    Wire.begin(board->i2cSda, board->i2cScl);
-    uint8_t addr = probeGT911Address();
-    if (addr == 0) {
-        Serial.println("Touch: GT911 not found on I2C bus");
-        return;
-    }
-    // Pass the detected address to begin() — its default is 0x5D, and a GT911
-    // that latched 0x14 would then NACK every LVGL input poll (~30/s), flooding
-    // the log with "requestFrom(): i2cRead returned Error -1".
-    // begin() also pulses the GT911 reset. On boards where the INT or RST strap
-    // pin isn't wired to the ESP32 (the -1 pin values become invalid pin 255 in
-    // TAMC_GT911's uint8_t fields) the chip can re-latch the other address, so
-    // verify after begin() and follow it if it moved.
-    for (int attempt = 0; attempt < 3 && !touchAvailable; attempt++) {
-        ts->begin(addr);
-        uint8_t after = probeGT911Address();
-        if (after == addr) {
-            touchAvailable = true;
-        } else if (after == 0) {
-            break;
-        } else {
-            addr = after;
-        }
-    }
-    if (!touchAvailable) {
-        Serial.println("Touch: GT911 unresponsive after reset - touch disabled");
-        return;
-    }
-    Serial.printf("Touch: GT911 found at 0x%02X\n", addr);
-    ts->setRotation(ROTATION_INVERTED);
-}
-
-void touchRead(lv_indev_t* indev, lv_indev_data_t* data) {
-    if (!touchAvailable) {
-        data->state = LV_INDEV_STATE_RELEASED;
-        return;
-    }
-    ts->read();
-    if (ts->isTouched) {
-        touchLastX = map(ts->points[0].x, 0, 1024, 0, LCD_WIDTH);
-        touchLastY = map(ts->points[0].y, 0, board->touchRawMaxY, 0, LCD_HEIGHT);
-        data->point.x = touchLastX;
-        data->point.y = touchLastY;
-        data->state = LV_INDEV_STATE_PRESSED;
-        ts->isTouched = false;
-    } else {
-        data->point.x = touchLastX;
-        data->state = LV_INDEV_STATE_RELEASED;
-    }
-}
-
-// Creates the RGB panel and touch objects for the detected board, initialises the
-// backlight, touch controller and LVGL, then builds the SquareLine UI and registers
-// the touch input. Call after detectWaveshare() has selected the board config.
+// Creates the RGB panel for the detected board, initialises the backlight and
+// LVGL, then builds the SquareLine UI. Call after detectWaveshare() has selected
+// the board config. The touch controller is not used.
 void display_hardware_init() {
     rgbpanel = new Arduino_ESP32RGBPanel(
         board->lcdDe, board->lcdVsync, board->lcdHsync, board->lcdPclk,
@@ -174,12 +101,9 @@ void display_hardware_init() {
         board->vsyncPolarity, board->vsyncFront, board->vsyncPulse, board->vsyncBack,
         board->pclkActiveNeg, board->preferSpeed);
     gfx = new Arduino_RGB_Display(LCD_WIDTH, LCD_HEIGHT, rgbpanel);
-    ts = new TAMC_GT911(board->i2cSda, board->i2cScl, board->touchInt, board->touchRst, LCD_WIDTH, LCD_HEIGHT);
 
     // Init Display
     pinInit();
-
-    touchInit();
 
     // Init Display Hardware
     gfx->begin();
@@ -216,9 +140,4 @@ void display_hardware_init() {
     lv_display_set_flush_cb(disp, dispFlush);
     lv_display_set_buffers(disp, dispDrawBuf, nullptr, bufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
     ui_init();
-
-    // Register touch input device with LVGL
-    lv_indev_t* indev = lv_indev_create();
-    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
-    lv_indev_set_read_cb(indev, touchRead);
 }
