@@ -251,6 +251,10 @@ static const int COLOR_ARC_TRACK_DAY = 0xE0E0E0;   // Light gray track for day
 static const int ARC_OPACITY_NIGHT = 180;          // Dimmer indicator at night
 static const int ARC_OPACITY_DAY = 255;            // Full opacity during day
 
+// Board detection (probe for the Waveshare I2C expander)
+static const int BOARD_DETECT_ATTEMPTS = 5;
+static const int BOARD_DETECT_RETRY_DELAY_MS = 20;
+
 static const int LCD_WIDTH  = 1024;
 static const int LCD_HEIGHT = 600;
 

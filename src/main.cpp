@@ -16,6 +16,7 @@ Arduino Core 0
 #include "OTA.h"
 #include "SDCard.h"
 #include "board.h"
+#include "board_waveshare.h"
 #include "connections.h"
 #include "display.h"
 #include "mqtt.h"
@@ -138,6 +139,11 @@ void setup() {
     isWaveshare = detectWaveshare();
     board = isWaveshare ? &BOARD_CFG_WAVESHARE : &BOARD_CFG_MATOUCH;
     Serial.printf("Board: %s\n", isWaveshare ? "Waveshare" : "Matouch");
+    if (isWaveshare) {
+        // The expander drives SD CS as well as the LCD reset and backlight - set it up
+        // now, before the SD card is mounted, rather than relying on its power-on state
+        waveshare_expander_init();
+    }
 
     if (isWaveshare) {
         // On Waveshare, Serial goes to USB CDC (the "USB" port). ESP-IDF logs go to UART0

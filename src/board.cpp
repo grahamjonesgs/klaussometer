@@ -24,16 +24,23 @@ Arduino_RGB_Display* gfx = nullptr;
 static uint32_t screenWidth = LCD_WIDTH;
 static uint32_t screenHeight = LCD_HEIGHT;
 static lv_display_t* disp = nullptr;
-static lv_color_t* dispDrawBuf;
+static uint8_t* dispDrawBuf;
 
-// Probes GPIO 8/9 for the Waveshare TCA9554 I2C expander at address 0x24.
-// Returns true if found (Waveshare board), false otherwise (Matouch board).
-// GPIO 8/9 are safe to probe at boot — they are LCD data pins on Matouch but
+// Probes GPIO 8/9 for the Waveshare I2C expander. Returns true if found (Waveshare
+// board), false otherwise (Matouch board). Retried a few times so one missed ACK (the
+// expander MCU still booting, a bus glitch) can't boot a Waveshare with the Matouch
+// pin map. GPIO 8/9 are safe to probe at boot — they are LCD data pins on Matouch but
 // are not driven by the RGB panel until gfx->begin() is called.
 bool detectWaveshare() {
-    Wire.begin(8, 9, 400000);
-    Wire.beginTransmission(0x24);
-    bool found = (Wire.endTransmission() == 0);
+    Wire.begin(WS_I2C_SDA, WS_I2C_SCL, WS_I2C_FREQ_HZ);
+    bool found = false;
+    for (int attempt = 0; attempt < BOARD_DETECT_ATTEMPTS && !found; attempt++) {
+        if (attempt > 0) {
+            delay(BOARD_DETECT_RETRY_DELAY_MS);
+        }
+        Wire.beginTransmission(WS_EXPANDER_I2C_ADDR);
+        found = (Wire.endTransmission() == 0);
+    }
     Wire.end();
     return found;
 }
@@ -57,25 +64,23 @@ void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
-    lv_color_t* colorPtr = (lv_color_t*)px_map;
+    // px_map holds RGB565 pixels (LV_COLOR_DEPTH 16)
+    uint16_t* pixels = (uint16_t*)px_map;
 
 #if (LV_COLOR_16_SWAP != 0)
-    gfx->draw16bitBeRGBBitmap(area->x1, area->y1, (uint16_t*)colorPtr, w, h);
+    gfx->draw16bitBeRGBBitmap(area->x1, area->y1, pixels, w, h);
 #else
-    gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t*)colorPtr, w, h);
+    gfx->draw16bitRGBBitmap(area->x1, area->y1, pixels, w, h);
 #endif
 
     lv_display_flush_ready(disp);
 }
 
-// Initialise backlight (and on Waveshare the IO expander)
+// Initialise the backlight PWM. On Waveshare the backlight is behind the I2C expander,
+// which setup() initialises right after board detection (before the SD card is mounted,
+// as the expander also drives the SD card's CS line).
 void pinInit() {
-    if (isWaveshare) {
-        // Waveshare: backlight and LCD/touch reset are all behind the I2C expander.
-        // waveshare_expander_init() initialises Wire, resets the LCD panel, holds the
-        // unused GT911 in reset, and leaves the backlight off until after display init.
-        waveshare_expander_init();
-    } else {
+    if (!isWaveshare) {
         pinMode(board->tftBl, OUTPUT);
 #if ESP_ARDUINO_VERSION_MAJOR >= 3
         ledcAttachChannel(board->tftBl, PWMFreq, PWMResolution, PWMChannel);
@@ -116,12 +121,14 @@ void display_hardware_init() {
     screenWidth = gfx->width();
     screenHeight = gfx->height();
 
-    // Allocate display buffer
-    size_t bufferSize = sizeof(lv_color_t) * screenWidth * DISPLAY_BUFFER_LINES;
+    // Allocate display buffer. Sized in rendered pixels (RGB565 = 2 bytes), not
+    // sizeof(lv_color_t), which is 3 bytes in LVGL 9. Internal RAM first: software
+    // rendering into PSRAM is markedly slower; PSRAM is only the fallback.
+    size_t bufferSize = (LV_COLOR_DEPTH / 8) * screenWidth * DISPLAY_BUFFER_LINES;
 
-    dispDrawBuf = (lv_color_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    dispDrawBuf = (uint8_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
     if (!dispDrawBuf) {
-        dispDrawBuf = (lv_color_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        dispDrawBuf = (uint8_t*)heap_caps_malloc(bufferSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
 
     if (!dispDrawBuf) {

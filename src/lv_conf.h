@@ -83,7 +83,10 @@
  * - LV_OS_RTTHREAD
  * - LV_OS_WINDOWS
  * - LV_OS_CUSTOM */
-#define LV_USE_OS   LV_OS_FREERTOS
+/* Klaussometer: LVGL is only ever called from the Arduino loop task, and with a single
+ * software draw unit LV_OS_FREERTOS just adds a hidden, unpinned render thread that the
+ * loop waits on every frame. Render inline instead. */
+#define LV_USE_OS   LV_OS_NONE
 
 #if LV_USE_OS == LV_OS_CUSTOM
     #define LV_OS_CUSTOM_INCLUDE <stdint.h>

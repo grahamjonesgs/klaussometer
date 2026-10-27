@@ -29,19 +29,20 @@ static void expander_set_bit(uint8_t io_pin, uint8_t level) {
 // --- Public API ---
 
 void waveshare_expander_init() {
-    Wire.begin(WS_I2C_SDA, WS_I2C_SCL, 400000);
+    Wire.begin(WS_I2C_SDA, WS_I2C_SCL, WS_I2C_FREQ_HZ);
 
     // Set all IOs as outputs
     expander_write(WS_EXPANDER_REG_MODE, 0x00);
 
-    // Initial state: everything off / reset asserted
+    // Initial state: everything off / reset asserted. This also drives SD CS (IO4) low,
+    // which the SD card needs before it can be mounted.
     outShadow = 0x00;
     expander_write(WS_EXPANDER_REG_OUT, outShadow);
-    delay(20);
+    delay(WS_EXPANDER_SETTLE_MS);
 
     // De-assert LCD reset
     expander_set_bit(WS_IO_LCD_RST, 1);
-    delay(20);
+    delay(WS_EXPANDER_SETTLE_MS);
 
     // Touch is not used: leave the GT911 held in reset (WS_IO_TOUCH_RST stays low
     // from the initial state above) so it stays off the shared I2C bus.
@@ -52,15 +53,15 @@ void waveshare_expander_init() {
 }
 
 void waveshare_backlight_set(int percent) {
-    if (percent > 97) percent = 97;
+    if (percent > WS_BACKLIGHT_MAX_PERCENT) percent = WS_BACKLIGHT_MAX_PERCENT;
     if (percent < 0)  percent = 0;
 
     if (percent == 0) {
         expander_set_bit(WS_IO_BACKLIGHT, 0);
         expander_write(WS_EXPANDER_REG_PWM, 0);
     } else {
-        // PWM register is inverted: 0 = full brightness, 97 = minimum/off
+        // PWM register is inverted: 0 = full brightness, WS_BACKLIGHT_MAX_PERCENT = minimum/off
         expander_set_bit(WS_IO_BACKLIGHT, 1);
-        expander_write(WS_EXPANDER_REG_PWM, (uint8_t)(97 - percent));
+        expander_write(WS_EXPANDER_REG_PWM, (uint8_t)(WS_BACKLIGHT_MAX_PERCENT - percent));
     }
 }
