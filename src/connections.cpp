@@ -45,10 +45,19 @@ static void setup_wifi() {
     logAndPublish(messageBuffer);
 }
 
+// Waits for the first NTP sync. MQTT and the APIs start once this returns, and anything
+// they receive before the clock is set is stamped with a 1970 time (blanked as stale once
+// it syncs), so allow NTP_SYNC_TIMEOUT_MS. After that carry on anyway - SNTP keeps trying
+// in the background. Returns at once if the clock was already set (a reconnect).
 static void time_init() {
     struct tm local;
-    if (!getLocalTime(&local)) {
-        logAndPublish("Failed to obtain time");
+    bool synced = false;
+    for (int waited = 0; waited < NTP_SYNC_TIMEOUT_MS && !synced; waited += NTP_SYNC_WAIT_STEP_MS) {
+        esp_task_wdt_reset();
+        synced = getLocalTime(&local, NTP_SYNC_WAIT_STEP_MS);
+    }
+    if (!synced) {
+        logAndPublish("Failed to obtain time, continuing without it");
         return;
     }
     logAndPublish("Time synchronized successfully");
