@@ -99,13 +99,44 @@ static void ensureLineCount(const char* logFilename) {
     }
 }
 
+static bool cardMounted = false;
+static unsigned long lastMountAttemptMs = 0;
+static bool cardMissingLogged = false; // The current failed state has already been logged
+
 // Mounts the SD card in 1-bit mode. Never formats on failure: a single bad mount
 // (flaky contact, exFAT card) must not wipe the logs and saved state.
 // On success the log line counts are cached here, at boot, so neither the logger
 // nor the web log viewer has to scan a 1 MB file later while holding sdMutex.
 static bool mountCard() {
+    lastMountAttemptMs = millis();
     SD_MMC.setPins(PIN_SD_CLK, PIN_SD_CMD, PIN_SD_D0);
-    return SD_MMC.begin("/sdcard", true, false);
+    cardMounted = SD_MMC.begin("/sdcard", true, false);
+    return cardMounted;
+}
+
+// Caller holds sdMutex. True if the card is mounted. If it isn't, retries the mount at
+// most once per SD_REMOUNT_INTERVAL_MS: with no card in the slot every log line and save
+// would otherwise retry it, and every file call would log "not mounted".
+static bool cardReady() {
+    if (cardMounted) {
+        return true;
+    }
+    if (millis() - lastMountAttemptMs < SD_REMOUNT_INTERVAL_MS) {
+        return false;
+    }
+    SD_MMC.end(); // begin() returns early while the card is still registered
+    normalLogLineCount = -1;
+    errorLogLineCount = -1;
+    if (mountCard()) {
+        cardMissingLogged = false;
+        logAndPublish("SD Card remounted");
+        return true;
+    }
+    if (!cardMissingLogged) { // Once per failure, not once a minute
+        cardMissingLogged = true;
+        logAndPublish("SD Card remount failed - retrying every minute");
+    }
+    return false;
 }
 
 bool sdcard_mount() {
@@ -156,7 +187,7 @@ bool sdcard_append_line_now(const char* logFilename, const char* message, int ti
     if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(timeoutMs)) != pdTRUE) {
         return false;
     }
-    bool ok = appendLogLine(logFilename, message);
+    bool ok = cardMounted && appendLogLine(logFilename, message); // No remount: may be shutting down
     xSemaphoreGive(sdMutex);
     return ok;
 }
@@ -198,6 +229,10 @@ static bool writeDataBlock(const char* filename, const void* dataPtr, size_t siz
         }
         return false;
     }
+    if (!cardReady()) {
+        xSemaphoreGive(sdMutex);
+        return false;
+    }
 
     DataHeader header;
     header.magic = DATA_HEADER_MAGIC;
@@ -215,16 +250,10 @@ static bool writeDataBlock(const char* filename, const void* dataPtr, size_t siz
         char logMessage[CHAR_LEN];
         snprintf(logMessage, sizeof(logMessage), "Error opening file %s for writing", tmpName);
         logAndPublish(logMessage);
-        // begin() returns early while the card is still registered, so unmount first.
-        // sdMutex is already held, so remount directly and let the line counts refill
-        SD_MMC.end();
-        normalLogLineCount = -1;
-        errorLogLineCount = -1;
-        if (!mountCard()) {
-            logAndPublish("SD Card remount failed!");
-        } else {
-            logAndPublish("SD Card remounted");
-        }
+        // Card pulled or failing - remount now (unless one was just tried), and if that
+        // fails, keep retrying once a minute from cardReady()
+        cardMounted = false;
+        cardReady();
         xSemaphoreGive(sdMutex);
         return false;
     }
@@ -311,6 +340,11 @@ bool loadDataBlock(const char* filename, void* dataPtr, size_t expected_size) {
         return false;
     }
     if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
+        free(scratch);
+        return false;
+    }
+    if (!cardReady()) {
+        xSemaphoreGive(sdMutex);
         free(scratch);
         return false;
     }
@@ -419,6 +453,10 @@ void addLogToSDCard(const char* message, const char* logFilename) {
     if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
         return;
     }
+    if (!cardReady()) {
+        xSemaphoreGive(sdMutex);
+        return;
+    }
 
     // Only needed if the boot-time count in sdcard_mount() didn't happen (or a rotation
     // rename failed); counted a block at a time
@@ -464,6 +502,12 @@ char* getLogsFromSDCard(const char* logFilename, size_t* jsonLength) {
     bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "{\"logs\":[");
 
     if (xSemaphoreTake(sdMutex, pdMS_TO_TICKS(MUTEX_TIMEOUT_SD_MS)) != pdTRUE) {
+        bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "]}");
+        *jsonLength = bufferPos;
+        return jsonBuffer;
+    }
+    if (!cardReady()) {
+        xSemaphoreGive(sdMutex);
         bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "]}");
         *jsonLength = bufferPos;
         return jsonBuffer;

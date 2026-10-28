@@ -43,6 +43,7 @@ void setup() {
     // Auto-detect board type by probing I2C on GPIO 8/9 for the Waveshare expander
     const bool isWaveshare = board_select();
     Serial.printf("Board: %s\n", isWaveshare ? "Waveshare" : "Matouch");
+    Serial0.printf("Board: %s\n", isWaveshare ? "Waveshare" : "Matouch");
     if (isWaveshare) {
         // The expander drives SD CS as well as the LCD reset and backlight - set it up
         // now, before the SD card is mounted, rather than relying on its power-on state
@@ -158,7 +159,15 @@ void setup() {
 
     // Configure and enable the Task Watchdog Timer for the loop task
     // 60 second timeout - will reboot if loop hangs for this long
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    // ESP-IDF 5 has usually started the watchdog already - reconfigure it, or start it if not
+    esp_task_wdt_config_t wdtConfig = {.timeout_ms = 60000, .idle_core_mask = 0, .trigger_panic = true};
+    if (esp_task_wdt_reconfigure(&wdtConfig) != ESP_OK) {
+        esp_task_wdt_init(&wdtConfig);
+    }
+#else
     esp_task_wdt_init(60, true);
+#endif
     esp_task_wdt_add(nullptr); // Add current task (loop task) to watchdog
 
     // Start tasks

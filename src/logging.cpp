@@ -22,8 +22,11 @@ static void publishMessageInternal(const char* messageBuffer, const char* filena
     mqttQueuePublish(messageBuffer, isError);
 
     // Long-running paths (connect, HTTPS, OTA) log between their blocking steps, and
-    // have always relied on this to feed the watchdog. A no-op for unsubscribed tasks.
-    esp_task_wdt_reset();
+    // have always relied on this to feed the watchdog. Only for subscribed tasks:
+    // ESP-IDF 5 logs an error for every reset from a task that isn't.
+    if (esp_task_wdt_status(nullptr) == ESP_OK) {
+        esp_task_wdt_reset();
+    }
 }
 
 void logAndPublish(const char* messageBuffer) {

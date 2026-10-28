@@ -244,6 +244,7 @@ static const char* const ERROR_LOG_FILENAME = "/error_log.txt";
 static const uint32_t DATA_HEADER_MAGIC = 0x4B4C5344; // "KLSD"
 static const uint16_t DATA_FORMAT_VERSION = 2;        // Bump to invalidate every saved block (1 = old XOR header)
 static const unsigned long SD_BUSY_LOG_INTERVAL_MS = 60000; // Min interval between "SD card busy" log lines
+static const unsigned long SD_REMOUNT_INTERVAL_MS = 60000;  // Min interval between attempts to mount a missing/failed card
 
 // Log settings
 static constexpr int MAX_LOG_FILE_SIZE = 1024 * 1024; // 1MB max per log file

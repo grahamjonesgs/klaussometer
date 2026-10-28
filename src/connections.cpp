@@ -16,7 +16,9 @@ bool networkReady() {
 
 static void setup_wifi() {
     int counter = 0;
-    WiFi.disconnect(true); // Full radio reset for clean state after reboots
+    if (WiFi.getMode() != WIFI_OFF) {
+        WiFi.disconnect(true); // Full radio reset for clean state after reboots
+    }
     vTaskDelay(pdMS_TO_TICKS(WIFI_DISCONNECT_DELAY_MS));
     WiFi.mode(WIFI_STA);
     WiFi.persistent(false);
