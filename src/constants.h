@@ -273,7 +273,6 @@ static const int HTTPS_HANDSHAKE_TIMEOUT_SEC = 20; // Default is 120 s, longer t
 // OTA
 static const int OTA_BUFFER_SIZE = 2048;        // Byte buffer for OTA firmware download chunks (static, not on the stack)
 static const int OTA_LOG_INTERVAL_PERCENT = 10; // Log OTA download progress every N percent
-static const int OTA_OVERLAY_SETTLE_MS = 500;   // Time for the display to draw the update screen before the download starts
 static const int OTA_YIELD_DELAY_MS = 1;        // vTaskDelay in OTA download loop while waiting for data
 static const unsigned long OTA_STALL_TIMEOUT_MS = 15000; // Abort the OTA download after this long with no data
 static const int OTA_RETRY_SAME_VERSION_SEC = 86400;     // Don't retry installing the same server version within this time

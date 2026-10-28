@@ -18,31 +18,14 @@ static time_t lastOTAUpdateCheck = 0; // When the version file was last checked 
 
 // Set while either OTA path (server check or web upload) owns the global Update object
 static std::atomic<bool> otaInProgress(false);
-static std::atomic<int> otaProgress(-1);
 
 bool otaTryBegin() {
     bool expected = false;
-    if (!otaInProgress.compare_exchange_strong(expected, true)) {
-        return false;
-    }
-    otaProgress = -1;
-    return true;
+    return otaInProgress.compare_exchange_strong(expected, true);
 }
 
 void otaEnd() {
     otaInProgress = false;
-}
-
-bool otaIsRunning() {
-    return otaInProgress;
-}
-
-int otaProgressPercent() {
-    return otaProgress;
-}
-
-void otaSetProgress(int percent) {
-    otaProgress = percent;
 }
 
 // The last server version an install was attempted for, and when (persisted in NVS so
@@ -112,9 +95,6 @@ static void checkForUpdates() {
             snprintf(logMessage, sizeof(logMessage), "New firmware version available: %s (current: %s)", serverVersion.c_str(), FIRMWARE_VERSION);
             logAndPublish(logMessage);
             recordAttempt(serverVersion.c_str(), now);
-            // The claim puts the "Updating firmware" screen up - let the loop task draw
-            // it before flash writes start stalling the display
-            vTaskDelay(pdMS_TO_TICKS(OTA_OVERLAY_SETTLE_MS));
             updateFirmware(); // Restarts the device on success
             otaEnd();
         } else {
@@ -177,7 +157,6 @@ static void updateFirmware() {
                         written += c;
 
                         int progress = (written * 100) / contentLength;
-                        otaProgress = progress;
                         if (progress != lastProgress && progress % OTA_LOG_INTERVAL_PERCENT == 0) {
                             char logMessage[CHAR_LEN];
                             snprintf(logMessage, sizeof(logMessage), "Download Progress: %d%%", progress);
