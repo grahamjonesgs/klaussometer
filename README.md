@@ -210,9 +210,4 @@ Built on the espressif32 platform v6.10.0 with the Arduino framework (Arduino-ES
 
 ### Why not Arduino-ESP32 3.x
 
-pioarduino builds (55.03.31 and 55.03.36 tried) crash at boot on this board's early ESP32-S3 silicon with `LoadProhibited` in `systimer_ll_enable_alarm_int`, before any user code runs. The code no longer carries 3.x `#if` branches. An upgrade would need:
-
-- `esp_task_wdt_reconfigure()` with an `esp_task_wdt_config_t` instead of `esp_task_wdt_init(60, true)`
-- `ledcAttachChannel()` instead of `ledcSetup()`/`ledcAttachPin()`, and `ledcWrite(pin, ...)` instead of `ledcWrite(channel, ...)`
-- `RGB565_BLACK` instead of `BLACK`
-- GFX Library for Arduino `^1.6.5`
+A working 3.x port is on the `arduino3-port` branch. It was tested on the Waveshare board in October 2026 but not adopted: it doesn't fix the display tearing during OTA, and it leaves about 40 KB less free heap. The boot crash that blocked earlier attempts was caused by `lib_ignore = Time`, not the chip. See [docs/arduino-3-migration.md](docs/arduino-3-migration.md) for the details and how to switch.
