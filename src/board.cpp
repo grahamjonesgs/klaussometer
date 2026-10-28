@@ -164,7 +164,14 @@ void display_hardware_init() {
         board->lcdB[0], board->lcdB[1], board->lcdB[2], board->lcdB[3], board->lcdB[4],
         board->hsyncPolarity, board->hsyncFront, board->hsyncPulse, board->hsyncBack,
         board->vsyncPolarity, board->vsyncFront, board->vsyncPulse, board->vsyncBack,
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+        // ESP-IDF 5 bounce buffers: the panel is fed from two small internal-RAM buffers
+        // refilled from the PSRAM frame buffer, instead of DMA straight from PSRAM,
+        // which starves (and on 2.x shifts the picture) whenever flash is being written
+        board->pclkActiveNeg, board->preferSpeed, false, 0, 0, LCD_BOUNCE_BUFFER_LINES * LCD_WIDTH);
+#else
         board->pclkActiveNeg, board->preferSpeed);
+#endif
     gfx = new Arduino_RGB_Display(LCD_WIDTH, LCD_HEIGHT, rgbpanel);
 
     // Init Display

@@ -220,6 +220,11 @@ static const int BOARD_DETECT_RETRY_DELAY_MS = 20;
 
 static const int LCD_WIDTH  = 1024;
 static const int LCD_HEIGHT = 600;
+// Arduino 3.x only: lines per RGB bounce buffer (two, in internal RAM; must divide
+// LCD_HEIGHT), or 0 for none. Off: measured on the Waveshare, 10 lines cost 40 KB and
+// left a 19 KB free-heap low (59 KB without), too little for TLS. ESP-IDF 5's
+// CONFIG_LCD_RGB_RESTART_IN_VSYNC already resyncs the picture every frame.
+static const int LCD_BOUNCE_BUFFER_LINES = 0;
 
 // For Backlight PWM
 static const int PWMFreq = 5000;
