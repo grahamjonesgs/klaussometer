@@ -129,6 +129,15 @@ static void reportFailure(const char* label, const char* reason) {
     errorPublish(logMessage);
 }
 
+// Ends a request. The TLS connection is closed first because http.end() otherwise
+// checks the socket for unread data, and when the server has already dropped the
+// connection (Solarman does after every response) that check makes ssl_client log a
+// harmless "(-76) UNKNOWN ERROR CODE". stop() closes the socket without reading.
+static void endRequest() {
+    httpsClient.stop();
+    http.end();
+}
+
 // Sends one request to url - a JSON POST of postBody, or a GET when postBody is
 // nullptr - with an Authorization header when auth is set. Reads the whole body,
 // always ends the request, and parses the body into doc. Any failure (HTTP status,
@@ -144,14 +153,14 @@ static bool apiRequest(const char* label, const char* url, const char* postBody,
     }
     int httpCode = postBody ? http.POST(postBody) : http.GET();
     if (httpCode != HTTP_CODE_OK) {
-        http.end();
+        endRequest();
         char reason[CHAR_LEN];
         snprintf(reason, sizeof(reason), "HTTP %d%s%s", httpCode, httpCode < 0 ? " " : "", httpCode < 0 ? http.errorToString(httpCode).c_str() : "");
         reportFailure(label, reason);
         return false;
     }
     int payloadLen = readHttpPayload();
-    http.end();
+    endRequest();
     if (payloadLen <= 0) {
         reportFailure(label, "payload read error");
         return false;
