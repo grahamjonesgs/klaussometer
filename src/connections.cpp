@@ -3,6 +3,7 @@
 #include "logging.h"
 #include "types.h"
 #include <Arduino.h>
+#include <esp_sntp.h>
 #include <esp_task_wdt.h>
 #include <WiFi.h>
 #include <atomic>
@@ -50,6 +51,12 @@ static void setup_wifi() {
 // it syncs), so allow NTP_SYNC_TIMEOUT_MS. After that carry on anyway - SNTP keeps trying
 // in the background. Returns at once if the clock was already set (a reconnect).
 static void time_init() {
+    // configTime() in setup() starts SNTP before WiFi is up, so its first request
+    // usually fails, and lwIP then waits 15 s (doubling each time) before retrying.
+    // Restart it now there is a network so the first request goes out straight away.
+    if (time(nullptr) < TIME_SYNC_THRESHOLD) {
+        sntp_restart();
+    }
     struct tm local;
     bool synced = false;
     for (int waited = 0; waited < NTP_SYNC_TIMEOUT_MS && !synced; waited += NTP_SYNC_WAIT_STEP_MS) {
