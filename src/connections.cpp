@@ -5,7 +5,13 @@
 #include <Arduino.h>
 #include <esp_task_wdt.h>
 #include <WiFi.h>
+#include <atomic>
 
+static std::atomic<bool> networkUp(false);
+
+bool networkReady() {
+    return networkUp && WiFi.status() == WL_CONNECTED;
+}
 
 static void setup_wifi() {
     int counter = 0;
@@ -56,7 +62,7 @@ void connectivity_manager_t(void* pvParameters) {
     // Subscribe this task to the watchdog
     esp_task_wdt_add(nullptr);
 
-    bool wasDisconnected = false;
+    bool wasDisconnected = true; // Run the post-connect steps (NTP) for the first connection too
     bool everConnected = false;
     int wifiFailCount = 0;
     unsigned long lastHwmLog = 0;
@@ -66,7 +72,9 @@ void connectivity_manager_t(void* pvParameters) {
 
         logStackHwmIfDue("Connectivity", &lastHwmLog);
 
+        bool ranSetup = false;
         if (WiFi.status() != WL_CONNECTED) {
+            networkUp = false;
             wasDisconnected = true;
             wifiFailCount++;
             // After a drop, autoReconnect (enabled once we have connected) usually recovers
@@ -79,9 +87,13 @@ void connectivity_manager_t(void* pvParameters) {
                 snprintf(messageBuffer, sizeof(messageBuffer), "WiFi reconnecting (check %d, status: %d)", wifiFailCount, WiFi.status());
                 logAndPublish(messageBuffer);
                 setup_wifi();
+                ranSetup = true;
             }
-            vTaskDelay(pdMS_TO_TICKS(WIFI_RECONNECT_CHECK_DELAY_MS));
-            continue;
+            if (WiFi.status() != WL_CONNECTED) {
+                vTaskDelay(pdMS_TO_TICKS(WIFI_RECONNECT_CHECK_DELAY_MS));
+                continue;
+            }
+            // Connected now - carry straight on so NTP and MQTT don't wait another check interval
         }
 
         // WiFi is connected
@@ -89,11 +101,14 @@ void connectivity_manager_t(void* pvParameters) {
         if (wasDisconnected) {
             wasDisconnected = false;
             wifiFailCount = 0;
-            char messageBuffer[CHAR_LEN];
-            snprintf(messageBuffer, sizeof(messageBuffer), "WiFi restored, IP: %s, RSSI: %d", WiFi.localIP().toString().c_str(), WiFi.RSSI());
-            logAndPublish(messageBuffer);
+            if (!ranSetup) { // setup_wifi() has already logged the connection
+                char messageBuffer[CHAR_LEN];
+                snprintf(messageBuffer, sizeof(messageBuffer), "WiFi restored, IP: %s, RSSI: %d", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+                logAndPublish(messageBuffer);
+            }
             time_init();
         }
+        networkUp = true;
         // MQTT (re)connection is handled by the MQTT receive task, which owns the client
 
         vTaskDelay(pdMS_TO_TICKS(CONNECTION_CHECK_INTERVAL_MS)); // Check connection status every 5 seconds

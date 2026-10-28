@@ -45,6 +45,6 @@ void logStackHwmIfDue(const char* taskName, unsigned long* lastLogMs) {
     }
     *lastLogMs = millis();
     char hwmMsg[CHAR_LEN];
-    snprintf(hwmMsg, sizeof(hwmMsg), "Stack HWM: %s %u words", taskName, uxTaskGetStackHighWaterMark(nullptr));
+    snprintf(hwmMsg, sizeof(hwmMsg), "Stack HWM: %s %u bytes free", taskName, uxTaskGetStackHighWaterMark(nullptr));
     logAndPublish(hwmMsg);
 }

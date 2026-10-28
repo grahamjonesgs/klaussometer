@@ -250,6 +250,7 @@ static constexpr int MAX_LOG_ENTRIES_TO_READ = 500;   // Max entries to read whe
 // FreeRTOS task stack sizes (in bytes)
 static const int TASK_STACK_SMALL = 4096;  // For simple tasks like SD logger
 static const int TASK_STACK_MEDIUM = 8192; // For most tasks (MQTT, connectivity, etc.)
+static const int TASK_STACK_SD_LOGGER = 6144; // SD_MMC/FATFS file calls are stack-hungry - 4096 left only ~560 bytes spare
 
 // FreeRTOS queue sizes
 static const int STATUS_MESSAGE_QUEUE_SIZE = 20; // Slots in the status message display queue

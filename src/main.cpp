@@ -164,7 +164,7 @@ void setup() {
     // Start tasks
     // Priority guide: Arduino loop() runs at priority 1 on core 1 (loopTask)
     // Keep background tasks at low priority to avoid starving the display loop
-    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SMALL, nullptr, 0, nullptr, 1); // Core 1, priority 0 (lowest)
+    xTaskCreatePinnedToCore(sdcard_logger_t, "SD Logger", TASK_STACK_SD_LOGGER, nullptr, 0, nullptr, 1); // Core 1, priority 0 (lowest)
     xTaskCreatePinnedToCore(receive_mqtt_messages_t, "Receive Mqtt", TASK_STACK_MEDIUM, nullptr, 2, nullptr,
                             1); // Core 1, priority 2 - owns the MQTT client; MEDIUM: message handlers have a deep call chain + char[255] buffers
     xTaskCreatePinnedToCore(displayStatusMessages_t, "Display Status", TASK_STACK_SMALL, nullptr, 1, nullptr, 1);

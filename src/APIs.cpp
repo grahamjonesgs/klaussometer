@@ -2,6 +2,7 @@
 #include "OTA.h"
 #include "SDCard.h"
 #include "config.h"
+#include "connections.h"
 #include "logging.h"
 #include "mountain_sunset.h"
 #include "state.h"
@@ -559,7 +560,7 @@ void api_manager_t(void* pvParameters) {
         // attemptFetch feeds the watchdog before every fetch: a single pass can make
         // 8 blocking HTTPS calls, and when WiFi is up but the internet is down each
         // one runs to its timeout - one reset per pass would not stay inside 60 s.
-        if (WiFi.status() == WL_CONNECTED) {
+        if (networkReady()) {
             applyUvNight();
             for (ApiJob& job : apiJobs) {
                 time_t now = time(nullptr);

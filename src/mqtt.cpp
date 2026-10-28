@@ -1,5 +1,6 @@
 #include "mqtt.h"
 #include "config.h"
+#include "connections.h"
 #include "logging.h"
 #include "types.h"
 #include <Arduino.h>
@@ -250,7 +251,7 @@ void receive_mqtt_messages_t(void* pvParameters) {
 
         if (!mqttClient.connected()) {
             mqttConnected = false;
-            if (WiFi.status() != WL_CONNECTED ||
+            if (!networkReady() ||
                 (everAttempted && millis() - lastConnectAttempt < MQTT_RETRY_DELAY_SEC * 1000UL)) {
                 vTaskDelay(pdMS_TO_TICKS(MQTT_WAIT_CONNECTED_MS));
                 continue;
