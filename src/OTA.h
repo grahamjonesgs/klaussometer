@@ -11,4 +11,10 @@ void otaCheckIfDue();
 bool otaTryBegin();
 void otaEnd();
 
+// True while either OTA path holds the claim - the display covers the screen then
+bool otaIsRunning();
+// Server OTA download progress (0-100), or -1 when unknown (web upload, or not started)
+int otaProgressPercent();
+void otaSetProgress(int percent);
+
 #endif // OTA_H

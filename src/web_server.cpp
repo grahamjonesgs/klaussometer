@@ -1,8 +1,10 @@
 #include "web_server.h"
 #include "config.h"
+#include "display.h"
 #include "logging.h"
 #include "types.h"
 #include <Arduino.h>
+#include <algorithm>
 #include <esp_task_wdt.h>
 #include "OTA.h"
 #include "SDCard.h"
@@ -121,6 +123,7 @@ void setup_web_server() {
                 }
                 webOwnsOta = true;
                 webUploadRejected = false;
+                display_refresh_ota_screen(); // The upload blocks loop(), so draw it now
                 if (Update.isRunning()) {
                     Update.abort(); // Left over from an earlier upload that was cancelled
                 }
@@ -132,6 +135,15 @@ void setup_web_server() {
             } else if (upload.status == UPLOAD_FILE_WRITE) {
                 if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
                     Update.printError(Serial);
+                }
+                // The request length includes the multipart framing, so this is a close estimate
+                int requestLength = webServer.clientContentLength();
+                if (requestLength > 0) {
+                    int percent = std::min(100, (int)((upload.totalSize * 100ULL) / requestLength));
+                    if (percent != otaProgressPercent()) {
+                        otaSetProgress(percent);
+                        display_refresh_ota_screen();
+                    }
                 }
             } else if (upload.status == UPLOAD_FILE_END) {
                 if (Update.end(true)) {

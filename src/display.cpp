@@ -1,4 +1,5 @@
 #include "display.h"
+#include "OTA.h"
 #include "UI/ui.h"
 #include "board.h"
 #include "config.h"
@@ -792,9 +793,52 @@ void display_init() {
     lv_timer_handler();
 }
 
+// Firmware update screen. Writing to flash blocks the PSRAM reads that feed the RGB
+// panel, so the picture jumps and tears while an update is written. Arduino 2.x
+// (ESP-IDF 4.4) has no bounce buffer or VSYNC restart to prevent that, so cover the
+// screen with plain black instead - a shifted black screen looks the same.
+static lv_obj_t* otaScreen = nullptr;
+static lv_obj_t* otaScreenLabel = nullptr;
+
+static void updateOtaScreen() {
+    if (!otaIsRunning()) {
+        if (otaScreen) {
+            lv_obj_delete(otaScreen); // An update that failed - back to the normal display
+            otaScreen = nullptr;
+            otaScreenLabel = nullptr;
+        }
+        return;
+    }
+    if (!otaScreen) {
+        otaScreen = lv_obj_create(lv_layer_top());
+        lv_obj_remove_style_all(otaScreen);
+        lv_obj_set_size(otaScreen, LV_PCT(100), LV_PCT(100));
+        lv_obj_set_style_bg_color(otaScreen, lv_color_black(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(otaScreen, LV_OPA_COVER, LV_PART_MAIN);
+        otaScreenLabel = lv_label_create(otaScreen);
+        lv_obj_set_style_text_color(otaScreenLabel, lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_text_font(otaScreenLabel, &lv_font_montserrat_32, LV_PART_MAIN);
+        lv_obj_center(otaScreenLabel);
+    }
+    char text[CHAR_LEN];
+    int percent = otaProgressPercent();
+    if (percent >= 0) {
+        snprintf(text, sizeof(text), "Updating firmware %d%%", percent);
+    } else {
+        snprintf(text, sizeof(text), "Updating firmware");
+    }
+    setTextIfChanged(otaScreenLabel, text);
+}
+
+void display_refresh_ota_screen() {
+    updateOtaScreen();
+    lv_refr_now(nullptr);
+}
+
 // Redraws any panel whose data has changed, the clock, and the once-a-second status row.
 // Call from loop() after lv_timer_handler().
 void display_update(unsigned long currentMillis) {
+    updateOtaScreen();
     updateRoomDisplay();
     updateUVDisplay();
     updateWeatherDisplay();
