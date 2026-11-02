@@ -3,7 +3,7 @@
 A smart home environmental monitoring and solar power management hub built on the ESP32-S3, featuring a 1024x600 touchscreen display.
 
 ![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32--S3-orange)
-![LVGL](https://img.shields.io/badge/LVGL-9.4-blue)
+![LVGL](https://img.shields.io/badge/LVGL-9.5-blue)
 ![License](https://img.shields.io/badge/license-private-lightgrey)
 
 ## Overview
@@ -201,13 +201,11 @@ Sensor data, solar metrics, and weather data are persisted to the SD card as bin
 
 | Library | Version | Purpose |
 |---|---|---|
-| [GFX Library for Arduino](https://github.com/moononournation/Arduino_GFX) | 1.5.0 | RGB LCD panel driver |
+| [GFX Library for Arduino](https://github.com/moononournation/Arduino_GFX) | ^1.6.5 | RGB LCD panel driver |
 | [ArduinoMqttClient](https://github.com/arduino-libraries/ArduinoMqttClient) | ^0.1.8 | MQTT protocol |
 | [ArduinoJson](https://github.com/bblanchon/ArduinoJson) | ^7.4.2 | JSON parsing for API responses |
-| [LVGL](https://github.com/lvgl/lvgl) | ^9.4.0 | GUI framework |
+| [LVGL](https://github.com/lvgl/lvgl) | 9.5.0 | GUI framework |
 
-Built on the espressif32 platform v6.10.0 with the Arduino framework (Arduino-ESP32 2.x).
+Built on the [pioarduino](https://github.com/pioarduino/platform-espressif32) platform 55.03.36 with the Arduino framework (Arduino-ESP32 3.3.6, ESP-IDF 5.5). It uses its own PlatformIO core directory (`~/.platformio-arduino3`, set in `platformio.ini`) so it doesn't overwrite the official espressif32 platform's framework used by other projects. Every build is a full rebuild of about 5 minutes.
 
-### Why not Arduino-ESP32 3.x
-
-A working 3.x port is on the `arduino3-port` branch. It was tested on the Waveshare board in October 2026 but not adopted: it doesn't fix the display tearing during OTA, and it leaves about 40 KB less free heap. The boot crash that blocked earlier attempts was caused by `lib_ignore = Time`, not the chip. See [docs/arduino-3-migration.md](docs/arduino-3-migration.md) for the details and how to switch.
+The project moved from Arduino-ESP32 2.x on 2026-11-02; the last 2.x commit is tagged `arduino2-final`. See [docs/arduino-3-migration.md](docs/arduino-3-migration.md) for why, the build quirks, how to go back, and the next step for the display tearing during firmware updates.
