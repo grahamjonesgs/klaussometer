@@ -201,11 +201,11 @@ Sensor data, solar metrics, and weather data are persisted to the SD card as bin
 
 | Library | Version | Purpose |
 |---|---|---|
-| [GFX Library for Arduino](https://github.com/moononournation/Arduino_GFX) | ^1.6.5 | RGB LCD panel driver |
-| [ArduinoMqttClient](https://github.com/arduino-libraries/ArduinoMqttClient) | ^0.1.8 | MQTT protocol |
-| [ArduinoJson](https://github.com/bblanchon/ArduinoJson) | ^7.4.2 | JSON parsing for API responses |
+| [GFX Library for Arduino](https://github.com/moononournation/Arduino_GFX) | 1.6.9 | RGB LCD panel driver |
+| [ArduinoMqttClient](https://github.com/arduino-libraries/ArduinoMqttClient) | 0.1.8 | MQTT protocol |
+| [ArduinoJson](https://github.com/bblanchon/ArduinoJson) | 7.4.3 | JSON parsing for API responses |
 | [LVGL](https://github.com/lvgl/lvgl) | 9.5.0 | GUI framework |
 
 Built on the [pioarduino](https://github.com/pioarduino/platform-espressif32) platform 55.03.36 with the Arduino framework (Arduino-ESP32 3.3.6, ESP-IDF 5.5). It uses its own PlatformIO core directory (`~/.platformio-arduino3`, set in `platformio.ini`) so it doesn't overwrite the official espressif32 platform's framework used by other projects. Every build is a full rebuild of about 5 minutes.
 
-The project moved from Arduino-ESP32 2.x on 2026-11-02; the last 2.x commit is tagged `arduino2-final`. See [docs/arduino-3-migration.md](docs/arduino-3-migration.md) for why, the build quirks, how to go back, and the next step for the display tearing during firmware updates.
+The project moved from Arduino-ESP32 2.x on 2026-11-02; the last 2.x commit is tagged `arduino2-final`. See [docs/arduino-3-migration.md](docs/arduino-3-migration.md) for why, the build quirks, how to go back, and what has been tried for the display tearing during firmware updates.
