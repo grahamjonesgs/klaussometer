@@ -148,7 +148,6 @@ static const int SOLAR_FORECAST_STALE_SEC = 7200;         // Forecast age (from 
 static const int SOLAR_FORECAST_OLD_SEC = 21600;          // Forecast age before the label turns red
 
 static const int WEATHER_UPDATE_INTERVAL_SEC = 300;       // Interval between weather updates
-static const int UV_UPDATE_INTERVAL_SEC = 3600;           // Interval between UV updates
 static const int SOLAR_CURRENT_UPDATE_INTERVAL_SEC = 60;  // Interval between solar updates
 static const int SOLAR_MONTHLY_UPDATE_INTERVAL_SEC = 300; // Interval between solar current updates
 static const int SOLAR_DAILY_UPDATE_INTERVAL_SEC = 300;   // Interval between solar daily updates

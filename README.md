@@ -13,7 +13,7 @@ The Klaussometer is a dashboard that consolidates real-time data from multiple s
 - **Room monitoring** — Temperature, humidity, and wireless sensor battery levels across 5 rooms (Cave, Living Room, Playroom, Bedroom, Outside) via MQTT
 - **Solar power tracking** — Battery charge %, power output, grid import/export, estimated charge/discharge times, and cost tracking via the SolarEdge API
 - **Weather** — Current conditions, min/max temperature, wind speed and direction, sunrise/sunset times via OpenMeteo
-- **UV index** — Current UV level via WeatherBit
+- **UV index** — Current UV level, allowing for cloud, via the OpenMeteo air quality API
 - **Air quality** — PM2.5, PM10, ozone levels, and European AQI rating via OpenWeatherMap
 
 The display automatically switches between day and night modes based on sunrise/sunset times, adjusting brightness and colour scheme.
@@ -111,7 +111,6 @@ static const char* MQTT_PASSWORD = "password";
 static const int MQTT_PORT = 1883;
 
 // Weather APIs
-static const char* WEATHERBIT_API = "your_api_key";
 static const char* LATITUDE = "-33.9249";
 static const char* LONGITUDE = "18.4241";
 

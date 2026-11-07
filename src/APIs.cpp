@@ -60,8 +60,8 @@ static void resetBackoff(ApiBackoff& state) {
 }
 
 // During a prolonged outage let the backoff grow up to the API's own update
-// interval (at least API_MAX_BACKOFF_SEC), so a slow-cadence API like UV
-// (hourly, quota-limited) isn't retried every 5 minutes for hours on end.
+// interval (at least API_MAX_BACKOFF_SEC), so a slow-cadence API isn't retried
+// every 5 minutes for hours on end.
 static void applyBackoff(ApiBackoff& state, int intervalSec) {
     state.failCount++;
     int cap = (intervalSec > API_MAX_BACKOFF_SEC) ? intervalSec : API_MAX_BACKOFF_SEC;
@@ -175,30 +175,19 @@ static bool apiRequest(const char* label, const char* url, const char* postBody,
     return true;
 }
 
-// Each fetch returns true on success, or when the response was valid but carried no
-// new data (no backoff needed); false on any failure, so the caller applies backoff.
-
-static bool fetchUV() {
-    snprintf(urlBuffer, URL_BUFFER_SIZE, "https://api.weatherbit.io/v2.0/current?city_id=%s&key=%s", WEATHERBIT_CITY_ID, WEATHERBIT_API);
-    JsonDocument root;
-    if (!apiRequest("UV update", urlBuffer, nullptr, nullptr, root)) {
-        return false;
-    }
-    if (!root["data"][0]["uv"].is<float>()) {
-        reportFailure("UV update", "missing field");
-        return false;
-    }
-    float UV = root["data"][0]["uv"];
+// Stores a UV index, stamps it as updated now and saves it to SD.
+static void storeUv(int index) {
     xSemaphoreTake(dataMutex, portMAX_DELAY);
-    uv.index = (int)lroundf(UV);
+    uv.index = index;
     uv.updateTime = time(nullptr);
     formatTimeHMS(uv.updateTime, uv.timeString, sizeof(uv.timeString));
     xSemaphoreGive(dataMutex);
     dirtyUv = true;
-    logAndPublish("UV updated");
     saveDataBlock(UV_DATA_FILENAME, &uv, sizeof(uv));
-    return true;
 }
+
+// Each fetch returns true on success, or when the response was valid but carried no
+// new data (no backoff needed); false on any failure, so the caller applies backoff.
 
 // Parses an open-meteo local time "YYYY-MM-DDTHH:MM" into "HH:MM" (buf must hold 6).
 // Optionally returns the month and day. Leaves buf empty and returns false on bad input.
@@ -295,7 +284,7 @@ static bool fetchAirQuality() {
     snprintf(urlBuffer, URL_BUFFER_SIZE,
              "https://air-quality-api.open-meteo.com/v1/"
              "air-quality?latitude=%s&longitude=%s"
-             "&current=pm10,pm2_5,ozone,european_aqi"
+             "&current=pm10,pm2_5,ozone,european_aqi,uv_index"
              "&timezone=auto",
              LATITUDE, LONGITUDE);
     JsonDocument root;
@@ -322,6 +311,21 @@ static bool fetchAirQuality() {
              logged.europeanAqi);
     logAndPublish(logMessage);
     saveDataBlock(AIR_QUALITY_DATA_FILENAME, &airQuality, sizeof(airQuality));
+
+    // The current UV index comes from this API because its uv_index allows for cloud;
+    // the forecast API's can match clear sky even when overcast. It is only taken by
+    // day: applyUvNight() holds it at zero overnight. A missing value leaves the old
+    // one to age out and doesn't fail the air quality update.
+    if (readLocked([] { return weather.isDay; })) {
+        if (root["current"]["uv_index"].is<float>()) {
+            float uvIndex = root["current"]["uv_index"];
+            storeUv((int)lroundf(uvIndex));
+            snprintf(logMessage, sizeof(logMessage), "UV updated: %.2f", uvIndex);
+            logAndPublish(logMessage);
+        } else {
+            reportFailure("UV update", "missing field");
+        }
+    }
     return true;
 }
 
@@ -511,13 +515,7 @@ static void applyUvNight() {
         return;
     }
     uvNightApplied = true;
-    xSemaphoreTake(dataMutex, portMAX_DELAY);
-    uv.index = 0;
-    uv.updateTime = time(nullptr);
-    formatTimeHMS(uv.updateTime, uv.timeString, sizeof(uv.timeString));
-    xSemaphoreGive(dataMutex);
-    dirtyUv = true;
-    saveDataBlock(UV_DATA_FILENAME, &uv, sizeof(uv));
+    storeUv(0);
 }
 
 static bool solarTokenPresent() {
@@ -542,8 +540,6 @@ static ApiJob apiJobs[] = {
     // arrives, so a failed refresh doesn't stop the solar fetches.
     {"Solar token", fetchSolarToken, [] { return solarTokenPresent() ? solarToken.tokenTime : (time_t)0; }, SOLAR_TOKEN_REFRESH_SEC, API_MAX_BACKOFF_SEC,
      nullptr, {}},
-    {"UV", fetchUV, [] { return readLocked([] { return uv.updateTime; }); }, UV_UPDATE_INTERVAL_SEC, UV_UPDATE_INTERVAL_SEC,
-     [] { return readLocked([] { return weather.isDay; }); }, {}},
     {"Weather", fetchWeather, [] { return readLocked([] { return weather.updateTime; }); }, WEATHER_UPDATE_INTERVAL_SEC, WEATHER_UPDATE_INTERVAL_SEC,
      nullptr, {}},
     {"Air quality", fetchAirQuality, [] { return readLocked([] { return airQuality.updateTime; }); }, AIR_QUALITY_UPDATE_INTERVAL_SEC,
@@ -567,7 +563,7 @@ void api_manager_t(void* pvParameters) {
         logStackHwmIfDue("API Manager", &lastHwmLog);
 
         // attemptFetch feeds the watchdog before every fetch: a single pass can make
-        // 8 blocking HTTPS calls, and when WiFi is up but the internet is down each
+        // 7 blocking HTTPS calls, and when WiFi is up but the internet is down each
         // one runs to its timeout - one reset per pass would not stay inside 60 s.
         if (networkReady()) {
             applyUvNight();

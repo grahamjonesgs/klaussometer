@@ -390,7 +390,7 @@ static void updateUVDisplay() {
         snprintf(tempString, sizeof(tempString), "%i", u.index);
         lv_label_set_text(ui_UVLabel, tempString);
         // Scale the arc to today's forecast max. The current index comes from a
-        // different provider, so raise the max to it if it is higher. Without
+        // different model, so raise the max to it if it is higher. Without
         // weather data fall back to the fixed scale and hide the max label.
         int uvMax = UV_ARC_DEFAULT_MAX;
         if (haveWeather) {
@@ -647,7 +647,7 @@ static void updatePeriodicStatus(unsigned long currentMillis) {
 
     setStatusColor(ui_SolarStatus, solarTime, 2 * SOLAR_CURRENT_UPDATE_INTERVAL_SEC);
     setStatusColor(ui_WeatherStatus, weatherTime, 2 * WEATHER_UPDATE_INTERVAL_SEC);
-    setStatusColor(ui_UVUpdateTime, uvTime, 2 * UV_UPDATE_INTERVAL_SEC);
+    setStatusColor(ui_UVUpdateTime, uvTime, 2 * AIR_QUALITY_UPDATE_INTERVAL_SEC);
     setStatusColor(ui_FCAQIUpdateTime, aqTime, 2 * AIR_QUALITY_UPDATE_INTERVAL_SEC);
 
     // Everything below runs every second but only touches a widget when its value changes
