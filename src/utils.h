@@ -39,4 +39,20 @@ int gridPercentage(float bought, float used);
 // Format a time_t as "HH:MM:SS" into buf
 void formatTimeHMS(time_t t, char* buf, size_t bufSize);
 
+// Minimum-interval throttle on a monotonic millisecond clock (pass millis()), so an
+// NTP step can't pause or bunch up whatever it throttles. Due before the first mark(),
+// then once intervalMs has passed since the last one. 32-bit unsigned subtraction (as
+// millis() is 32-bit) keeps it correct across the ~49-day millis() wrap.
+struct IntervalThrottle {
+    uint32_t lastMs = 0;
+    bool marked = false;
+    bool due(uint32_t nowMs, uint32_t intervalMs) const {
+        return !marked || (uint32_t)(nowMs - lastMs) >= intervalMs;
+    }
+    void mark(uint32_t nowMs) {
+        lastMs = nowMs;
+        marked = true;
+    }
+};
+
 #endif // UTILS_H

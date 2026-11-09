@@ -12,6 +12,26 @@ void test_uv_boundary_5()   { TEST_ASSERT_EQUAL_HEX(0xFFCD00, uvColor(5.0f)); }
 void test_uv_extreme()      { TEST_ASSERT_EQUAL_HEX(0x4B1E88, uvColor(11.0f)); }
 void test_uv_very_high()    { TEST_ASSERT_EQUAL_HEX(0x4B1E88, uvColor(15.0f)); }
 
+// --- IntervalThrottle ---
+void test_throttle_due_before_first_mark() {
+    IntervalThrottle t;
+    TEST_ASSERT_TRUE(t.due(0, 300000));
+    TEST_ASSERT_TRUE(t.due(5, 300000));
+}
+void test_throttle_waits_interval() {
+    IntervalThrottle t;
+    t.mark(1000);
+    TEST_ASSERT_FALSE(t.due(1000, 300000));
+    TEST_ASSERT_FALSE(t.due(300999, 300000));
+    TEST_ASSERT_TRUE(t.due(301000, 300000));
+}
+void test_throttle_across_millis_wrap() {
+    IntervalThrottle t;
+    t.mark(0xFFFFFF00UL);
+    TEST_ASSERT_FALSE(t.due(0x00000010UL, 0x200)); // 0x110 elapsed
+    TEST_ASSERT_TRUE(t.due(0x00000100UL, 0x200));  // 0x200 elapsed
+}
+
 // --- degreesToDirection ---
 void test_dir_north()       { TEST_ASSERT_EQUAL_STRING("N",  degreesToDirection(0.0)); }
 void test_dir_east()        { TEST_ASSERT_EQUAL_STRING("E",  degreesToDirection(90.0)); }
@@ -131,6 +151,10 @@ int main() {
     RUN_TEST(test_fmt_thousands);
     RUN_TEST(test_fmt_millions);
     RUN_TEST(test_fmt_negative);
+
+    RUN_TEST(test_throttle_due_before_first_mark);
+    RUN_TEST(test_throttle_waits_interval);
+    RUN_TEST(test_throttle_across_millis_wrap);
 
     return UNITY_END();
 }

@@ -10,6 +10,7 @@
 #include <WiFi.h>
 #include "SDCard.h"
 #include "state.h"
+#include "utils.h"
 
 
 // The MQTT client is owned by the receive task: it is the only task that connects,
@@ -219,12 +220,11 @@ static void onMqttMessage(int messageSize) {
         // Throttle persistence: saving ~15 KB on every sensor message wears the
         // SD card out. Readings expire after an hour anyway, so losing up to
         // READINGS_SAVE_INTERVAL_SEC of state across a reboot is acceptable.
-        static time_t lastReadingsSave = 0;
-        time_t now = time(nullptr);
+        static IntervalThrottle readingsSave;
         // Only a successful save restarts the interval; a skipped one is retried on the next message
-        if (now - lastReadingsSave >= READINGS_SAVE_INTERVAL_SEC &&
+        if (readingsSave.due(millis(), READINGS_SAVE_INTERVAL_SEC * 1000UL) &&
             saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings)) {
-            lastReadingsSave = now;
+            readingsSave.mark(millis());
         }
     } else if (InsideSensor* sensor = findInsideSensor(topicBuffer)) {
         updateInsideAirQuality(*sensor, recMessage);
@@ -446,10 +446,10 @@ static void updateInsideAirQuality(InsideSensor& sensor, char* recMessage) {
     }
 
     // Throttled for the same SD-wear reason as the readings save above
-    static time_t lastInsideAQSave = 0;
-    if (now - lastInsideAQSave >= READINGS_SAVE_INTERVAL_SEC &&
+    static IntervalThrottle insideAQSave;
+    if (insideAQSave.due(millis(), READINGS_SAVE_INTERVAL_SEC * 1000UL) &&
         saveDataBlock(INSIDE_AIR_QUALITY_DATA_FILENAME, &insideAirQuality, sizeof(insideAirQuality))) {
-        lastInsideAQSave = now;
+        insideAQSave.mark(millis());
     }
 }
 

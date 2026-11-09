@@ -367,13 +367,12 @@ static bool fetchSolarToken() {
 // fetchers update the block. force saves now. The interval restarts only after a
 // successful save. Called from the API task only, without dataMutex held.
 static void saveSolarThrottled(bool force) {
-    static time_t lastSolarSave = 0;
-    time_t now = time(nullptr);
-    if (!force && now - lastSolarSave < READINGS_SAVE_INTERVAL_SEC) {
+    static IntervalThrottle solarSave;
+    if (!force && !solarSave.due(millis(), READINGS_SAVE_INTERVAL_SEC * 1000UL)) {
         return;
     }
     if (saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar))) {
-        lastSolarSave = now;
+        solarSave.mark(millis());
     }
 }
 
