@@ -48,7 +48,10 @@ void setup() {
     if (isWaveshare) {
         // The expander drives SD CS as well as the LCD reset and backlight - set it up
         // now, before the SD card is mounted, rather than relying on its power-on state
-        waveshare_expander_init();
+        if (!waveshare_expander_init()) {
+            // Only Serial/Serial0 are up this early; the failure is also in the boot log
+            Serial0.println("IO expander did not acknowledge setup - backlight and SD card may not work; power-cycle the board");
+        }
     }
 
     if (isWaveshare) {
@@ -209,5 +212,6 @@ void loop() {
         invalidateOldReadings();
         invalidateInsideAirQuality();
         invalidateStaleApiData();
+        board_service(currentMillis);
     }
 }

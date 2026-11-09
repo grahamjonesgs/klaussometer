@@ -32,9 +32,25 @@ static const int WS_BACKLIGHT_MAX_PERCENT   = 97; // Hardware limit of the PWM r
 static const int WS_BACKLIGHT_DAY_PERCENT   = WS_BACKLIGHT_MAX_PERCENT; // Maximum usable brightness
 static const int WS_BACKLIGHT_NIGHT_PERCENT = 10; // Dim night-time brightness
 
+static const int WS_EXPANDER_WRITE_ATTEMPTS = 3;  // Tries per register write before reporting failure
+static const int WS_EXPANDER_RETRY_DELAY_MS = 5;  // Pause between write attempts
+static const unsigned long WS_EXPANDER_SERVICE_RETRY_MS = 5000;      // loop() first retries a failed write after this
+static const unsigned long WS_EXPANDER_SERVICE_MAX_RETRY_MS = 60000; // ...doubling up to this while it keeps failing
+
 // Initialise the I2C expander, reset the LCD panel, hold the GT911 touch controller
-// in reset and drive SD CS low. Must be called before sdcard_mount() and gfx->begin().
-void waveshare_expander_init();
+// in reset and drive SD CS low. Must be called before sdcard_mount() and gfx->begin(),
+// and before any other task starts. Returns false if any write went unacknowledged.
+bool waveshare_expander_init();
+
+// Re-writes the expander's direction, output (SD CS low, backlight, LCD reset) and PWM
+// registers from the shadows, in case the expander lost its state. Safe from any task.
+// Returns false if the expander isn't acknowledging.
+bool waveshare_expander_reapply();
+
+// Call from loop(): if an expander write failed (backlight change, say), resets the I2C
+// controller and re-applies the whole state, first after WS_EXPANDER_SERVICE_RETRY_MS and
+// then backing off to WS_EXPANDER_SERVICE_MAX_RETRY_MS until it succeeds.
+void waveshare_expander_service(unsigned long nowMs);
 
 // Set backlight brightness 0–100 %.
 // Values above WS_BACKLIGHT_MAX_PERCENT are clamped to it (hardware limit).

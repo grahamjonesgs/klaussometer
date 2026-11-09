@@ -8,6 +8,14 @@ bool board_select();
 // Sets screen backlight to day (full) or night (dim) brightness.
 void setBacklight(bool day);
 
+// Before an SD remount: on Waveshare, re-applies the IO expander state (SD CS low,
+// backlight) in case the expander lost it. Returns false if the expander isn't
+// responding. Always true on Matouch.
+bool board_prepare_sd_remount();
+
+// Call from loop(): retries board I/O that failed earlier (Waveshare expander writes).
+void board_service(unsigned long nowMs);
+
 // Brings up the panel, backlight, LVGL and the SquareLine UI for the selected board.
 void display_hardware_init();
 

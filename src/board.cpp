@@ -105,6 +105,16 @@ bool board_select() {
     return isWaveshare;
 }
 
+bool board_prepare_sd_remount() {
+    return isWaveshare ? waveshare_expander_reapply() : true;
+}
+
+void board_service(unsigned long nowMs) {
+    if (isWaveshare) {
+        waveshare_expander_service(nowMs);
+    }
+}
+
 // Sets screen backlight to day (full) or night (dim) brightness.
 void setBacklight(bool day) {
     if (isWaveshare) {

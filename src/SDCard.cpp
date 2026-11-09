@@ -1,4 +1,5 @@
 #include "SDCard.h"
+#include "board.h"
 #include "config.h"
 #include "logging.h"
 #include "types.h"
@@ -127,6 +128,8 @@ static bool cardReady() {
     SD_MMC.end(); // begin() returns early while the card is still registered
     normalLogLineCount = -1;
     errorLogLineCount = -1;
+    // Waveshare: SD CS comes from the IO expander, so re-drive it before trying again
+    bool expanderOk = board_prepare_sd_remount();
     if (mountCard()) {
         cardMissingLogged = false;
         logAndPublish("SD Card remounted");
@@ -134,7 +137,8 @@ static bool cardReady() {
     }
     if (!cardMissingLogged) { // Once per failure, not once a minute
         cardMissingLogged = true;
-        logAndPublish("SD Card remount failed - retrying every minute");
+        logAndPublish(expanderOk ? "SD Card remount failed - retrying every minute"
+                                 : "SD Card remount failed and the IO expander is not responding - power-cycle the board");
     }
     return false;
 }
