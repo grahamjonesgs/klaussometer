@@ -585,16 +585,17 @@ char* getLogsFromSDCard(const char* logFilename, size_t* jsonLength) {
     ensureLineCount(logFilename);
     int totalLines = *getLineCountPtr(logFilename);
 
-    // Skip to the last MAX_LOG_ENTRIES_TO_READ lines. If the cached count is too high,
-    // skipping runs into EOF and the view would come back empty: recount, correct the
-    // cache and skip again from the start.
-    if (totalLines > MAX_LOG_ENTRIES_TO_READ && !skipLines(logFile, totalLines - MAX_LOG_ENTRIES_TO_READ)) {
-        logFile.seek(0);
-        totalLines = countLinesInFile(logFile);
-        *getLineCountPtr(logFilename) = totalLines;
-        logFile.seek(0);
-        if (totalLines > MAX_LOG_ENTRIES_TO_READ) {
-            skipLines(logFile, totalLines - MAX_LOG_ENTRIES_TO_READ); // Can't run out after a fresh count
+    // Skip to roughly the last MAX_LOG_ENTRIES_TO_READ lines using the cached count. The
+    // lines are then read into a ring that keeps the newest MAX_LOG_ENTRIES_TO_READ to EOF,
+    // so the count is only a shortcut: if it is too low, more is read and the oldest
+    // dropped; if it is too high, skipping runs into EOF and the whole file is read from
+    // the start. Either way the newest lines are shown and the cache is corrected below.
+    int linesSkipped = 0;
+    if (totalLines > MAX_LOG_ENTRIES_TO_READ) {
+        if (skipLines(logFile, totalLines - MAX_LOG_ENTRIES_TO_READ)) {
+            linesSkipped = totalLines - MAX_LOG_ENTRIES_TO_READ;
+        } else {
+            logFile.seek(0);
         }
     }
 
@@ -615,14 +616,15 @@ char* getLogsFromSDCard(const char* logFilename, size_t* jsonLength) {
         *jsonLength = bufferPos;
         return jsonBuffer;
     }
-    int lineCount = 0;
+    int parsedCount = 0; // Lines stored; entry k lives at lines[k % MAX_LOG_ENTRIES_TO_READ]
+    int newlinesRead = 0;
 
     // Split the rest of the file into lines, reading a block at a time
     char lineBuffer[CHAR_LEN + 32];
     int lineLen = 0;
     size_t bytesRead;
-    while (lineCount < MAX_LOG_ENTRIES_TO_READ && (bytesRead = logFile.read(sdIoBuffer, sizeof(sdIoBuffer))) > 0) {
-        for (size_t b = 0; b < bytesRead && lineCount < MAX_LOG_ENTRIES_TO_READ; b++) {
+    while ((bytesRead = logFile.read(sdIoBuffer, sizeof(sdIoBuffer))) > 0) {
+        for (size_t b = 0; b < bytesRead; b++) {
             char c = (char)sdIoBuffer[b];
             if (c != '\n') {
                 // Over-long lines are truncated; '\r' is dropped
@@ -631,32 +633,39 @@ char* getLogsFromSDCard(const char* logFilename, size_t* jsonLength) {
                 }
                 continue;
             }
+            newlinesRead++;
             lineBuffer[lineLen] = '\0';
             // Parse timestamp|message format
             char* pipePos = (lineLen > 0) ? strchr(lineBuffer, '|') : nullptr;
             if (pipePos != nullptr) {
                 *pipePos = '\0';
-                lines[lineCount].timestamp = atol(lineBuffer);
-                strncpy(lines[lineCount].message, pipePos + 1, sizeof(lines[lineCount].message) - 1);
-                lines[lineCount].message[sizeof(lines[lineCount].message) - 1] = '\0';
-                lineCount++;
+                LogLine& slot = lines[parsedCount % MAX_LOG_ENTRIES_TO_READ];
+                slot.timestamp = atol(lineBuffer);
+                strncpy(slot.message, pipePos + 1, sizeof(slot.message) - 1);
+                slot.message[sizeof(slot.message) - 1] = '\0';
+                parsedCount++;
             }
             lineLen = 0;
         }
     }
     logFile.close();
+    // The file has just been read to EOF under sdMutex, so this is the exact count (the
+    // same newline count countLinesInFile gives)
+    *getLineCountPtr(logFilename) = linesSkipped + newlinesRead;
     xSemaphoreGive(sdMutex);
 
     // Output in reverse order (newest first) using snprintf
     bool firstEntry = true;
-    for (int i = lineCount - 1; i >= 0; i--) {
-        bool timeWasSynced = (lines[i].timestamp >= TIME_SYNC_THRESHOLD);
+    int oldest = (parsedCount > MAX_LOG_ENTRIES_TO_READ) ? parsedCount - MAX_LOG_ENTRIES_TO_READ : 0;
+    for (int k = parsedCount - 1; k >= oldest; k--) {
+        const LogLine& line = lines[k % MAX_LOG_ENTRIES_TO_READ];
+        bool timeWasSynced = (line.timestamp >= TIME_SYNC_THRESHOLD);
 
         // Escape message for JSON into a temporary buffer
         char escapedMsg[CHAR_LEN * 2];
         size_t escPos = 0;
-        for (size_t j = 0; lines[i].message[j] != '\0' && escPos < sizeof(escapedMsg) - 2; j++) {
-            char c = lines[i].message[j];
+        for (size_t j = 0; line.message[j] != '\0' && escPos < sizeof(escapedMsg) - 2; j++) {
+            char c = line.message[j];
             if (c == '\\' || c == '"') {
                 escapedMsg[escPos++] = '\\';
                 escapedMsg[escPos++] = c;
@@ -688,7 +697,7 @@ char* getLogsFromSDCard(const char* logFilename, size_t* jsonLength) {
         }
         firstEntry = false;
 
-        bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "{\"timestamp\":%ld,\"synced\":%s,\"message\":\"%s\"}", (long)lines[i].timestamp,
+        bufferPos += snprintf(jsonBuffer + bufferPos, JSON_BUFFER_SIZE - bufferPos, "{\"timestamp\":%ld,\"synced\":%s,\"message\":\"%s\"}", (long)line.timestamp,
                               timeWasSynced ? "true" : "false", escapedMsg);
     }
 
