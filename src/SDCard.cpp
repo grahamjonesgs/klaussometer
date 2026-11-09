@@ -559,9 +559,17 @@ char* getLogsFromSDCard(const char* logFilename, size_t* jsonLength) {
     ensureLineCount(logFilename);
     int totalLines = *getLineCountPtr(logFilename);
 
-    // Skip to the last MAX_LOG_ENTRIES_TO_READ lines
-    if (totalLines > MAX_LOG_ENTRIES_TO_READ) {
-        skipLines(logFile, totalLines - MAX_LOG_ENTRIES_TO_READ);
+    // Skip to the last MAX_LOG_ENTRIES_TO_READ lines. If the cached count is too high,
+    // skipping runs into EOF and the view would come back empty: recount, correct the
+    // cache and skip again from the start.
+    if (totalLines > MAX_LOG_ENTRIES_TO_READ && !skipLines(logFile, totalLines - MAX_LOG_ENTRIES_TO_READ)) {
+        logFile.seek(0);
+        totalLines = countLinesInFile(logFile);
+        *getLineCountPtr(logFilename) = totalLines;
+        logFile.seek(0);
+        if (totalLines > MAX_LOG_ENTRIES_TO_READ) {
+            skipLines(logFile, totalLines - MAX_LOG_ENTRIES_TO_READ); // Can't run out after a fresh count
+        }
     }
 
     // Read the last N lines into memory using fixed-size buffers
