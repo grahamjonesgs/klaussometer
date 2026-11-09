@@ -5,7 +5,7 @@
 #include <time.h>
 
 static constexpr int STORED_READING = 6;
-static constexpr int MAX_READINGS = 20; // Upper bound for per-reading tracking arrays (static_assert in main.cpp)
+static constexpr int MAX_READINGS = 20; // Upper bound for per-reading tracking arrays (static_assert in state.cpp)
 // clang-format off
 #define READINGS_ARRAY                                                                                                                    \
         {"Cave",        "cave/tempset-ambient/set",        NO_READING, 0.0, {0.0}, ReadingState::NO_DATA, false, DATA_TEMPERATURE, 0, 0}, \

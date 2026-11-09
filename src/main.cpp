@@ -1,6 +1,7 @@
 /* Klaussometer firmware. Built with PlatformIO - see platformio.ini for the board,
- framework (Arduino-ESP32 2.x, deliberately not 3.x) and library versions, and
- README.md for the hardware, task layout and setup. */
+ framework (Arduino-ESP32 3.x via pioarduino) and library versions,
+ docs/arduino-3-migration.md for the move from 2.x, and README.md for the hardware,
+ task layout and setup. */
 
 #include "APIs.h"
 #include "OTA.h"
@@ -16,7 +17,6 @@
 #include "web_server.h"
 #include "config.h"
 #include "logging.h"
-#include "types.h"
 #include <Arduino.h>
 #include <esp_mac.h>
 #include <esp_task_wdt.h>
