@@ -407,12 +407,38 @@ static void rotateLog(const char* logFilename) {
         oldFile.seek(0);
     }
 
-    // Calculate how many lines to keep (75% of total, minimum 100)
-    int linesToKeep = (totalLines * 3) / 4;
-    if (linesToKeep < 100)
-        linesToKeep = 100;
-    int linesToSkip = totalLines - linesToKeep;
-    skipLines(oldFile, linesToSkip);
+    // Keep 75% of the lines, minimum 100
+    auto linesToSkipFor = [](int lines) {
+        int linesToKeep = (lines * 3) / 4;
+        if (linesToKeep < 100)
+            linesToKeep = 100;
+        return lines - linesToKeep;
+    };
+    if (!skipLines(oldFile, linesToSkipFor(totalLines))) {
+        // The cached count is far too high: skipLines only runs out when the real count is
+        // under about a quarter of it (a swapped card, say). Copying from EOF would empty
+        // the log, so recount, correct the cache and retry.
+        oldFile.seek(0);
+        totalLines = countLinesInFile(oldFile);
+        *lineCountPtr = totalLines;
+        oldFile.seek(0);
+        if (!skipLines(oldFile, linesToSkipFor(totalLines))) {
+            oldFile.close();
+            Serial.println("Log rotation: could not find the lines to keep - keeping the original log");
+            return;
+        }
+    }
+    // An oversized file with too few lines for the 75% rule to drop any (only possible if
+    // it holds garbage, such as zero-filled clusters after a power cut) would be copied
+    // whole and rewritten on every append. Cut by bytes instead: keep the newest half,
+    // starting at the next line if there is one.
+    if (linesToSkipFor(totalLines) <= 0 && oldFile.size() > (size_t)MAX_LOG_FILE_SIZE) {
+        size_t cut = oldFile.size() - MAX_LOG_FILE_SIZE / 2;
+        oldFile.seek(cut);
+        if (!skipLines(oldFile, 1)) {
+            oldFile.seek(cut);
+        }
+    }
 
     File tempFile = SD_MMC.open(TEMP_LOG_FILENAME, FILE_WRITE);
     if (!tempFile) {
