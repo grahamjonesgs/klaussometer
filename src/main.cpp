@@ -21,6 +21,7 @@
 #include <esp_mac.h>
 #include <esp_task_wdt.h>
 #include <lvgl.h>
+#include <sys/time.h>
 #include <WiFi.h>
 
 // Shutdown handler to log reboot to SD card
@@ -114,6 +115,20 @@ void setup() {
     }
     Serial.printf("Reset reason: %s (%d)\n", reasonStr, reason);
 
+    // ESP-IDF keeps the system clock across a software, watchdog or panic reset
+    // (CONFIG_ESP_TIME_FUNCS_USE_RTC_TIMER), carried meanwhile by the internal RC
+    // oscillator, which can drift by minutes. The firmware takes any clock past
+    // TIME_SYNC_THRESHOLD as NTP-synced, so until NTP corrected it, log lines were
+    // stamped with the drifted time and shown as synced, readings restored from SD were
+    // aged against it, and time_init() reported a sync at once without restarting SNTP.
+    // Start from zero (uptime) as after a power-on, and let NTP set the clock.
+    bool clockDiscarded = false;
+    if (time(nullptr) >= TIME_SYNC_THRESHOLD) {
+        struct timeval uptime = {.tv_sec = (time_t)(millis() / 1000), .tv_usec = 0};
+        settimeofday(&uptime, nullptr);
+        clockDiscarded = true;
+    }
+
     // Setup queues and mutexes
     if (!state_init()) {
         Serial.println("Error: Failed to create mutex! Restarting...");
@@ -138,6 +153,9 @@ void setup() {
         // Age out anything that went stale while the device was off (no-op until NTP syncs)
         invalidateOldReadings();
         invalidateInsideAirQuality();
+    }
+    if (clockDiscarded) {
+        logAndPublish("Clock kept through the reset discarded - waiting for NTP");
     }
 
     // Add unique topics for MQTT logging
