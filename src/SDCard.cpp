@@ -166,20 +166,27 @@ static int formatLogLine(char* out, size_t outSize, const char* message) {
     return len;
 }
 
-// Caller holds sdMutex. Appends one formatted line and bumps the cached line count.
+// Caller holds sdMutex. Writes one formatted line to an already-open log file and bumps
+// its cached line count.
+static bool writeLogLine(File& logFile, const char* logFilename, const char* message) {
+    char logLine[CHAR_LEN + 50];
+    int len = formatLogLine(logLine, sizeof(logLine), message);
+    bool ok = logFile.write((const uint8_t*)logLine, len) == (size_t)len;
+    int* lineCountPtr = getLineCountPtr(logFilename);
+    if (ok && *lineCountPtr >= 0) {
+        (*lineCountPtr)++;
+    }
+    return ok;
+}
+
+// Caller holds sdMutex. Opens the log, appends one formatted line and closes it.
 static bool appendLogLine(const char* logFilename, const char* message) {
     File logFile = SD_MMC.open(logFilename, FILE_APPEND);
     if (!logFile) {
         return false;
     }
-    char logLine[CHAR_LEN + 50];
-    int len = formatLogLine(logLine, sizeof(logLine), message);
-    bool ok = logFile.write((const uint8_t*)logLine, len) == (size_t)len;
+    bool ok = writeLogLine(logFile, logFilename, message);
     logFile.close();
-    int* lineCountPtr = getLineCountPtr(logFilename);
-    if (ok && *lineCountPtr >= 0) {
-        (*lineCountPtr)++;
-    }
     return ok;
 }
 
@@ -462,17 +469,18 @@ void addLogToSDCard(const char* message, const char* logFilename) {
     // rename failed); counted a block at a time
     ensureLineCount(logFilename);
 
-    // Rotate log if it exceeds max size
-    File logFile = SD_MMC.open(logFilename, FILE_READ);
-    if (logFile) {
-        size_t fileSize = logFile.size();
+    // One open per line: an append handle stats the file when it opens, so size() is
+    // the current size. Rotate (which needs the file closed) only when it is too big.
+    File logFile = SD_MMC.open(logFilename, FILE_APPEND);
+    if (logFile && logFile.size() > MAX_LOG_FILE_SIZE) {
         logFile.close();
-        if (fileSize > MAX_LOG_FILE_SIZE) {
-            rotateLog(logFilename);
-        }
+        rotateLog(logFilename);
+        logFile = SD_MMC.open(logFilename, FILE_APPEND);
     }
-
-    appendLogLine(logFilename, message);
+    if (logFile) {
+        writeLogLine(logFile, logFilename, message);
+        logFile.close();
+    }
     xSemaphoreGive(sdMutex);
 }
 

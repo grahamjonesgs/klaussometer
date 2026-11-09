@@ -362,6 +362,21 @@ static bool fetchSolarToken() {
     return true;
 }
 
+// Saves the Solar block to SD at most every READINGS_SAVE_INTERVAL_SEC, like the MQTT
+// readings, to limit card wear: each save is a tmp write, remove and rename, and three
+// fetchers update the block. force saves now. The interval restarts only after a
+// successful save. Called from the API task only, without dataMutex held.
+static void saveSolarThrottled(bool force) {
+    static time_t lastSolarSave = 0;
+    time_t now = time(nullptr);
+    if (!force && now - lastSolarSave < READINGS_SAVE_INTERVAL_SEC) {
+        return;
+    }
+    if (saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar))) {
+        lastSolarSave = now;
+    }
+}
+
 // Fetches real-time solar data (power flows, battery SoC) from Solarman.
 // Also tracks daily battery min/max, resetting them on the first fetch of each day.
 static bool fetchCurrentSolar() {
@@ -420,10 +435,12 @@ static bool fetchCurrentSolar() {
     // keyed on the date rather than "a fetch during hour 0", so an outage around
     // midnight can't carry yesterday's values over. Persisted with the Solar block.
     int32_t today = (nowTm.tm_year + 1900) * 1000 + nowTm.tm_yday;
+    bool newDay = false;
     if (nowT >= TIME_SYNC_THRESHOLD && solar.minMaxDay != today) {
         solar.todayBatteryMin = 100;
         solar.todayBatteryMax = 0;
         solar.minMaxDay = today;
+        newDay = true;
     }
     if ((solar.batteryCharge < solar.todayBatteryMin) && solar.batteryCharge != 0) {
         solar.todayBatteryMin = solar.batteryCharge;
@@ -435,7 +452,8 @@ static bool fetchCurrentSolar() {
 
     dirtySolar = true;
     logAndPublish("Solar status updated");
-    saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
+    // A day rollover is saved at once so the min/max reset survives a reboot
+    saveSolarThrottled(newDay);
     return true;
 }
 
@@ -488,7 +506,7 @@ static bool fetchSolarHistory(bool monthly) {
     char logMessage[CHAR_LEN];
     snprintf(logMessage, sizeof(logMessage), "%s updated", label);
     logAndPublish(logMessage);
-    saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar));
+    saveSolarThrottled(false);
     return true;
 }
 
