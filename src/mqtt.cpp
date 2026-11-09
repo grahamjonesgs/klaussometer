@@ -382,6 +382,11 @@ static void updateReadings(char* recMessage, int index, int dataType) {
             } else {
                 readings[index].readingState = ReadingState::STABLE;
             }
+        } else {
+            // Batteries have no trend arrow, but a fresh message must still clear
+            // STALE/NO_DATA. Otherwise invalidateOldReadings() skips a reading already
+            // marked NO_DATA, and the next time the sensor dies its last value stays up.
+            readings[index].readingState = ReadingState::STABLE;
         }
     }
 
