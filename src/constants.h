@@ -190,6 +190,7 @@ static const unsigned long HWM_LOG_INTERVAL_MS = 3600000UL; // Milliseconds betw
 
 // Solar token
 static const int SOLAR_TOKEN_REFRESH_SEC = 43200; // Refresh Solarman JWT after 12 hours
+static const int SOLAR_TOKEN_FRESH_SEC = 600;      // A token rejected this soon after it was issued backs off the next token fetch
 
 // Mutex timeout values (in ms) — use the named constant that matches the call site's tolerance
 static const int MUTEX_TIMEOUT_SD_MS = 5000;  // SD operations can be slow; wait up to 5 s

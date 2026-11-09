@@ -372,6 +372,46 @@ static void saveSolarThrottled(bool force) {
                   [] { return saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar)); });
 }
 
+// Fresh tokens rejected in a row, and the earliest time the token job may fetch another.
+// Only the API task touches them.
+static int freshTokenRejects = 0;
+static time_t tokenRetryAfter = 0;
+
+// A request accepted the token. The rejection count only resets once a token has lasted
+// past SOLAR_TOKEN_FRESH_SEC: a token that works for one request and is rejected minutes
+// later must still count, or the backoff would never grow past its first step.
+static void solarTokenAccepted() {
+    time_t age = time(nullptr) - solarToken.tokenTime;
+    if (age < 0 || age >= SOLAR_TOKEN_FRESH_SEC) {
+        freshTokenRejects = 0;
+    }
+}
+
+// A Solarman request was refused with "auth invalid token": clear the token so the token
+// job fetches a new one. An old token (expired, revoked) is replaced on the next pass. A
+// token rejected within SOLAR_TOKEN_FRESH_SEC of being issued won't be fixed by fetching
+// another at once (one cause could be another client logging in with the same account
+// and invalidating it - not confirmed), and without a limit the fetch, reject, clear
+// cycle repeated every API_FAIL_DELAY_SEC: back off the next token fetch, doubling up to
+// API_MAX_BACKOFF_SEC while new tokens keep being rejected.
+static void solarTokenRejected(const char* label) {
+    time_t now = time(nullptr);
+    time_t age = now - solarToken.tokenTime;
+    char logMessage[CHAR_LEN];
+    if (solarToken.tokenTime != 0 && age >= 0 && age < SOLAR_TOKEN_FRESH_SEC) {
+        freshTokenRejects++;
+        int delaySec = getBackoffDelay(freshTokenRejects, API_MAX_BACKOFF_SEC);
+        tokenRetryAfter = now + delaySec;
+        snprintf(logMessage, sizeof(logMessage), "new token rejected %ld s after issue (%d in a row), next token in %d s", (long)age, freshTokenRejects,
+                 delaySec);
+        reportFailure(label, logMessage);
+    } else {
+        snprintf(logMessage, sizeof(logMessage), "%s: Solar token rejected (len=%zu), clearing for refresh", label, strlen(solarToken.token));
+        logAndPublish(logMessage);
+    }
+    solarToken.token[0] = '\0';
+}
+
 // Fetches real-time solar data (power flows, battery SoC) from Solarman.
 // Also tracks daily battery min/max, resetting them on the first fetch of each day.
 static bool fetchCurrentSolar() {
@@ -385,17 +425,15 @@ static bool fetchCurrentSolar() {
     if (recSuccess != true) {
         const char* msg = root["msg"];
         if (msg && strcmp(msg, "auth invalid token") == 0) {
-            char logMessage[CHAR_LEN];
-            snprintf(logMessage, sizeof(logMessage), "Solar token rejected (len=%zu), clearing for refresh", strlen(solarToken.token));
-            logAndPublish(logMessage);
-            solarToken.token[0] = '\0'; // Clear the token to trigger a refresh
-            return true;                // Not this job's failure: the token job takes over
+            solarTokenRejected("Solar status");
+            return true; // Not this job's failure: the token job takes over
         }
         // Rate limit, maintenance or another API error: back off rather than retrying
         // every API_FAIL_DELAY_SEC indefinitely
         reportFailure("Solar status", msg ? msg : "unknown error");
         return false;
     }
+    solarTokenAccepted();
 
     // success:true with a field missing would otherwise be shown as a real 0
     if (!root["batterySoc"].is<float>() || !root["usePower"].is<float>() || !root["wirePower"].is<float>() || !root["batteryPower"].is<float>() ||
@@ -475,13 +513,13 @@ static bool fetchSolarHistory(bool monthly) {
     if (recSuccess != true) {
         const char* msg = root["msg"];
         if (msg && strcmp(msg, "auth invalid token") == 0) {
-            logAndPublish("Solar token rejected by history request, clearing for refresh");
-            solarToken.token[0] = '\0'; // The token job refreshes it
-            return true;
+            solarTokenRejected(label);
+            return true; // The token job refreshes it
         }
         reportFailure(label, msg ? msg : "unknown error");
         return false; // Back off rather than retrying every API_FAIL_DELAY_SEC
     }
+    solarTokenAccepted();
     // stationDataItems is legitimately empty right after midnight (or the 1st of the
     // month): nothing generated or used yet. Totals left over from the previous period
     // would show under "today"/"this month", so zero them; totals from this period are
@@ -586,8 +624,9 @@ struct ApiJob {
 static ApiJob apiJobs[] = {
     // Tokens last ~24h; refresh after 12h. The current token is kept until a new one
     // arrives, so a failed refresh doesn't stop the solar fetches.
+    // Held back after a freshly issued token was rejected (see solarTokenRejected).
     {"Solar token", fetchSolarToken, [] { return solarTokenPresent() ? solarToken.tokenTime : (time_t)0; }, SOLAR_TOKEN_REFRESH_SEC, API_MAX_BACKOFF_SEC,
-     nullptr, {}},
+     [] { return time(nullptr) >= tokenRetryAfter; }, {}},
     {"Weather", fetchWeather, [] { return readLocked([] { return weather.updateTime; }); }, WEATHER_UPDATE_INTERVAL_SEC, WEATHER_UPDATE_INTERVAL_SEC,
      nullptr, {}},
     {"Air quality", fetchAirQuality, [] { return readLocked([] { return airQuality.updateTime; }); }, AIR_QUALITY_UPDATE_INTERVAL_SEC,
