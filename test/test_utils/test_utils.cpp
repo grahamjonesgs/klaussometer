@@ -1,8 +1,14 @@
 #include <unity.h>
+#include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include "utils.h"
 
-void setUp(void) {}
+// Local-time helpers are tested in UTC so results don't depend on the host's zone
+void setUp(void) {
+    setenv("TZ", "UTC0", 1);
+    tzset();
+}
 void tearDown(void) {}
 
 // --- uvColor ---
@@ -11,6 +17,15 @@ void test_uv_boundary_1()   { TEST_ASSERT_EQUAL_HEX(0x84BD00, uvColor(1.0f)); }
 void test_uv_boundary_5()   { TEST_ASSERT_EQUAL_HEX(0xFFCD00, uvColor(5.0f)); }
 void test_uv_extreme()      { TEST_ASSERT_EQUAL_HEX(0x4B1E88, uvColor(11.0f)); }
 void test_uv_very_high()    { TEST_ASSERT_EQUAL_HEX(0x4B1E88, uvColor(15.0f)); }
+
+// --- samePeriod (TZ is pinned to UTC in setUp) ---
+// 1762646400 = 2025-11-09 00:00:00 UTC
+void test_period_same_day()       { TEST_ASSERT_TRUE(samePeriod(1762646400, 1762646400 + 86399, false)); }
+void test_period_next_day()       { TEST_ASSERT_FALSE(samePeriod(1762646400 - 1, 1762646400, false)); }
+void test_period_same_month()     { TEST_ASSERT_TRUE(samePeriod(1762646400, 1762646400 + 5 * 86400, true)); }
+void test_period_next_month()     { TEST_ASSERT_FALSE(samePeriod(1762646400, 1762646400 + 22 * 86400, true)); } // Dec 1
+void test_period_same_day_next_year() { TEST_ASSERT_FALSE(samePeriod(1762646400, 1762646400 + 365 * 86400, false)); }
+void test_period_never_updated()  { TEST_ASSERT_FALSE(samePeriod(0, 1762646400, true)); }
 
 // --- IntervalThrottle ---
 void test_throttle_due_before_first_mark() {
@@ -151,6 +166,13 @@ int main() {
     RUN_TEST(test_fmt_thousands);
     RUN_TEST(test_fmt_millions);
     RUN_TEST(test_fmt_negative);
+
+    RUN_TEST(test_period_same_day);
+    RUN_TEST(test_period_next_day);
+    RUN_TEST(test_period_same_month);
+    RUN_TEST(test_period_next_month);
+    RUN_TEST(test_period_same_day_next_year);
+    RUN_TEST(test_period_never_updated);
 
     RUN_TEST(test_throttle_due_before_first_mark);
     RUN_TEST(test_throttle_waits_interval);

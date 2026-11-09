@@ -39,6 +39,10 @@ int gridPercentage(float bought, float used);
 // Format a time_t as "HH:MM:SS" into buf
 void formatTimeHMS(time_t t, char* buf, size_t bufSize);
 
+// True if a and b (local time) fall on the same calendar day, or in the same month
+// when monthly is set
+bool samePeriod(time_t a, time_t b, bool monthly);
+
 // Minimum-interval throttle on a monotonic millisecond clock (pass millis()), so an
 // NTP step can't pause or bunch up whatever it throttles. Due before the first mark(),
 // then once intervalMs has passed since the last one. 32-bit unsigned subtraction (as

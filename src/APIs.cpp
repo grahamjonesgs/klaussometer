@@ -476,8 +476,37 @@ static bool fetchSolarHistory(bool monthly) {
         return false;
     }
     bool recSuccess = root["success"];
-    // stationDataItems can legitimately be empty right after midnight — treat as no-op
-    if (recSuccess != true || root["stationDataItems"][0].isNull()) {
+    if (recSuccess != true) {
+        const char* msg = root["msg"];
+        if (msg && strcmp(msg, "auth invalid token") == 0) {
+            logAndPublish("Solar token rejected by history request, clearing for refresh");
+            solarToken.token[0] = '\0'; // The token job refreshes it
+            return true;
+        }
+        reportFailure(label, msg ? msg : "unknown error");
+        return false; // Back off rather than retrying every API_FAIL_DELAY_SEC
+    }
+    // stationDataItems is legitimately empty right after midnight (or the 1st of the
+    // month): nothing generated or used yet. Totals left over from the previous period
+    // would show under "today"/"this month", so zero them; totals from this period are
+    // kept. The update time advances either way so the normal interval applies instead
+    // of a retry every API_FAIL_DELAY_SEC.
+    if (root["stationDataItems"][0].isNull()) {
+        // Solar is packed, so no references into it: copy and assign the fields
+        xSemaphoreTake(dataMutex, portMAX_DELAY);
+        if (monthly) {
+            if (!samePeriod(solar.monthlyUpdateTime, nowTime, true)) {
+                solar.monthBuy = solar.monthUse = solar.monthGeneration = 0;
+            }
+            solar.monthlyUpdateTime = nowTime;
+        } else {
+            if (!samePeriod(solar.dailyUpdateTime, nowTime, false)) {
+                solar.todayBuy = solar.todayUse = solar.todayGeneration = 0;
+            }
+            solar.dailyUpdateTime = nowTime;
+        }
+        xSemaphoreGive(dataMutex);
+        dirtySolar = true;
         char logMessage[CHAR_LEN];
         snprintf(logMessage, sizeof(logMessage), "%s: no data yet", label);
         logAndPublish(logMessage);
@@ -495,12 +524,12 @@ static bool fetchSolarHistory(bool monthly) {
         solar.monthBuy = buy;
         solar.monthUse = use;
         solar.monthGeneration = item["generationValue"] | solar.monthGeneration;
-        solar.monthlyUpdateTime = time(nullptr);
+        solar.monthlyUpdateTime = nowTime; // When the period was chosen, not after the request
     } else {
         solar.todayBuy = buy;
         solar.todayUse = use;
         solar.todayGeneration = item["generationValue"] | solar.todayGeneration;
-        solar.dailyUpdateTime = time(nullptr);
+        solar.dailyUpdateTime = nowTime; // A request across midnight mustn't stamp yesterday as today
     }
     xSemaphoreGive(dataMutex);
     dirtySolar = true;

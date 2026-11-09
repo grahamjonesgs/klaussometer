@@ -196,6 +196,13 @@ void formatTimeHMS(time_t t, char* buf, size_t bufSize) {
     strftime(buf, bufSize, "%H:%M:%S", &ts);
 }
 
+bool samePeriod(time_t a, time_t b, bool monthly) {
+    struct tm ta, tb;
+    localtime_r(&a, &ta);
+    localtime_r(&b, &tb);
+    return ta.tm_year == tb.tm_year && ta.tm_mon == tb.tm_mon && (monthly || ta.tm_mday == tb.tm_mday);
+}
+
 // CRC-32 (IEEE 802.3, reflected, as used by zlib) over a byte range. Bitwise rather
 // than table-driven: the saved structs are at most a few KB, so speed doesn't matter.
 uint32_t crc32Calc(const void* dataPtr, size_t size) {

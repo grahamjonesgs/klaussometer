@@ -144,7 +144,9 @@ static void updateChargingStatus(const Solar& s) {
 
 // Updates grid energy totals, Rand cost and self-sufficiency percentage labels.
 static void updateGridMetrics(const Solar& s) {
-    if (s.todayUse <= 0.0 && s.monthUse <= 0.0)
+    // Skip until totals have arrived. Zero totals that did arrive (just after midnight on
+    // the 1st) must still be drawn, or the previous period's figures stay on screen.
+    if (s.dailyUpdateTime == 0 && s.monthlyUpdateTime == 0)
         return;
     char tempString[CHAR_LEN];
     char boughtTodayBuf[32];
