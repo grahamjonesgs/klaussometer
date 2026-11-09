@@ -393,10 +393,12 @@ static bool fetchCurrentSolar() {
             snprintf(logMessage, sizeof(logMessage), "Solar token rejected (len=%zu), clearing for refresh", strlen(solarToken.token));
             logAndPublish(logMessage);
             solarToken.token[0] = '\0'; // Clear the token to trigger a refresh
-        } else {
-            reportFailure("Solar status", msg ? msg : "unknown error");
+            return true;                // Not this job's failure: the token job takes over
         }
-        return true;
+        // Rate limit, maintenance or another API error: back off rather than retrying
+        // every API_FAIL_DELAY_SEC indefinitely
+        reportFailure("Solar status", msg ? msg : "unknown error");
+        return false;
     }
 
     // success:true with a field missing would otherwise be shown as a real 0
