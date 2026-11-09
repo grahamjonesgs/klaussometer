@@ -140,6 +140,8 @@ static const float LOG_CHANGE_THRESHOLD_PM = 0.1f;       // µg/m³ — any mean
 static const time_t TIME_SYNC_THRESHOLD = 1577836800; // 2020-01-01: used to detect unsynced/zero time
 
 static const int READINGS_SAVE_INTERVAL_SEC = 300;        // Minimum seconds between SD saves of MQTT sensor state (limits card wear)
+static const int SAVE_RETRY_SEC = 60;                     // Retry delay after a throttled SD save fails (full card, rename error)
+static_assert(SAVE_RETRY_SEC < READINGS_SAVE_INTERVAL_SEC, "IntervalThrottle::markFailed needs retry < interval");
 
 static const int MAX_NO_MESSAGE_STALE_SEC = 1800;         // Seconds without a message before a reading turns grey (ReadingState::STALE)
 static const int MAX_NO_MESSAGE_BLANK_SEC = 3600;         // Seconds without a message before a reading is blanked (ReadingState::NO_DATA)

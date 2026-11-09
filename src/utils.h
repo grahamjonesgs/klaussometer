@@ -57,6 +57,27 @@ struct IntervalThrottle {
         lastMs = nowMs;
         marked = true;
     }
+    // After a failed attempt: due again in retryMs (< intervalMs) rather than straight
+    // away, so a persistent failure (full card, say) isn't retried on every call
+    void markFailed(uint32_t nowMs, uint32_t intervalMs, uint32_t retryMs) {
+        lastMs = nowMs - (intervalMs - retryMs);
+        marked = true;
+    }
 };
+
+// Throttled-save helper: runs save() when the throttle is due, then marks success or
+// schedules a retry. force skips the interval check. Returns true if a save succeeded.
+template <typename Save>
+bool throttledSave(IntervalThrottle& throttle, uint32_t nowMs, uint32_t intervalMs, uint32_t retryMs, bool force, Save save) {
+    if (!force && !throttle.due(nowMs, intervalMs)) {
+        return false;
+    }
+    if (save()) {
+        throttle.mark(nowMs);
+        return true;
+    }
+    throttle.markFailed(nowMs, intervalMs, retryMs);
+    return false;
+}
 
 #endif // UTILS_H

@@ -47,6 +47,27 @@ void test_throttle_across_millis_wrap() {
     TEST_ASSERT_TRUE(t.due(0x00000100UL, 0x200));  // 0x200 elapsed
 }
 
+void test_throttle_failed_retries_sooner() {
+    IntervalThrottle t;
+    t.markFailed(10000, 300000, 60000);
+    TEST_ASSERT_FALSE(t.due(69999, 300000));
+    TEST_ASSERT_TRUE(t.due(70000, 300000));
+}
+void test_throttled_save_marks_and_retries() {
+    IntervalThrottle t;
+    int calls = 0;
+    bool ok = false;
+    auto save = [&] { calls++; return ok; };
+    TEST_ASSERT_FALSE(throttledSave(t, 1000, 300000, 60000, false, save)); // fails
+    TEST_ASSERT_FALSE(throttledSave(t, 2000, 300000, 60000, false, save)); // not retried yet
+    TEST_ASSERT_EQUAL(1, calls);
+    ok = true;
+    TEST_ASSERT_TRUE(throttledSave(t, 61000, 300000, 60000, false, save)); // retry after 60 s
+    TEST_ASSERT_FALSE(throttledSave(t, 62000, 300000, 60000, false, save)); // full interval now
+    TEST_ASSERT_TRUE(throttledSave(t, 62000, 300000, 60000, true, save));   // force
+    TEST_ASSERT_EQUAL(3, calls);
+}
+
 // --- degreesToDirection ---
 void test_dir_north()       { TEST_ASSERT_EQUAL_STRING("N",  degreesToDirection(0.0)); }
 void test_dir_east()        { TEST_ASSERT_EQUAL_STRING("E",  degreesToDirection(90.0)); }
@@ -177,6 +198,8 @@ int main() {
     RUN_TEST(test_throttle_due_before_first_mark);
     RUN_TEST(test_throttle_waits_interval);
     RUN_TEST(test_throttle_across_millis_wrap);
+    RUN_TEST(test_throttle_failed_retries_sooner);
+    RUN_TEST(test_throttled_save_marks_and_retries);
 
     return UNITY_END();
 }

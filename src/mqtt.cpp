@@ -221,11 +221,9 @@ static void onMqttMessage(int messageSize) {
         // SD card out. Readings expire after an hour anyway, so losing up to
         // READINGS_SAVE_INTERVAL_SEC of state across a reboot is acceptable.
         static IntervalThrottle readingsSave;
-        // Only a successful save restarts the interval; a skipped one is retried on the next message
-        if (readingsSave.due(millis(), READINGS_SAVE_INTERVAL_SEC * 1000UL) &&
-            saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings)) {
-            readingsSave.mark(millis());
-        }
+        // A failed save is retried after SAVE_RETRY_SEC, not on every message
+        throttledSave(readingsSave, millis(), READINGS_SAVE_INTERVAL_SEC * 1000UL, SAVE_RETRY_SEC * 1000UL, false,
+                      [] { return saveDataBlock(READINGS_DATA_FILENAME, readings, sizeof(Readings) * numberOfReadings); });
     } else if (InsideSensor* sensor = findInsideSensor(topicBuffer)) {
         updateInsideAirQuality(*sensor, recMessage);
     } else if (strcmp(topicBuffer, MQTT_SOLAR_FORECAST_TOPIC) == 0) {
@@ -447,10 +445,8 @@ static void updateInsideAirQuality(InsideSensor& sensor, char* recMessage) {
 
     // Throttled for the same SD-wear reason as the readings save above
     static IntervalThrottle insideAQSave;
-    if (insideAQSave.due(millis(), READINGS_SAVE_INTERVAL_SEC * 1000UL) &&
-        saveDataBlock(INSIDE_AIR_QUALITY_DATA_FILENAME, &insideAirQuality, sizeof(insideAirQuality))) {
-        insideAQSave.mark(millis());
-    }
+    throttledSave(insideAQSave, millis(), READINGS_SAVE_INTERVAL_SEC * 1000UL, SAVE_RETRY_SEC * 1000UL, false,
+                  [] { return saveDataBlock(INSIDE_AIR_QUALITY_DATA_FILENAME, &insideAirQuality, sizeof(insideAirQuality)); });
 }
 
 // Copies a "HH:MM" battery-full time into dest; null or anything malformed gives "" (won't fill).

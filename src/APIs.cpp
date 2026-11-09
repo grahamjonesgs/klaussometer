@@ -364,16 +364,12 @@ static bool fetchSolarToken() {
 
 // Saves the Solar block to SD at most every READINGS_SAVE_INTERVAL_SEC, like the MQTT
 // readings, to limit card wear: each save is a tmp write, remove and rename, and three
-// fetchers update the block. force saves now. The interval restarts only after a
-// successful save. Called from the API task only, without dataMutex held.
+// fetchers update the block. force saves now. A failed save is retried after
+// SAVE_RETRY_SEC. Called from the API task only, without dataMutex held.
 static void saveSolarThrottled(bool force) {
     static IntervalThrottle solarSave;
-    if (!force && !solarSave.due(millis(), READINGS_SAVE_INTERVAL_SEC * 1000UL)) {
-        return;
-    }
-    if (saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar))) {
-        solarSave.mark(millis());
-    }
+    throttledSave(solarSave, millis(), READINGS_SAVE_INTERVAL_SEC * 1000UL, SAVE_RETRY_SEC * 1000UL, force,
+                  [] { return saveDataBlock(SOLAR_DATA_FILENAME, &solar, sizeof(solar)); });
 }
 
 // Fetches real-time solar data (power flows, battery SoC) from Solarman.

@@ -270,13 +270,27 @@ static bool writeDataBlock(const char* filename, const void* dataPtr, size_t siz
     dataFile.flush();
     dataFile.close();
 
-    if (headerWritten != sizeof(DataHeader) || bytesWritten != size) {
+    // write() only reports what reached the stdio buffer, and flush()/close() return
+    // nothing, so confirm the file size (FatFS's view after close) before swapping it in
+    size_t onCard = 0;
+    if (headerWritten == sizeof(DataHeader) && bytesWritten == size) {
+        File check = SD_MMC.open(tmpName, FILE_READ);
+        if (check) {
+            onCard = check.size();
+            check.close();
+        }
+    }
+    if (onCard != sizeof(DataHeader) + size) {
         SD_MMC.remove(tmpName); // Never leave a short .tmp for the load fallback to find
         xSemaphoreGive(sdMutex);
-        char logMessage[CHAR_LEN];
-        snprintf(logMessage, sizeof(logMessage), "Failed to write %s: header %zu/%zu, data %zu/%zu bytes", filename, headerWritten, sizeof(DataHeader),
-                 bytesWritten, size);
-        logAndPublish(logMessage);
+        static unsigned long lastWriteFailLog = 0; // A full card fails every retry
+        if (lastWriteFailLog == 0 || millis() - lastWriteFailLog > SD_BUSY_LOG_INTERVAL_MS) {
+            lastWriteFailLog = millis();
+            char logMessage[CHAR_LEN];
+            snprintf(logMessage, sizeof(logMessage), "Failed to write %s: header %zu/%zu, data %zu/%zu bytes, %zu in file", filename, headerWritten,
+                     sizeof(DataHeader), bytesWritten, size, onCard);
+            logAndPublish(logMessage);
+        }
         return false;
     }
 
@@ -285,9 +299,17 @@ static bool writeDataBlock(const char* filename, const void* dataPtr, size_t siz
     xSemaphoreGive(sdMutex);
 
     if (!renamed) {
-        char logMessage[CHAR_LEN];
-        snprintf(logMessage, sizeof(logMessage), "Failed to rename %s - the .tmp copy will be loaded instead", tmpName);
-        logAndPublish(logMessage);
+        // The complete .tmp is still loaded at boot, but report failure so the caller's
+        // save throttle retries rather than waiting a full interval. Callers then retry
+        // on every update, so rate-limit the log line.
+        static unsigned long lastRenameLog = 0;
+        if (lastRenameLog == 0 || millis() - lastRenameLog > SD_BUSY_LOG_INTERVAL_MS) {
+            lastRenameLog = millis();
+            char logMessage[CHAR_LEN];
+            snprintf(logMessage, sizeof(logMessage), "Failed to rename %s - the .tmp copy will be loaded instead", tmpName);
+            logAndPublish(logMessage);
+        }
+        return false;
     }
     return true;
 }
