@@ -551,19 +551,22 @@ static bool fetchMonthlySolar() {
 // At night the UV index is zero by definition: apply that once on the day->night
 // transition instead of fetching (or rewriting state and the SD card) all night.
 // Requires weather data so a cold boot (isDay defaults to false) doesn't suppress the
-// first daytime fetch.
-static void applyUvNight() {
+// first daytime fetch. Returns true on the night->day transition: the overnight zero
+// then ages out (staleness.cpp) and the air quality job, which carries UV, may not be
+// due for another AIR_QUALITY_UPDATE_INTERVAL_SEC, so the caller fetches it at once.
+static bool applyUvNight() {
     static bool uvNightApplied = false;
     bool night = readLocked([] { return weather.updateTime > 0 && !weather.isDay; });
     if (!night) {
+        bool dayStarted = uvNightApplied;
         uvNightApplied = false;
-        return;
+        return dayStarted;
     }
-    if (uvNightApplied) {
-        return;
+    if (!uvNightApplied) {
+        uvNightApplied = true;
+        storeUv(0);
     }
-    uvNightApplied = true;
-    storeUv(0);
+    return false;
 }
 
 static bool solarTokenPresent() {
@@ -580,6 +583,7 @@ struct ApiJob {
     int backoffIntervalSec;
     bool (*enabled)(); // nullptr = always
     ApiBackoff backoff;
+    bool forceDue; // Run on the next pass even if the data is fresh (backoff still applies)
 };
 
 // Run in this order each pass: the token first so a refreshed one is used straight away.
@@ -614,13 +618,21 @@ void api_manager_t(void* pvParameters) {
         // 7 blocking HTTPS calls, and when WiFi is up but the internet is down each
         // one runs to its timeout - one reset per pass would not stay inside 60 s.
         if (networkReady()) {
-            applyUvNight();
+            if (applyUvNight()) {
+                for (ApiJob& job : apiJobs) {
+                    if (job.fetch == fetchAirQuality) {
+                        job.forceDue = true; // It carries the current UV index
+                    }
+                }
+            }
             for (ApiJob& job : apiJobs) {
                 time_t now = time(nullptr);
                 if (job.enabled && !job.enabled()) {
                     continue;
                 }
-                if (fetchDue(job.backoff, job.lastUpdate(), job.intervalSec, now)) {
+                bool forced = job.forceDue && now >= job.backoff.nextRetryTime;
+                if (forced || fetchDue(job.backoff, job.lastUpdate(), job.intervalSec, now)) {
+                    job.forceDue = false;
                     attemptFetch(job.backoff, job.fetch, job.backoffIntervalSec, now);
                 }
             }
