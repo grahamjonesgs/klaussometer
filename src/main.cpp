@@ -26,6 +26,10 @@
 
 // Shutdown handler to log reboot to SD card
 void shutdownHandler(void) {
+    // A running RGB panel can stall the restart (see display_stop_for_restart). The screen
+    // stays frozen until the panel is set up again after the reboot.
+    display_stop_for_restart();
+
     // Write directly to SD card (can't use queue as system is shutting down). Skipped
     // rather than risk corrupting the card if another task is mid-write.
     sdcard_append_line_now(ERROR_LOG_FILENAME, "SYSTEM REBOOT - Watchdog or manual reboot triggered", SHUTDOWN_SD_TIMEOUT_MS);

@@ -4,6 +4,7 @@
 #include "constants.h"
 #include <Arduino_GFX_Library.h>
 #include <Wire.h>
+#include <hal/lcd_ll.h>
 #include <lvgl.h>
 
 // Display and backlight hardware for both supported boards (Matouch and Waveshare).
@@ -113,6 +114,22 @@ void board_service(unsigned long nowMs) {
     if (isWaveshare) {
         waveshare_expander_service(nowMs);
     }
+}
+
+// Without this, about 1 restart in 3 (8 of 26 web reboots on the Waveshare, 2026-11-10)
+// hung inside esp_restart_noos() and was finished by the RTC watchdog about 1 s later
+// (rst:0x10, logged as "Other watchdog" instead of "Software reset"). With the panel
+// stopped first, 20 of 20 reset normally (rst:0xc). Where exactly the restart sequence
+// waits on the running LCD peripheral (its DMA, the cache disable) was not pinned down.
+// Stopping the other CPU core first instead made no difference. Resets that skip the
+// shutdown handlers (panics, watchdogs, the esp_restart() calls in display_hardware_init)
+// are not covered and can still end this way; they recover on their own.
+void display_stop_for_restart() {
+    if (gfx == nullptr) {
+        return; // Panel not started yet
+    }
+    lcd_ll_stop(&LCD_CAM);
+    lcd_ll_reset(&LCD_CAM);
 }
 
 // Sets screen backlight to day (full) or night (dim) brightness.
