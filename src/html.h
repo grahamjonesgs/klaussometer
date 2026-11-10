@@ -386,8 +386,9 @@ const char* logs_html = R"=====(
         return;
       }
 
-      // Sort newest first by timestamp
-      logs.sort((a, b) => b.timestamp - a.timestamp);
+      // Shown in the order the device sends them: newest first, as written. Not sorted
+      // by timestamp - lines logged before NTP sync carry uptime, not a date, and would
+      // sink below every dated line instead of sitting next to the boot they belong to.
 
       let html = '';
       logs.forEach(log => {
