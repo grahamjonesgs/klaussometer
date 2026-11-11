@@ -25,7 +25,8 @@ The cost is internal heap. Measured on the Waveshare about a minute after boot:
 
 Tested on the Waveshare: WiFi, NTP and MQTT, every API fetch, SD save and restore
 (including a card inserted after boot), the web log viewer, web firmware upload, and
-soaks with no resets. The Matouch board has not been tried on 3.x.
+soaks with no resets. The Matouch first ran 3.x on 2026-11-11: WiFi, NTP, MQTT and the
+API fetches worked, and 20 of 20 web reboots reset cleanly. No soak or web upload yet.
 
 ## The boot crash was a build-config bug, not the chip
 

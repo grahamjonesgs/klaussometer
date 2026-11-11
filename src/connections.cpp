@@ -6,12 +6,29 @@
 #include <esp_sntp.h>
 #include <esp_task_wdt.h>
 #include <WiFi.h>
+#include <algorithm>
 #include <atomic>
 
 static std::atomic<bool> networkUp(false);
+static std::atomic<unsigned long> lastTrafficMs(0);
+static std::atomic<bool> trafficSinceJoin(false);
 
 bool networkReady() {
     return networkUp && WiFi.status() == WL_CONNECTED;
+}
+
+void networkTrafficSeen() {
+    lastTrafficMs = millis();
+    trafficSinceJoin = true;
+}
+
+// Logs the connection with the access point it joined: with a mesh, the same SSID is
+// served by several nodes, and a distant one can pass WiFi.status() but carry nothing.
+static void logConnection(const char* prefix) {
+    char messageBuffer[CHAR_LEN];
+    snprintf(messageBuffer, sizeof(messageBuffer), "%s SSID: %s, IP: %s, RSSI: %d, BSSID: %s, channel: %ld", prefix, WiFi.SSID().c_str(),
+             WiFi.localIP().toString().c_str(), WiFi.RSSI(), WiFi.BSSIDstr().c_str(), (long)WiFi.channel());
+    logAndPublish(messageBuffer);
 }
 
 static void setup_wifi() {
@@ -23,6 +40,12 @@ static void setup_wifi() {
     WiFi.mode(WIFI_STA);
     WiFi.persistent(false);
     WiFi.setTxPower(WIFI_POWER_19_5dBm); // Max power - mains-powered stationary device
+    // The default fast scan joins the first access point found with the SSID and ignores
+    // the sort order, so on the mesh the board could join a distant node (RSSI -84 on the
+    // Matouch, 2026-11-11, with DNS, TLS and MQTT nearly all failing; other boots joined a
+    // node at about -65). Scan every channel and join the strongest.
+    WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+    WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
     vTaskDelay(pdMS_TO_TICKS(WIFI_MODE_SETUP_DELAY_MS));
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
@@ -43,9 +66,7 @@ static void setup_wifi() {
         vTaskDelay(pdMS_TO_TICKS(WIFI_RETRY_DELAY_SEC * 1000)); // Wait before retrying
     }
     WiFi.setAutoReconnect(true); // Only enable after confirmed connection
-    char messageBuffer[CHAR_LEN];
-    snprintf(messageBuffer, sizeof(messageBuffer), "Connected to WiFi SSID: %s, IP: %s, RSSI: %d", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
-    logAndPublish(messageBuffer);
+    logConnection("Connected to WiFi");
 }
 
 // Waits for the first NTP sync. MQTT and the APIs start once this returns, and anything
@@ -84,6 +105,7 @@ void connectivity_manager_t(void* pvParameters) {
     bool everConnected = false;
     int wifiFailCount = 0;
     unsigned long lastHwmLog = 0;
+    unsigned long silentTimeoutMs = NETWORK_SILENT_TIMEOUT_MS;
     while (true) {
         // Reset watchdog at the start of each loop iteration
         esp_task_wdt_reset();
@@ -91,7 +113,40 @@ void connectivity_manager_t(void* pvParameters) {
         logStackHwmIfDue("Connectivity", &lastHwmLog);
 
         bool ranSetup = false;
-        if (WiFi.status() != WL_CONNECTED) {
+        // Connected, but nothing has arrived for a long time: the link is unusable (for
+        // example a distant mesh node). Join again - setup_wifi() picks the strongest node.
+        // Also fires if every server is down at once, or while NTP has not synced (OTA and
+        // the API jobs wait for the clock, so nothing is requested). A join (at boot, after
+        // autoReconnect or after a rejoin) that brings no response doubles the next
+        // timeout, up to NETWORK_SILENT_TIMEOUT_MAX_MS, so
+        // those cases don't drop WiFi and MQTT every 10 minutes; any response resets it.
+        if (trafficSinceJoin) {
+            silentTimeoutMs = NETWORK_SILENT_TIMEOUT_MS;
+        }
+        // Read the last traffic time before millis(), so a write from another task in
+        // between can only make the gap smaller, never underflow it.
+        const unsigned long lastTraffic = lastTrafficMs;
+        const unsigned long silentMs = millis() - lastTraffic;
+        if (networkUp && WiFi.status() == WL_CONNECTED && silentMs > silentTimeoutMs) {
+            if (!trafficSinceJoin) {
+                silentTimeoutMs = std::min(silentTimeoutMs * 2, NETWORK_SILENT_TIMEOUT_MAX_MS);
+            }
+            char messageBuffer[CHAR_LEN];
+            snprintf(messageBuffer, sizeof(messageBuffer), "No HTTP response for %lu min while WiFi connected (RSSI: %d, BSSID: %s) - rejoining WiFi, next check after %lu min",
+                     silentMs / 60000UL, WiFi.RSSI(), WiFi.BSSIDstr().c_str(), silentTimeoutMs / 60000UL);
+            logAndPublish(messageBuffer);
+            networkUp = false;
+            wasDisconnected = true;
+            setup_wifi();
+            ranSetup = true;
+            if (WiFi.status() != WL_CONNECTED) {
+                // setup_wifi() has switched the radio off, so there is no autoReconnect to
+                // wait for - make the next check run the full setup at once
+                wifiFailCount = WIFI_AUTORECONNECT_GRACE_CHECKS;
+                vTaskDelay(pdMS_TO_TICKS(WIFI_RECONNECT_CHECK_DELAY_MS));
+                continue;
+            }
+        } else if (WiFi.status() != WL_CONNECTED) {
             networkUp = false;
             wasDisconnected = true;
             wifiFailCount++;
@@ -120,11 +175,11 @@ void connectivity_manager_t(void* pvParameters) {
             wasDisconnected = false;
             wifiFailCount = 0;
             if (!ranSetup) { // setup_wifi() has already logged the connection
-                char messageBuffer[CHAR_LEN];
-                snprintf(messageBuffer, sizeof(messageBuffer), "WiFi restored, IP: %s, RSSI: %d", WiFi.localIP().toString().c_str(), WiFi.RSSI());
-                logAndPublish(messageBuffer);
+                logConnection("WiFi restored");
             }
             time_init();
+            lastTrafficMs = millis(); // Give each new connection the full silent timeout
+            trafficSinceJoin = false;
         }
         networkUp = true;
         // MQTT (re)connection is handled by the MQTT receive task, which owns the client

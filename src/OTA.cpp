@@ -1,6 +1,7 @@
 #include "OTA.h"
 #include "APIs.h"
 #include "config.h"
+#include "connections.h"
 #include "logging.h"
 #include "types.h"
 #include <Arduino.h>
@@ -75,6 +76,9 @@ static void checkForUpdates() {
     snprintf(url, sizeof(url), "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_VERSION_PATH);
     http.begin(apiTls(), url);
     int httpCode = http.GET();
+    if (httpCode > 0) {
+        networkTrafficSeen();
+    }
     if (httpCode == HTTP_CODE_OK) {
         String serverVersion = http.getString();
         serverVersion.trim();
@@ -120,6 +124,9 @@ static void updateFirmware() {
     snprintf(binUrl, sizeof(binUrl), "https://%s:%d%s", OTA_HOST, OTA_PORT, OTA_BIN_PATH);
     http.begin(apiTls(), binUrl);
     int httpCode = http.GET();
+    if (httpCode > 0) {
+        networkTrafficSeen();
+    }
     if (httpCode == HTTP_CODE_OK) {
         int contentLength = http.getSize();
         // A chunked response has no length, and HTTPClient's stream would hand the raw
@@ -150,6 +157,7 @@ static void updateFirmware() {
                     int c = client.readBytes(buff, std::min(available, sizeof(buff)));
                     if (c > 0) {
                         lastDataMs = millis();
+                        networkTrafficSeen(); // A long download must not trip the silent-network rejoin
                         if (Update.write(buff, c) != (size_t)c) {
                             writeFailed = true; // e.g. bad magic byte - no point downloading the rest
                             break;

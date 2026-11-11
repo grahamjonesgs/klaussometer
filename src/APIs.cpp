@@ -152,6 +152,9 @@ static bool apiRequest(const char* label, const char* url, const char* postBody,
         http.addHeader("Authorization", auth);
     }
     int httpCode = postBody ? http.POST(postBody) : http.GET();
+    if (httpCode > 0) {
+        networkTrafficSeen(); // The server answered - the link works, whatever the status
+    }
     if (httpCode != HTTP_CODE_OK) {
         endRequest();
         char reason[CHAR_LEN];
